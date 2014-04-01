@@ -32,7 +32,7 @@ FROM [statshub.fallback] \
 WHERE \
     _dim <> 'total' \
     AND _ts >= DATE_ADD(CURRENT_TIMESTAMP(), -24, \"HOUR\") \
-ORDER BY ts DESC, fallback"
+ORDER BY ts, fallback"
         });
 
         request.execute(function(response) {
@@ -88,11 +88,17 @@ ORDER BY ts DESC, fallback"
             }
             data.addRows(periods.length);
             for (i = 0; i < periods.length; i++) {
-                var period = periods[i];
-                data.setCell(i, 0, new Date(period.ts * 1000));
-                for (j = 0; j < fallbacksArray.length; j++) {
-                    fallback = fallbacksArray[j];
-                    data.setCell(i, j + 1, period[fallback] || 0);
+                if (i > 0) {
+                    // Only start calculating/display data as of the 2nd row
+                    var period = periods[i];
+                    var priorPeriod = periods[i-1];
+                    data.setCell(i, 0, new Date(period.ts * 1000));
+                    for (j = 0; j < fallbacksArray.length; j++) {
+                        fallback = fallbacksArray[j];
+                        var delta = (period[fallback] || 0) - (priorPeriod[fallback] || 0);
+                        console.log("delta", delta)
+                        data.setCell(i, j + 1, delta);
+                    }
                 }
             }
 
@@ -106,9 +112,9 @@ ORDER BY ts DESC, fallback"
                     slantedText: true,
                     slantedTextAngle: 60
                 },
-                vAxis: {
-                    logScale: true
-                },
+                // vAxis: {
+                //     logScale: true
+                // },
                 chartArea: {
                     width: '60%',
                     left: 100,
@@ -137,7 +143,12 @@ ORDER BY ts DESC, fallback"
 </head>
 
 <body>
-    <h2>Megabytes Given per Fallback <span id="between" style="display: none;">between <span id="start"></span> and <span id="end"></span></span></h2>
+    <h2>Megabytes Given per Fallback
+        <span id="between" style="display: none;">between
+            <span id="start"></span>and
+            <span id="end"></span>
+        </span>
+    </h2>
     <button id="auth_button" onclick="auth();">Log In</button>
     <button id="query_button" style="display:none;" onclick="runQuery();">Run Query</button>
     <div id="chart"></div>
