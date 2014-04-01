@@ -1,0 +1,146 @@
+<!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
+
+<html>
+
+<head>
+    <script src="https://apis.google.com/js/client.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+    <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+    <script type="text/javascript">
+    google.load('visualization', '1', {
+        packages: ['corechart']
+    });
+    </script>
+    <script type="text/javascript">
+    var project_id = 'lanternctrl';
+    var client_id = '396911652999-50ic79ikvs4nfkgp8ktshsggpr5u8882.apps.googleusercontent.com';
+
+    var config = {
+        'client_id': client_id,
+        'scope': 'https://www.googleapis.com/auth/bigquery.readonly'
+    };
+
+    function runQuery() {
+        var request = gapi.client.bigquery.jobs.query({
+            'projectId': project_id,
+            'timeoutMs': '30000',
+            'query': "SELECT \
+    TIMESTAMP_TO_SEC(_ts) AS ts,\
+    _dim AS fallback, \
+    counter.bytesGiven AS total \
+FROM [statshub.fallback] \
+WHERE \
+    _dim <> 'total' \
+    AND _ts >= DATE_ADD(CURRENT_TIMESTAMP(), -24, \"HOUR\") \
+ORDER BY ts DESC, fallback"
+        });
+
+        request.execute(function(response) {
+            console.log("response", response);
+
+            console.log("Preparing to build data table");
+
+            var start, end = null;
+            // Keeps track of unique fallbacks
+            var fallbacks = {};
+            // Keeps track of mbGiven in every period for every fallback in that period
+            var periods = [];
+            // The current period
+            var period = null;
+            // The last timestamp
+            var lastTs = null;
+
+            var i, j;
+
+            // First build a list of periods with fallbacks in each period.
+            // We have to do this before building the final array because any
+            // given fallback may or may not appear in any given period, and we
+            // need a complete picture of fallbacks and periods before building
+            // our table.
+            for (i = 0; i < response.rows.length; i++) {
+                var row = response.rows[i].f;
+                var ts = row[0].v;
+                var fallback = row[1].v;
+                var mbGiven = Math.round((row[2].v || 0) / 1024 / 1024);
+                if (ts != lastTs) {
+                    period = {
+                        ts: ts
+                    };
+                    periods.push(period);
+                }
+                lastTs = ts;
+                period[fallback] = mbGiven;
+                fallbacks[fallback] = true;
+
+                if (i == 0) {
+                    start = new Date(ts * 1000);
+                }
+                end = new Date(ts * 1000);
+            }
+
+            console.log("Building data table from", fallbacks, periods);
+
+            var data = new google.visualization.DataTable();
+            data.addColumn("datetime", "Timestamp");
+            var fallbacksArray = Object.keys(fallbacks);
+            for (i = 0; i < fallbacksArray.length; i++) {
+                data.addColumn("number", fallbacksArray[i]);
+            }
+            data.addRows(periods.length);
+            for (i = 0; i < periods.length; i++) {
+                var period = periods[i];
+                data.setCell(i, 0, new Date(period.ts * 1000));
+                for (j = 0; j < fallbacksArray.length; j++) {
+                    fallback = fallbacksArray[j];
+                    data.setCell(i, j + 1, period[fallback] || 0);
+                }
+            }
+
+            console.log("Displaying chart");
+            var chart = new google.visualization.LineChart(
+                document.getElementById('chart'));
+            chart.draw(data, {
+                width: 1200,
+                height: 600,
+                hAxis: {
+                    slantedText: true,
+                    slantedTextAngle: 60
+                },
+                vAxis: {
+                    logScale: true
+                },
+                chartArea: {
+                    width: '60%',
+                    left: 100,
+                },
+                legend: {
+                    textStyle: {
+                        fontSize: 10
+                    }
+                }
+            });
+
+            $("#start").text(start);
+            $("#end").text(end);
+            $("#between").show();
+        });
+    }
+
+    function auth() {
+        gapi.auth.authorize(config, function(result) {
+            gapi.client.load('bigquery', 'v2', runQuery);
+            console.log("Started query");
+        });
+        $('#auth_button').hide();
+    }
+    </script>
+</head>
+
+<body>
+    <h2>Megabytes Given per Fallback <span id="between" style="display: none;">between <span id="start"></span> and <span id="end"></span></span></h2>
+    <button id="auth_button" onclick="auth();">Log In</button>
+    <button id="query_button" style="display:none;" onclick="runQuery();">Run Query</button>
+    <div id="chart"></div>
+</body>
+
+</html>
