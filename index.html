@@ -22,61 +22,6 @@
 
         // Create the chart
         $('#container').highcharts('StockChart', {
-            chart: {
-                events: {
-                    load: function() {
-                        var chart = this;
-
-                        // Once the chart is loaded, set up a websocket to update the data
-                        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/fallback");
-                        ws.onopen = function() {
-                            console.log("WebSocket opened")
-                        };
-                        ws.onmessage = function(evt) {
-                            var msg = evt.data;
-                            var resp = JSON.parse(msg);
-                            if (resp.succeeded) {
-                                var asOf = resp.asOfSeconds * 1000;
-                                Object.keys(resp.dims.fallback).forEach(function(name) {
-                                    if (name == "total") {
-                                        // ignore total
-                                        return;
-                                    }
-                                    var fallback = resp.dims.fallback[name];
-                                    var bytesGiven = (fallback.counters.bytesGiven || 0);
-                                    var s = seriesByName[name];
-                                    if (!s) {
-                                        var data = [];
-                                        var intervalInSeconds = 30;
-                                        // Add some 0 data leading up to the current value to size the navigator
-                                        for (var i=-1 * 24 * 60 * 60 / intervalInSeconds; i<=0; i++) {
-                                            var date = asOf + i * intervalInSeconds * 1000;
-                                            data.push([date, 0]);
-                                        }
-                                        lastValueByFallback[name] = bytesGiven;
-                                        s = chart.addSeries({
-                                            name: name.substring(9),
-                                            data: data
-                                        })
-                                        seriesByName[name] = s;
-                                    } else {
-                                        var delta = bytesGiven - (lastValueByFallback[name] || 0);
-                                        s.addPoint([asOf, Math.ceil(delta / 1024 / 1024)], true, true);
-                                        lastValueByFallback[name] = bytesGiven;
-                                    }
-                                });
-                            } else {
-                                console.log("Response was unsuccessful", resp["error"]);
-                            }
-                        };
-                        ws.onclose = function() {
-                            // websocket is closed.
-                            console.log("WebSocket closed");
-                        };
-                    }
-                }
-            },
-
             rangeSelector: {
                 buttons: [{
                     count: 1,
@@ -103,7 +48,7 @@
             },
 
             title: {
-                text: 'Change in Megabytes Given by Fallback'
+                text: 'Fallbacks KBps'
             },
 
             exporting: {
@@ -116,6 +61,53 @@
 
             series: []
         });
+
+        var chart = $('#container').highcharts();
+        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/fallback");
+        ws.onopen = function() {
+            console.log("WebSocket opened")
+        };
+        ws.onmessage = function(evt) {
+            var msg = evt.data;
+            var resp = JSON.parse(msg);
+            if (resp.succeeded) {
+                var asOf = resp.asOfSeconds * 1000;
+                Object.keys(resp.dims.fallback).forEach(function(name) {
+                    if (name == "total") {
+                        // ignore total
+                        return;
+                    }
+                    var fallback = resp.dims.fallback[name];
+                    var bytesGiven = (fallback.counters.bytesGiven || 0);
+                    var s = seriesByName[name];
+                    var intervalInSeconds = 30;
+                    if (!s) {
+                        var data = [];
+                        // Add some 0 data leading up to the current value to size the navigator
+                        for (var i = -1 * 24 * 60 * 60 / intervalInSeconds; i <= 0; i++) {
+                            var date = asOf + i * intervalInSeconds * 1000;
+                            data.push([date, 0]);
+                        }
+                        lastValueByFallback[name] = bytesGiven;
+                        s = chart.addSeries({
+                            name: name.substring(9),
+                            data: data
+                        })
+                        seriesByName[name] = s;
+                    } else {
+                        var delta = bytesGiven - (lastValueByFallback[name] || 0);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / intervalInSeconds)], true, true);
+                        lastValueByFallback[name] = bytesGiven;
+                    }
+                });
+            } else {
+                console.log("Response was unsuccessful", resp["error"]);
+            }
+        };
+        ws.onclose = function() {
+            // websocket is closed.
+            console.log("WebSocket closed");
+        };
     });
     </script>
 </head>
