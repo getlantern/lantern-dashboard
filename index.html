@@ -9,7 +9,8 @@
 
     <script type="text/javascript">
     $(function() {
-        var intervalInSeconds = 30;
+        var INTERVAL_IN_SECONDS = 30;
+        var SHOWN_COUNTRIES = {cn:true, ir: true, us: true, total: true};
 
         Highcharts.setOptions({
             global: {
@@ -54,7 +55,25 @@
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / intervalInSeconds)], true, true);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], true, true);
+                    }
+                    context.priorValues[name] = bytesGiven;
+                });
+            }),
+
+            make('kbpsPeers', 'KBps Peers', function(context, asOf, dims) {
+                Object.keys(dims.country).forEach(function(name) {
+                    if (!(name in SHOWN_COUNTRIES)) {
+                        // ignore everything except total
+                        return;
+                    }
+                    var country = dims.country[name];
+                    var bytesGiven = (country.counters.bytesGivenByPeer || 0);
+                    var s = context.getSeries(asOf, name);
+                    var priorValue = context.priorValues[name];
+                    if (typeof(priorValue) !== "undefined") {
+                        var delta = bytesGiven - (priorValue || 0);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], true, true);
                     }
                     context.priorValues[name] = bytesGiven;
                 });
@@ -62,11 +81,7 @@
 
             make('usersOnline', 'Users Online by Country', function(context, asOf, dims) {
                 Object.keys(dims.country).forEach(function(name) {
-                    if (name == "total") {
-                        // ignore total
-                        return;
-                    }
-                    if (!(name in {cn:true, ir: true, us: true})) {
+                    if (!(name in SHOWN_COUNTRIES)) {
                         return;
                     }
                     var country = dims.country[name];
@@ -130,8 +145,8 @@
                     if (!s) {
                         var data = [];
                         // Add some 0 data leading up to the current value to size the navigator
-                        for (var i = -1 * 24 * 60 * 60 / intervalInSeconds; i <= 0; i++) {
-                            var date = asOf + i * intervalInSeconds * 1000;
+                        for (var i = -1 * 24 * 60 * 60 / INTERVAL_IN_SECONDS; i <= 0; i++) {
+                            var date = asOf + i * INTERVAL_IN_SECONDS * 1000;
                             data.push([date, 0]);
                         }
                         s = chart.addSeries({
@@ -165,6 +180,7 @@
 
 <body>
     <div id="kbpsFallbacks" class="chart"></div>
+    <div id="kbpsPeers" class="chart"></div>
     <div id="usersOnline" class="chart"></div>
 </body>
 
