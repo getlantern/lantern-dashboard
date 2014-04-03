@@ -3,155 +3,125 @@
 <html>
 
 <head>
-    <script src="https://apis.google.com/js/client.js"></script>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
-    <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+    <script src="//code.jquery.com/jquery-2.1.0.min.js"></script>
+    <script src="//code.highcharts.com/stock/highstock.js"></script>
+    <script src="//code.highcharts.com/stock/modules/exporting.js"></script>
+
     <script type="text/javascript">
-    google.load('visualization', '1', {
-        packages: ['corechart']
+    $(function() {
+
+        Highcharts.setOptions({
+            global: {
+                useUTC: false
+            }
+        });
+
+        // This will hold our data
+        var seriesByName = {};
+        var lastValueByFallback = {};
+
+        // Create the chart
+        $('#container').highcharts('StockChart', {
+            chart: {
+                events: {
+                    load: function() {
+                        var chart = this;
+
+                        // Once the chart is loaded, set up a websocket to update the data
+                        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/fallback");
+                        ws.onopen = function() {
+                            console.log("WebSocket opened")
+                        };
+                        ws.onmessage = function(evt) {
+                            var msg = evt.data;
+                            var resp = JSON.parse(msg);
+                            if (resp.succeeded) {
+                                var asOf = resp.asOfSeconds * 1000;
+                                Object.keys(resp.dims.fallback).forEach(function(name) {
+                                    if (name == "total") {
+                                        // ignore total
+                                        return;
+                                    }
+                                    var fallback = resp.dims.fallback[name];
+                                    var bytesGiven = (fallback.counters.bytesGiven || 0);
+                                    var s = seriesByName[name];
+                                    if (!s) {
+                                        var data = [];
+                                        var intervalInSeconds = 30;
+                                        // Add some 0 data leading up to the current value to size the navigator
+                                        for (var i=-1 * 24 * 60 * 60 / intervalInSeconds; i<=0; i++) {
+                                            var date = asOf + i * intervalInSeconds * 1000;
+                                            data.push([date, 0]);
+                                        }
+                                        lastValueByFallback[name] = bytesGiven;
+                                        s = chart.addSeries({
+                                            name: name.substring(9),
+                                            data: data
+                                        })
+                                        seriesByName[name] = s;
+                                    } else {
+                                        var delta = bytesGiven - (lastValueByFallback[name] || 0);
+                                        s.addPoint([asOf, Math.ceil(delta / 1024 / 1024)], true, true);
+                                        lastValueByFallback[name] = bytesGiven;
+                                    }
+                                });
+                            } else {
+                                console.log("Response was unsuccessful", resp["error"]);
+                            }
+                        };
+                        ws.onclose = function() {
+                            // websocket is closed.
+                            console.log("WebSocket closed");
+                        };
+                    }
+                }
+            },
+
+            rangeSelector: {
+                buttons: [{
+                    count: 1,
+                    type: 'minute',
+                    text: '1M'
+                }, {
+                    count: 10,
+                    type: 'minute',
+                    text: '10M'
+                }, {
+                    count: 1,
+                    type: 'hour',
+                    text: '1H'
+                }, {
+                    count: 24,
+                    type: 'hour',
+                    text: '24H'
+                }, {
+                    type: 'all',
+                    text: 'All'
+                }],
+                inputEnabled: false,
+                selected: 0
+            },
+
+            title: {
+                text: 'Change in Megabytes Given by Fallback'
+            },
+
+            exporting: {
+                enabled: false
+            },
+
+            // yAxis: {
+            //     type: 'logarithmic'
+            // },
+
+            series: []
+        });
     });
-    </script>
-    <script type="text/javascript">
-    var project_id = 'lanternctrl';
-    var client_id = '396911652999-50ic79ikvs4nfkgp8ktshsggpr5u8882.apps.googleusercontent.com';
-
-    var config = {
-        'client_id': client_id,
-        'scope': 'https://www.googleapis.com/auth/bigquery.readonly'
-    };
-
-    function runQuery() {
-        var request = gapi.client.bigquery.jobs.query({
-            'projectId': project_id,
-            'timeoutMs': '30000',
-            'query': "SELECT \
-    TIMESTAMP_TO_SEC(_ts) AS ts,\
-    _dim AS fallback, \
-    counter.bytesGiven AS total \
-FROM [statshub.fallback] \
-WHERE \
-    _dim <> 'total' \
-    AND _ts >= DATE_ADD(CURRENT_TIMESTAMP(), -24, \"HOUR\") \
-ORDER BY ts, fallback"
-        });
-
-        request.execute(function(response) {
-            console.log("response", response);
-
-            console.log("Preparing to build data table");
-
-            var start, end = null;
-            // Keeps track of unique fallbacks
-            var fallbacks = {};
-            // Keeps track of mbGiven in every period for every fallback in that period
-            var periods = [];
-            // The current period
-            var period = null;
-            // The last timestamp
-            var lastTs = null;
-
-            var i, j;
-
-            // First build a list of periods with fallbacks in each period.
-            // We have to do this before building the final array because any
-            // given fallback may or may not appear in any given period, and we
-            // need a complete picture of fallbacks and periods before building
-            // our table.
-            for (i = 0; i < response.rows.length; i++) {
-                var row = response.rows[i].f;
-                var ts = row[0].v;
-                var fallback = row[1].v;
-                var mbGiven = Math.round((row[2].v || 0) / 1024 / 1024);
-                if (ts != lastTs) {
-                    period = {
-                        ts: ts
-                    };
-                    periods.push(period);
-                }
-                lastTs = ts;
-                period[fallback] = mbGiven;
-                fallbacks[fallback] = true;
-
-                if (i == 0) {
-                    start = new Date(ts * 1000);
-                }
-                end = new Date(ts * 1000);
-            }
-
-            console.log("Building data table from", fallbacks, periods);
-
-            var data = new google.visualization.DataTable();
-            data.addColumn("datetime", "Timestamp");
-            var fallbacksArray = Object.keys(fallbacks);
-            for (i = 0; i < fallbacksArray.length; i++) {
-                data.addColumn("number", fallbacksArray[i]);
-            }
-            data.addRows(periods.length);
-            for (i = 0; i < periods.length; i++) {
-                if (i > 0) {
-                    // Only start calculating/display data as of the 2nd row
-                    var period = periods[i];
-                    var priorPeriod = periods[i-1];
-                    data.setCell(i, 0, new Date(period.ts * 1000));
-                    for (j = 0; j < fallbacksArray.length; j++) {
-                        fallback = fallbacksArray[j];
-                        var delta = (period[fallback] || 0) - (priorPeriod[fallback] || 0);
-                        console.log("delta", delta)
-                        data.setCell(i, j + 1, delta);
-                    }
-                }
-            }
-
-            console.log("Displaying chart");
-            var chart = new google.visualization.LineChart(
-                document.getElementById('chart'));
-            chart.draw(data, {
-                width: 1200,
-                height: 600,
-                hAxis: {
-                    slantedText: true,
-                    slantedTextAngle: 60
-                },
-                // vAxis: {
-                //     logScale: true
-                // },
-                chartArea: {
-                    width: '60%',
-                    left: 100,
-                },
-                legend: {
-                    textStyle: {
-                        fontSize: 10
-                    }
-                }
-            });
-
-            $("#start").text(start);
-            $("#end").text(end);
-            $("#between").show();
-        });
-    }
-
-    function auth() {
-        gapi.auth.authorize(config, function(result) {
-            gapi.client.load('bigquery', 'v2', runQuery);
-            console.log("Started query");
-        });
-        $('#auth_button').hide();
-    }
     </script>
 </head>
 
 <body>
-    <h2>Megabytes Given per Fallback
-        <span id="between" style="display: none;">between
-            <span id="start"></span>and
-            <span id="end"></span>
-        </span>
-    </h2>
-    <button id="auth_button" onclick="auth();">Log In</button>
-    <button id="query_button" style="display:none;" onclick="runQuery();">Run Query</button>
-    <div id="chart"></div>
+    <div id="container" style="height: 400px; min-width: 310px"></div>
 </body>
 
 </html>
