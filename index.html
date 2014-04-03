@@ -1,6 +1,6 @@
-<!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
-
+<!DOCTYPE html>
 <html>
+<!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
 
 <head>
     <script src="//code.jquery.com/jquery-2.1.0.min.js"></script>
@@ -9,6 +9,7 @@
 
     <script type="text/javascript">
     $(function() {
+        var intervalInSeconds = 30;
 
         Highcharts.setOptions({
             global: {
@@ -16,54 +17,7 @@
             }
         });
 
-        // This will hold our data
-        var seriesByName = {};
-        var lastValueByFallback = {};
-
-        // Create the chart
-        $('#container').highcharts('StockChart', {
-            rangeSelector: {
-                buttons: [{
-                    count: 1,
-                    type: 'minute',
-                    text: '1M'
-                }, {
-                    count: 10,
-                    type: 'minute',
-                    text: '10M'
-                }, {
-                    count: 1,
-                    type: 'hour',
-                    text: '1H'
-                }, {
-                    count: 24,
-                    type: 'hour',
-                    text: '24H'
-                }, {
-                    type: 'all',
-                    text: 'All'
-                }],
-                inputEnabled: false,
-                selected: 0
-            },
-
-            title: {
-                text: 'Fallbacks KBps'
-            },
-
-            exporting: {
-                enabled: false
-            },
-
-            // yAxis: {
-            //     type: 'logarithmic'
-            // },
-
-            series: []
-        });
-
-        var chart = $('#container').highcharts();
-        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/fallback");
+        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/");
         ws.onopen = function() {
             console.log("WebSocket opened")
         };
@@ -72,33 +26,8 @@
             var resp = JSON.parse(msg);
             if (resp.succeeded) {
                 var asOf = resp.asOfSeconds * 1000;
-                Object.keys(resp.dims.fallback).forEach(function(name) {
-                    if (name == "total") {
-                        // ignore total
-                        return;
-                    }
-                    var fallback = resp.dims.fallback[name];
-                    var bytesGiven = (fallback.counters.bytesGiven || 0);
-                    var s = seriesByName[name];
-                    var intervalInSeconds = 30;
-                    if (!s) {
-                        var data = [];
-                        // Add some 0 data leading up to the current value to size the navigator
-                        for (var i = -1 * 24 * 60 * 60 / intervalInSeconds; i <= 0; i++) {
-                            var date = asOf + i * intervalInSeconds * 1000;
-                            data.push([date, 0]);
-                        }
-                        lastValueByFallback[name] = bytesGiven;
-                        s = chart.addSeries({
-                            name: name.substring(9),
-                            data: data
-                        })
-                        seriesByName[name] = s;
-                    } else {
-                        var delta = bytesGiven - (lastValueByFallback[name] || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / intervalInSeconds)], true, true);
-                        lastValueByFallback[name] = bytesGiven;
-                    }
+                charts.forEach(function(update) {
+                    update(asOf, resp.dims);
                 });
             } else {
                 console.log("Response was unsuccessful", resp["error"]);
@@ -108,12 +37,135 @@
             // websocket is closed.
             console.log("WebSocket closed");
         };
+
+        // Put your charts here
+        var charts = [
+            make('kbpsFallbacks', 'KBps Fallbacks', function(context, asOf, dims) {
+                Object.keys(dims.fallback).forEach(function(name) {
+                    if (name == "total") {
+                        // ignore total
+                        return;
+                    }
+                    var fallback = dims.fallback[name];
+                    // Remove leading "instance_"
+                    name = name.substring(9)
+                    var bytesGiven = (fallback.counters.bytesGiven || 0);
+                    var s = context.getSeries(asOf, name);
+                    var priorValue = context.priorValues[name];
+                    if (typeof(priorValue) !== "undefined") {
+                        var delta = bytesGiven - (priorValue || 0);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / intervalInSeconds)], true, true);
+                    }
+                    context.priorValues[name] = bytesGiven;
+                });
+            }),
+
+            make('usersOnline', 'Users Online by Country', function(context, asOf, dims) {
+                Object.keys(dims.country).forEach(function(name) {
+                    if (name == "total") {
+                        // ignore total
+                        return;
+                    }
+                    if (!(name in {cn:true, ir: true, us: true})) {
+                        return;
+                    }
+                    var country = dims.country[name];
+                    var online = (country.gauges.userOnline || 0);
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, online], true, true);
+                });
+            }),
+
+
+
+        ];
+
+        // Constructs a new chart
+
+        function make(id, title, onData) {
+            $('#' + id).highcharts('StockChart', {
+                rangeSelector: {
+                    buttons: [{
+                        count: 1,
+                        type: 'minute',
+                        text: '1M'
+                    }, {
+                        count: 10,
+                        type: 'minute',
+                        text: '10M'
+                    }, {
+                        count: 1,
+                        type: 'hour',
+                        text: '1H'
+                    }, {
+                        count: 24,
+                        type: 'hour',
+                        text: '24H'
+                    }, {
+                        type: 'all',
+                        text: 'All'
+                    }],
+                    inputEnabled: false,
+                    selected: 1
+                },
+
+                title: {
+                    text: title
+                },
+
+                exporting: {
+                    enabled: false
+                },
+
+                series: []
+            });
+
+            var chart = $('#' + id).highcharts();
+            var seriesByName = {};
+
+            var context = {
+                priorValues: {},
+                getSeries: function(asOf, name) {
+                    var s = seriesByName[name];
+                    if (!s) {
+                        var data = [];
+                        // Add some 0 data leading up to the current value to size the navigator
+                        for (var i = -1 * 24 * 60 * 60 / intervalInSeconds; i <= 0; i++) {
+                            var date = asOf + i * intervalInSeconds * 1000;
+                            data.push([date, 0]);
+                        }
+                        s = chart.addSeries({
+                            name: name,
+                            data: data
+                        })
+                        seriesByName[name] = s;
+                    }
+                    return s;
+                }
+            }
+
+            return function(asOf, dims) {
+                onData(context, asOf, dims);
+            }
+        }
     });
     </script>
+
+    <style type="text/css">
+    .chart {
+        width: 500px;
+        height: 300px;
+        float: left;
+        border: 1px solid;
+        margin-left: 10px;
+        margin-top: 10px;
+    }
+    </style>
 </head>
 
 <body>
-    <div id="container" style="height: 400px; min-width: 310px"></div>
+    <div id="kbpsFallbacks" class="chart"></div>
+    <div id="usersOnline" class="chart"></div>
 </body>
 
 </html>
