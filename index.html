@@ -10,7 +10,14 @@
     <script type="text/javascript">
     $(function() {
         var INTERVAL_IN_SECONDS = 30;
-        var SHOWN_COUNTRIES = {cn:true, ir: true, us: true, total: true};
+        var SHOWN_COUNTRIES = {
+            cn: true,
+            ir: true,
+            us: true,
+            total: true
+        };
+
+        var redrawAfterUpdate = false;
 
         Highcharts.setOptions({
             global: {
@@ -23,6 +30,10 @@
             console.log("WebSocket opened")
         };
         ws.onmessage = function(evt) {
+            // Start redrawing on update after 3 seconds
+            setTimeout(function() {
+                redrawAfterUpdate = true;
+            }, 3000);
             var msg = evt.data;
             var resp = JSON.parse(msg);
             if (resp.succeeded) {
@@ -55,10 +66,14 @@
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], true, true);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], false, false);
                     }
                     context.priorValues[name] = bytesGiven;
                 });
+            }, {
+                yAxis: {
+                    type: 'logarithmic',
+                }
             }),
 
             make('kbpsPeers', 'KBps Peers', function(context, asOf, dims) {
@@ -73,7 +88,7 @@
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], true, true);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], false, false);
                     }
                     context.priorValues[name] = bytesGiven;
                 });
@@ -87,7 +102,7 @@
                     var country = dims.country[name];
                     var online = (country.gauges.userOnline || 0);
                     var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, online], true, true);
+                    s.addPoint([asOf, online], false, false);
                 });
             }),
 
@@ -97,8 +112,8 @@
 
         // Constructs a new chart
 
-        function make(id, title, onData) {
-            $('#' + id).highcharts('StockChart', {
+        function make(id, title, onData, options) {
+            var fullOptions = $.extend({
                 rangeSelector: {
                     buttons: [{
                         count: 1,
@@ -133,7 +148,9 @@
                 },
 
                 series: []
-            });
+            }, options)
+
+            $('#' + id).highcharts('StockChart', fullOptions);
 
             var chart = $('#' + id).highcharts();
             var seriesByName = {};
@@ -143,15 +160,9 @@
                 getSeries: function(asOf, name) {
                     var s = seriesByName[name];
                     if (!s) {
-                        var data = [];
-                        // Add some 0 data leading up to the current value to size the navigator
-                        for (var i = -1 * 24 * 60 * 60 / INTERVAL_IN_SECONDS; i <= 0; i++) {
-                            var date = asOf + i * INTERVAL_IN_SECONDS * 1000;
-                            data.push([date, 0]);
-                        }
                         s = chart.addSeries({
                             name: name,
-                            data: data
+                            data: []
                         })
                         seriesByName[name] = s;
                     }
@@ -161,6 +172,9 @@
 
             return function(asOf, dims) {
                 onData(context, asOf, dims);
+                if (redrawAfterUpdate) {
+                    chart.redraw();
+                }
             }
         }
     });
