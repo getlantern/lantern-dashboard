@@ -17,8 +17,6 @@
             total: true
         };
 
-        var redrawAfterUpdate = false;
-
         Highcharts.setOptions({
             global: {
                 useUTC: false
@@ -30,10 +28,6 @@
             console.log("WebSocket opened")
         };
         ws.onmessage = function(evt) {
-            // Start redrawing on update after 3 seconds
-            setTimeout(function() {
-                redrawAfterUpdate = true;
-            }, 3000);
             var msg = evt.data;
             var resp = JSON.parse(msg);
             if (resp.succeeded) {
@@ -172,9 +166,7 @@
 
             return function(asOf, dims) {
                 onData(context, asOf, dims);
-                if (redrawAfterUpdate) {
-                    chart.redraw();
-                }
+                chart.redraw();
             }
         }
     });
