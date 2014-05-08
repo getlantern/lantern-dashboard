@@ -47,23 +47,35 @@
         // Put your charts here
         var charts = [
             make('kbpsFallbacks', 'KBps Fallbacks', function(context, asOf, dims) {
+                var points = [];
                 Object.keys(dims.fallback).forEach(function(name) {
-                    if (name == "total") {
-                        // ignore total
-                        return;
-                    }
                     var fallback = dims.fallback[name];
                     // Remove leading "instance_"
-                    name = name.substring(9)
+                    name = name == "total" ? name : name.substring(9)
                     var bytesGiven = (fallback.counters.bytesGiven || 0);
-                    var s = context.getSeries(asOf, name);
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue.value || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000)], false, false);
+                        var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
+                        // Filter out fallbacks that are basically doing no work
+                        if (deltaKBps > 10) {
+                            points.push({name: name, delta: deltaKBps});
+                        }
                     }
                     context.priorValues[name] = {asOf: asOf, value: bytesGiven};
                 });
+
+                // Sort points based on size of delta, in order to get highest
+                // valued names to show up first on legend.
+                points.sort(function(a, b) {
+                    return b.delta - a.delta; 
+                });
+
+                for (var i=0; i<points.length; i++) {
+                    var point = points[i];
+                    var s = context.getSeries(asOf, point.name);
+                    s.addPoint([asOf, point.delta], false, false);
+                }
             }, {
                 yAxis: {
                     type: 'logarithmic',
