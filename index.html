@@ -1,3 +1,4 @@
+<meta charset="utf-8"> 
 <!DOCTYPE html>
 <html>
 <!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
@@ -30,20 +31,20 @@
             rangeSelector: {
                 buttons: [{
                     count: 1,
-                    type: 'minute',
-                    text: '1M'
-                }, {
-                    count: 10,
-                    type: 'minute',
-                    text: '10M'
+                    type: 'hour',
+                    text: 'Hr'
                 }, {
                     count: 1,
-                    type: 'hour',
-                    text: '1H'
+                    type: 'Day',
+                    text: 'Day'
                 }, {
-                    count: 24,
-                    type: 'hour',
-                    text: '24H'
+                    count: 1,
+                    type: 'week',
+                    text: 'Wk'
+                }, {
+                    count: 1,
+                    type: 'month',
+                    text: 'Mo'
                 }, {
                     type: 'all',
                     text: 'All'
