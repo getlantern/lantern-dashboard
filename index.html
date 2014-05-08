@@ -111,6 +111,49 @@
     }
 
     $(function() {
+
+        makeChart(
+            'kbpsGiven',
+            'KBps Given',
+            'country',
+            'total',
+            'counter',
+            'bytesGiven',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    var bytesGiven = values[name];
+                    var priorValue = context.priorValues[name];
+                    if (typeof(priorValue) !== "undefined") {
+                        var delta = bytesGiven - (priorValue.value || 0);
+                        var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
+                        var s = context.getSeries(asOf, name);
+                        s.addPoint([asOf, deltaKBps], false, false);
+                    }
+                    context.priorValues[name] = {
+                        asOf: asOf,
+                        value: bytesGiven
+                    };
+                });
+            });
+
+        makeChart(
+            'usersOnline',
+            'Users Online by Country',
+            'country',
+            '*',
+            'gauge',
+            'userOnline',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    if (!(name in SHOWN_COUNTRIES)) {
+                        return;
+                    }
+                    var online = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, online], false, false);
+                });
+            });
+
         makeChart(
             'kbpsFallbacks',
             'KBps Fallbacks',
@@ -187,25 +230,6 @@
                 });
             });
 
-
-        makeChart(
-            'usersOnline',
-            'Users Online by Country',
-            'country',
-            '*',
-            'gauge',
-            'userOnline',
-            function(context, asOf, values) {
-            Object.keys(values).forEach(function(name) {
-                if (!(name in SHOWN_COUNTRIES)) {
-                    return;
-                }
-                var online = values[name] || 0;
-                var s = context.getSeries(asOf, name);
-                s.addPoint([asOf, online], false, false);
-            });
-        });
-
     }); // end $(function() {
     </script>
 
@@ -223,9 +247,10 @@
 </head>
 
 <body>
+    <div id="kbpsGiven" class="chart"></div>
+    <div id="usersOnline" class="chart"></div>
     <div id="kbpsFallbacks" class="chart"></div>
     <div id="kbpsPeers" class="chart"></div>
-    <div id="usersOnline" class="chart"></div>
 </body>
 
 </html>
