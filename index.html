@@ -1,9 +1,9 @@
-<meta charset="utf-8"> 
 <!DOCTYPE html>
 <html>
 <!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
 
 <head>
+    <meta charset="utf-8"> 
     <script src="//code.jquery.com/jquery-2.1.0.min.js"></script>
     <script src="//code.highcharts.com/stock/highstock.js"></script>
     <script src="//code.highcharts.com/stock/modules/exporting.js"></script>
@@ -91,7 +91,7 @@
             var resp = JSON.parse(msg);
             if (resp.succeeded) {
                 if (!chart) {
-                    // Lazily make the charge once we have some data
+                    // Lazily make the chart once we have some data
                     $('#' + id).highcharts('StockChart', fullOptions);
                     chart = $('#' + id).highcharts();
                 }
@@ -124,9 +124,11 @@
                 Object.keys(values).forEach(function(name) {
                     var bytesGiven = values[name];
                     var priorValue = context.priorValues[name];
-                    if (typeof(priorValue) !== "undefined") {
+                    // Ignore the first period, since we have no baseline against which to calculate a delta
+                    if (typeof priorValue !== "undefined") {
                         var delta = bytesGiven - (priorValue.value || 0);
-                        var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
+                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         var s = context.getSeries(asOf, name);
                         s.addPoint([asOf, deltaKBps], false, false);
                     }
@@ -164,14 +166,17 @@
             'bytesGiven',
             function(context, asOf, values) {
                 var points = [];
+                
                 Object.keys(values).forEach(function(name) {
                     var bytesGiven = values[name];
                     // Remove leading "instance_"
                     name = name == "total" ? name : name.substring(9)
                     var priorValue = context.priorValues[name];
-                    if (typeof(priorValue) !== "undefined") {
+                    // Ignore the first period, since we have no baseline against which to calculate a delta
+                    if (typeof priorValue !== "undefined") {
                         var delta = bytesGiven - (priorValue.value || 0);
-                        var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
+                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         // Filter out fallbacks that are basically doing no work
                         if (deltaKBps > 10) {
                             points.push({
@@ -219,9 +224,11 @@
                     var bytesGiven = values[name] || 0;
                     var s = context.getSeries(asOf, name);
                     var priorValue = context.priorValues[name];
-                    if (typeof(priorValue) !== "undefined") {
+                    // Ignore the first period, since we have no baseline against which to calculate a delta
+                    if (typeof priorValue !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
-                        var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
+                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         s.addPoint([asOf, deltaKBps], false, false);
                     }
                     context.priorValues[name] = {
