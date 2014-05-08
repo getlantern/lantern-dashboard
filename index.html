@@ -59,10 +59,10 @@
                     var s = context.getSeries(asOf, name);
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
-                        var delta = bytesGiven - (priorValue || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], false, false);
+                        var delta = bytesGiven - (priorValue.value || 0);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000)], false, false);
                     }
-                    context.priorValues[name] = bytesGiven;
+                    context.priorValues[name] = {asOf: asOf, value: bytesGiven};
                 });
             }, {
                 yAxis: {
@@ -82,9 +82,9 @@
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / INTERVAL_IN_SECONDS)], false, false);
+                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000)], false, false);
                     }
-                    context.priorValues[name] = bytesGiven;
+                    context.priorValues[name] = {asOf: asOf, value: bytesGiven};
                 });
             }),
 
