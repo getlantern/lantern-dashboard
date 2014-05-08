@@ -8,22 +8,80 @@
     <script src="//code.highcharts.com/stock/modules/exporting.js"></script>
 
     <script type="text/javascript">
-    $(function() {
-        var INTERVAL_IN_SECONDS = 30;
-        var SHOWN_COUNTRIES = {
-            cn: true,
-            ir: true,
-            us: true,
-            total: true
-        };
+    var SHOWN_COUNTRIES = {
+        cn: true,
+        ir: true,
+        us: true,
+        total: true
+    };
 
-        Highcharts.setOptions({
-            global: {
-                useUTC: false
+    Highcharts.setOptions({
+        global: {
+            useUTC: false
+        }
+    });
+
+    /**
+     * Constructs a new chart and starts reading data
+     */
+
+    function makeChart(id, title, dimName, dimKey, statType, statName, onData, options) {
+        var fullOptions = $.extend({
+            rangeSelector: {
+                buttons: [{
+                    count: 1,
+                    type: 'minute',
+                    text: '1M'
+                }, {
+                    count: 10,
+                    type: 'minute',
+                    text: '10M'
+                }, {
+                    count: 1,
+                    type: 'hour',
+                    text: '1H'
+                }, {
+                    count: 24,
+                    type: 'hour',
+                    text: '24H'
+                }, {
+                    type: 'all',
+                    text: 'All'
+                }],
+                inputEnabled: false,
+                selected: 1
+            },
+
+            title: {
+                text: title
+            },
+
+            exporting: {
+                enabled: false
+            },
+
+            series: []
+        }, options)
+
+        var chart = null;
+        var seriesByName = {};
+
+        var context = {
+            priorValues: {},
+            getSeries: function(asOf, name) {
+                var s = seriesByName[name];
+                if (!s) {
+                    s = chart.addSeries({
+                        name: name,
+                        data: []
+                    })
+                    seriesByName[name] = s;
+                }
+                return s;
             }
-        });
+        }
 
-        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/");
+        var ws = new WebSocket("ws://localhost:9000/stream/" + dimName + "/" + dimKey + "/" + statType + "/" + statName);
         ws.onopen = function() {
             console.log("WebSocket opened")
         };
@@ -31,10 +89,17 @@
             var msg = evt.data;
             var resp = JSON.parse(msg);
             if (resp.succeeded) {
-                var asOf = resp.asOfSeconds * 1000;
-                charts.forEach(function(update) {
-                    update(asOf, resp.dims);
-                });
+                if (!chart) {
+                    // Lazily make the charge once we have some data
+                    $('#' + id).highcharts('StockChart', fullOptions);
+                    chart = $('#' + id).highcharts();
+                }
+                for (var i = 0; i < resp.intervals.length; i++) {
+                    var interval = resp.intervals[i];
+                    var asOf = interval.asOfSeconds * 1000;
+                    onData(context, asOf, interval.values);
+                }
+                chart.redraw();
             } else {
                 console.log("Response was unsuccessful", resp["error"]);
             }
@@ -43,35 +108,47 @@
             // websocket is closed.
             console.log("WebSocket closed");
         };
+    }
 
-        // Put your charts here
-        var charts = [
-            make('kbpsFallbacks', 'KBps Fallbacks', function(context, asOf, dims) {
+    $(function() {
+        makeChart(
+            'kbpsFallbacks',
+            'KBps Fallbacks',
+            'fallback',
+            '*',
+            'counter',
+            'bytesGiven',
+            function(context, asOf, values) {
                 var points = [];
-                Object.keys(dims.fallback).forEach(function(name) {
-                    var fallback = dims.fallback[name];
+                Object.keys(values).forEach(function(name) {
+                    var bytesGiven = values[name];
                     // Remove leading "instance_"
                     name = name == "total" ? name : name.substring(9)
-                    var bytesGiven = (fallback.counters.bytesGiven || 0);
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue.value || 0);
                         var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
                         // Filter out fallbacks that are basically doing no work
                         if (deltaKBps > 10) {
-                            points.push({name: name, delta: deltaKBps});
+                            points.push({
+                                name: name,
+                                delta: deltaKBps
+                            });
                         }
                     }
-                    context.priorValues[name] = {asOf: asOf, value: bytesGiven};
+                    context.priorValues[name] = {
+                        asOf: asOf,
+                        value: bytesGiven
+                    };
                 });
 
                 // Sort points based on size of delta, in order to get highest
                 // valued names to show up first on legend.
                 points.sort(function(a, b) {
-                    return b.delta - a.delta; 
+                    return b.delta - a.delta;
                 });
 
-                for (var i=0; i<points.length; i++) {
+                for (var i = 0; i < points.length; i++) {
                     var point = points[i];
                     var s = context.getSeries(asOf, point.name);
                     s.addPoint([asOf, point.delta], false, false);
@@ -80,108 +157,56 @@
                 yAxis: {
                     type: 'logarithmic',
                 }
-            }),
+            });
 
-            make('kbpsPeers', 'KBps Peers', function(context, asOf, dims) {
-                Object.keys(dims.country).forEach(function(name) {
+        makeChart(
+            'kbpsPeers',
+            'KBps Peers',
+            'country',
+            '*',
+            'counter',
+            'bytesGivenByPeer',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
                     if (!(name in SHOWN_COUNTRIES)) {
-                        // ignore everything except total
+                        // Only show the countries we're interested in
                         return;
                     }
-                    var country = dims.country[name];
-                    var bytesGiven = (country.counters.bytesGivenByPeer || 0);
+                    var bytesGiven = values[name] || 0;
                     var s = context.getSeries(asOf, name);
                     var priorValue = context.priorValues[name];
                     if (typeof(priorValue) !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
-                        s.addPoint([asOf, Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000)], false, false);
+                        var deltaKBps = Math.ceil(delta / 1024.0 / (asOf - priorValue.asOf) * 1000);
+                        s.addPoint([asOf, deltaKBps], false, false);
                     }
-                    context.priorValues[name] = {asOf: asOf, value: bytesGiven};
+                    context.priorValues[name] = {
+                        asOf: asOf,
+                        value: bytesGiven
+                    };
                 });
-            }),
-
-            make('usersOnline', 'Users Online by Country', function(context, asOf, dims) {
-                Object.keys(dims.country).forEach(function(name) {
-                    if (!(name in SHOWN_COUNTRIES)) {
-                        return;
-                    }
-                    var country = dims.country[name];
-                    var online = (country.gauges.userOnline || 0);
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, online], false, false);
-                });
-            }),
+            });
 
 
-
-        ];
-
-        // Constructs a new chart
-
-        function make(id, title, onData, options) {
-            var fullOptions = $.extend({
-                rangeSelector: {
-                    buttons: [{
-                        count: 1,
-                        type: 'minute',
-                        text: '1M'
-                    }, {
-                        count: 10,
-                        type: 'minute',
-                        text: '10M'
-                    }, {
-                        count: 1,
-                        type: 'hour',
-                        text: '1H'
-                    }, {
-                        count: 24,
-                        type: 'hour',
-                        text: '24H'
-                    }, {
-                        type: 'all',
-                        text: 'All'
-                    }],
-                    inputEnabled: false,
-                    selected: 1
-                },
-
-                title: {
-                    text: title
-                },
-
-                exporting: {
-                    enabled: false
-                },
-
-                series: []
-            }, options)
-
-            $('#' + id).highcharts('StockChart', fullOptions);
-
-            var chart = $('#' + id).highcharts();
-            var seriesByName = {};
-
-            var context = {
-                priorValues: {},
-                getSeries: function(asOf, name) {
-                    var s = seriesByName[name];
-                    if (!s) {
-                        s = chart.addSeries({
-                            name: name,
-                            data: []
-                        })
-                        seriesByName[name] = s;
-                    }
-                    return s;
+        makeChart(
+            'usersOnline',
+            'Users Online by Country',
+            'country',
+            '*',
+            'gauge',
+            'userOnline',
+            function(context, asOf, values) {
+            Object.keys(values).forEach(function(name) {
+                if (!(name in SHOWN_COUNTRIES)) {
+                    return;
                 }
-            }
+                var online = values[name] || 0;
+                var s = context.getSeries(asOf, name);
+                s.addPoint([asOf, online], false, false);
+            });
+        });
 
-            return function(asOf, dims) {
-                onData(context, asOf, dims);
-                chart.redraw();
-            }
-        }
-    });
+    }); // end $(function() {
     </script>
 
     <style type="text/css">
@@ -192,6 +217,7 @@
         border: 1px solid;
         margin-left: 10px;
         margin-top: 10px;
+        background:url(spinner.gif) center center no-repeat;
     }
     </style>
 </head>
