@@ -82,7 +82,7 @@
             }
         }
 
-        var ws = new WebSocket("ws://localhost:9000/stream/" + dimName + "/" + dimKey + "/" + statType + "/" + statName);
+        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/" + dimName + "/" + dimKey + "/" + statType + "/" + statName);
         ws.onopen = function() {
             console.log("WebSocket opened")
         };
