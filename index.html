@@ -128,7 +128,6 @@
             'counter',
             'bytesGiven',
             function(context, asOf, values) {
-                console.log(asOf, values.total);
                 Object.keys(values).forEach(function(name) {
                     var bytesGiven = values[name];
                     var priorValue = context.priorValues[name];
