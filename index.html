@@ -224,6 +224,24 @@
             });
 
         makeChart(
+            'usersOnlineEver',
+            'Users Ever Online by Country',
+            'country',
+            '*',
+            'gauge',
+            'userOnlineEver',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    if (!(name in SHOWN_COUNTRIES)) {
+                        return;
+                    }
+                    var online = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, online], false, false);
+                });
+            });
+
+        makeChart(
             'kbpsPeers',
             'KBps Given (Peers)',
             'country',
@@ -277,6 +295,7 @@
     <div id="kbpsGiven" class="chart"></div>
     <div id="usersOnline" class="chart"></div>
     <div id="kbpsFallbacks" class="chart"></div>
+    <div id="usersOnlineEver" class="chart"></div>
     <div id="kbpsPeers" class="chart"></div>
 </body>
 
