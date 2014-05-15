@@ -28,6 +28,8 @@
 
     function makeChart(id, title, dimName, dimKey, statType, statName, onData, options) {
         var fullOptions = $.extend({
+            type: "spline",
+
             rangeSelector: {
                 buttons: [{
                     count: 1,
@@ -59,6 +61,11 @@
 
             exporting: {
                 enabled: false
+            },
+
+            xAxis: {
+                type: "datetime",
+                ordinal: false,
             },
 
             series: []
@@ -121,6 +128,7 @@
             'counter',
             'bytesGiven',
             function(context, asOf, values) {
+                console.log(asOf, values.total);
                 Object.keys(values).forEach(function(name) {
                     var bytesGiven = values[name];
                     var priorValue = context.priorValues[name];
@@ -128,6 +136,10 @@
                     if (typeof priorValue !== "undefined") {
                         var delta = bytesGiven - (priorValue.value || 0);
                         var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        if (secondsElapsed == 0) {
+                            // Sometimes we get multiple readings for the same time period - ignore the latest
+                            return;
+                        }
                         var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         var s = context.getSeries(asOf, name);
                         s.addPoint([asOf, deltaKBps], false, false);
@@ -176,6 +188,10 @@
                     if (typeof priorValue !== "undefined") {
                         var delta = bytesGiven - (priorValue.value || 0);
                         var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        if (secondsElapsed == 0) {
+                            // Sometimes we get multiple readings for the same time period - ignore the latest
+                            return;
+                        }
                         var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         // Filter out fallbacks that are basically doing no work
                         if (deltaKBps > 10) {
@@ -228,6 +244,10 @@
                     if (typeof priorValue !== "undefined") {
                         var delta = bytesGiven - (priorValue || 0);
                         var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        if (secondsElapsed == 0) {
+                            // Sometimes we get multiple readings for the same time period - ignore the latest
+                            return;
+                        }
                         var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         s.addPoint([asOf, deltaKBps], false, false);
                     }
