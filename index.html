@@ -224,6 +224,21 @@
             });
 
         makeChart(
+            'gigabytesGiven',
+            'Gigabytes Given',
+            'country',
+            'total',
+            'counter',
+            'bytesGiven',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    var bytesGiven = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, bytesGiven / 1024 / 1024 / 1024], false, false);
+                });
+            });
+
+        makeChart(
             'usersOnlineEver',
             'Users Ever Online by Country',
             'country',
@@ -275,6 +290,21 @@
                 });
             });
 
+        makeChart(
+            'usersInvited',
+            'Users Invited',
+            'country',
+            'total',
+            'counter',
+            'usersInvited',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    var invited = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, invited], false, false);
+                });
+            });
+
     }); // end $(function() {
     </script>
 
@@ -294,8 +324,10 @@
 <body>
     <div id="kbpsGiven" class="chart"></div>
     <div id="usersOnline" class="chart"></div>
-    <div id="kbpsFallbacks" class="chart"></div>
+    <div id="gigabytesGiven" class="chart"></div>
     <div id="usersOnlineEver" class="chart"></div>
+    <div id="kbpsFallbacks" class="chart"></div>
+    <div id="usersInvited" class="chart"></div>
     <div id="kbpsPeers" class="chart"></div>
 </body>
 
