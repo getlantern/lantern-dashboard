@@ -18,6 +18,7 @@
 
     var INVITE_COUNTRIES = {
         lantern: true,
+        users: true,
         total: true
     };
 
@@ -37,12 +38,12 @@
 
             rangeSelector: {
                 buttons: [{
-                    count: 1,
-                    type: 'hour',
+                    count: 60,
+                    type: 'minute',
                     text: 'Hr'
                 }, {
                     count: 1,
-                    type: 'Day',
+                    type: 'day',
                     text: 'Day'
                 }, {
                     count: 1,
@@ -295,6 +296,16 @@
             'counter',
             'usersInvited',
             function(context, asOf, values) {
+                // Calculate # invited by users
+                var numberByUsers = 0;
+                Object.keys(values).forEach(function(name) {
+                    if (name != "lantern" && name != "total") {
+                        numberByUsers += values[name];
+                    }
+                });
+                values["users"] = numberByUsers;
+
+                // Update chart
                 Object.keys(values).forEach(function(name) {
                     if (!(name in INVITE_COUNTRIES)) {
                         return;
