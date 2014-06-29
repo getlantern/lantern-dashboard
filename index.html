@@ -13,6 +13,7 @@
         cn: true,
         ir: true,
         us: true,
+        sp: true,
         total: true
     };
 
@@ -171,6 +172,75 @@
             });
 
         makeChart(
+            'gigabytesGiven',
+            'Gigabytes Given',
+            'country',
+            'total',
+            'counter',
+            'bytesGiven',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    var bytesGiven = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, bytesGiven / 1024 / 1024 / 1024], false, false);
+                });
+            }, {
+                yAxis: {
+                    type: 'logarithmic',
+                }
+            });
+
+        makeChart(
+            'usersOnlineEver',
+            'Users Ever Online by Country',
+            'country',
+            '*',
+            'gauge',
+            'userOnlineEver',
+            function(context, asOf, values) {
+                Object.keys(values).forEach(function(name) {
+                    if (!(name in SHOWN_COUNTRIES)) {
+                        return;
+                    }
+                    var online = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    s.addPoint([asOf, online], false, false);
+                });
+            });
+
+        makeChart(
+            'kbpsFlashlight',
+            'KBps Given (Flashlight)',
+            'country',
+            '*',
+            'counter',
+            'bytesGivenByFlashlight',
+            function(context, asOf, values) {
+                console.log(asOf, values.sp);
+                Object.keys(values).forEach(function(name) {
+                    if (!(name in SHOWN_COUNTRIES)) {
+                        // Only show the countries we're interested in
+                        return;
+                    }
+                    var bytesGiven = values[name] || 0;
+                    var s = context.getSeries(asOf, name);
+                    var priorValue = context.priorValues[name];
+                    // Ignore the first period, since we have no baseline against which to calculate a delta
+                    if (typeof priorValue !== "undefined") {
+                        var delta = bytesGiven - (priorValue.value || 0);
+                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
+                        console.log(delta, secondsElapsed, deltaKBps);
+                        s.addPoint([asOf, deltaKBps], false, false);
+                    }
+                    context.priorValues[name] = {
+                        asOf: asOf,
+                        value: bytesGiven
+                    };
+                });
+            });
+
+        makeChart(
             'kbpsFallbacks',
             'KBps Given (Fallbacks)',
             'fallback',
@@ -222,43 +292,6 @@
             });
 
         makeChart(
-            'gigabytesGiven',
-            'Gigabytes Given',
-            'country',
-            'total',
-            'counter',
-            'bytesGiven',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    var bytesGiven = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, bytesGiven / 1024 / 1024 / 1024], false, false);
-                });
-            }, {
-                yAxis: {
-                    type: 'logarithmic',
-                }
-            });
-
-        makeChart(
-            'usersOnlineEver',
-            'Users Ever Online by Country',
-            'country',
-            '*',
-            'gauge',
-            'userOnlineEver',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    if (!(name in SHOWN_COUNTRIES)) {
-                        return;
-                    }
-                    var online = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, online], false, false);
-                });
-            });
-
-        makeChart(
             'kbpsPeers',
             'KBps Given (Peers)',
             'country',
@@ -276,7 +309,7 @@
                     var priorValue = context.priorValues[name];
                     // Ignore the first period, since we have no baseline against which to calculate a delta
                     if (typeof priorValue !== "undefined") {
-                        var delta = bytesGiven - (priorValue || 0);
+                        var delta = bytesGiven - (priorValue.value || 0);
                         var secondsElapsed = (asOf - priorValue.asOf) / 1000;
                         var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
                         s.addPoint([asOf, deltaKBps], false, false);
@@ -337,8 +370,9 @@
     <div id="usersOnline" class="chart"></div>
     <div id="gigabytesGiven" class="chart"></div>
     <div id="usersOnlineEver" class="chart"></div>
-    <div id="kbpsFallbacks" class="chart"></div>
+    <div id="kbpsFlashlight" class="chart"></div>
     <div id="usersInvited" class="chart"></div>
+    <div id="kbpsFallbacks" class="chart"></div>
     <div id="kbpsPeers" class="chart"></div>
 </body>
 
