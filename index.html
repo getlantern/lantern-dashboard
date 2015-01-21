@@ -216,7 +216,6 @@
             'counter',
             'bytesGivenByFlashlight',
             function(context, asOf, values) {
-                console.log(asOf, values.sp);
                 Object.keys(values).forEach(function(name) {
                     if (!(name in SHOWN_COUNTRIES)) {
                         // Only show the countries we're interested in
@@ -230,7 +229,6 @@
                         var delta = bytesGiven - (priorValue.value || 0);
                         var secondsElapsed = (asOf - priorValue.asOf) / 1000;
                         var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
-                        console.log(delta, secondsElapsed, deltaKBps);
                         s.addPoint([asOf, deltaKBps], false, false);
                     }
                     context.priorValues[name] = {
