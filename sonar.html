@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
+
+<head>
+<meta charset="utf-8"> 
+<style type="text/css">
+.chart {
+  width: 500px;
+  height: 300px;
+  float: left;
+  border: 1px solid;
+  margin-left: 10px;
+  margin-top: 10px;
+  background:url(spinner.gif) center center no-repeat;
+}
+</style>
+</head>
+
+<body>
+<div id="container"></div>
+<!--<div id="cn-facebook-2.0.0-loadTime" class="chart"></div>
+<div id="cn-facebook-2.0.0-totalSize" class="chart"></div>-->
+
+<script src="jquery-2.1.0.min.js"></script>
+<script src="highstock.js"></script>
+<script src="exporting.js"></script>
+
+<script type="text/javascript">
+Highcharts.setOptions({
+  global: {
+    useUTC: false
+  }
+});
+
+var defaultOptions = {
+  type: "spline",
+
+  rangeSelector: {
+    buttons: [{
+      count: 60,
+      type: 'minute',
+      text: 'Hr'
+    }, {
+      count: 1,
+      type: 'day',
+      text: 'Day'
+    }, {
+      count: 1,
+      type: 'week',
+      text: 'Wk'
+    }, {
+      count: 1,
+      type: 'month',
+      text: 'Mo'
+    }, {
+      type: 'all',
+      text: 'All'
+    }],
+    inputEnabled: false,
+    selected: 1
+  },
+
+  exporting: {
+    enabled: false
+  },
+
+  xAxis: {
+    type: "datetime",
+    ordinal: false,
+  },
+
+  series: []
+};
+
+var charts = {};
+var getChart = function(id, name){
+  if (!charts[id]) {
+    // Lazily make the chart once we have some data
+    var options = $.extend({}, defaultOptions, {title: {text: name}});
+    elem = $('<div>', {id: id, class: "chart"});
+    elem.appendTo($('#container'));
+    elem.highcharts('StockChart', options);
+    charts[id] = elem.highcharts();
+  }
+  return charts[id]
+}
+/**
+ * Constructs a new chart and starts reading data
+ */
+
+function makeChart(dimName, dimKey, statType, statName, onData) {
+  var seriesByName = {};
+
+  var context = {
+    priorValues: {},
+    getSeries: function(asOf, id, name) {
+      var s = seriesByName[name];
+      if (!s) {
+        s = charts[id].addSeries({
+          name: name,
+          data: []
+        })
+        seriesByName[name] = s;
+      }
+      return s;
+    }
+  }
+
+  var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/" + dimName + "/" + dimKey + "/" + statType + "/" + statName);
+  ws.onopen = function() {
+    console.log("WebSocket opened")
+  };
+  ws.onmessage = function(evt) {
+    var msg = evt.data;
+    var resp = JSON.parse(msg);
+    if (!resp.succeeded) {
+      console.log("Response was unsuccessful", resp["error"]);
+      return;
+    }
+    for (var i = 0; i < resp.intervals.length; i++) {
+      var interval = resp.intervals[i];
+      var asOf = interval.asOfSeconds * 1000;
+      onData(context, asOf, interval.values);
+    }
+  };
+  ws.onclose = function() {
+    // websocket is closed.
+    console.log("WebSocket closed");
+  };
+}
+
+$(function() {
+
+  makeChart(
+    'sonar',
+    '*',
+    'counter',
+    'totalSize',
+    function(context, asOf, values) {
+      Object.keys(values).forEach(function(name) {
+        var id = '#' + name + '-totalSize';
+        var totalSize = values[name];
+        var priorValue = context.priorValues[name];
+        elem = getChart(id, name);
+        // Ignore the first period, since we have no baseline against which to calculate a delta
+        if (typeof priorValue !== "undefined") {
+          var delta = totalSize - (priorValue.value || 0);
+          var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+          var deltaSeconds = delta / 1000.0;
+          var s = context.getSeries(asOf, id, name);
+          s.addPoint([asOf, deltaSeconds], false, false);
+        }
+        context.priorValues[name] = {
+          asOf: asOf,
+          value: totalSize
+        };
+        elem.redraw();
+      });
+    });
+
+    makeChart(
+      'sonar',
+      '*',
+      'gauge',
+      'loadTime',
+      function(context, asOf, values) {
+        Object.keys(values).forEach(function(name) {
+          var id = '#' + name + '-loadTime';
+          var loadTime = values[name];
+          var priorValue = context.priorValues[name];
+          elem = getChart(id, name);
+          // Ignore the first period, since we have no baseline against which to calculate a delta
+          if (typeof priorValue !== "undefined") {
+            var delta = loadTime - (priorValue.value || 0);
+            var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+            var deltaSeconds = delta / 1000.0;
+            var s = context.getSeries(asOf, id, name);
+            s.addPoint([asOf, deltaSeconds], false, false);
+          }
+          context.priorValues[name] = {
+            asOf: asOf,
+            value: loadTime
+          };
+          elem.redraw();
+        });
+      });
+
+}); // end $(function() {
+</script>
+
+</body>
+
+</html>

@@ -3,212 +3,212 @@
 <!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
 
 <head>
-    <meta charset="utf-8"> 
-    <script src="//code.jquery.com/jquery-2.1.0.min.js"></script>
-    <script src="//code.highcharts.com/stock/highstock.js"></script>
-    <script src="//code.highcharts.com/stock/modules/exporting.js"></script>
+<meta charset="utf-8"> 
+<script src="jquery-2.1.0.min.js"></script>
+<script src="highstock.js"></script>
+<script src="exporting.js"></script>
 
-    <script type="text/javascript">
-    var SHOWN_COUNTRIES = {
-        cn: true,
-        ir: true,
-        us: true,
-        sp: true,
-        total: true
-    };
+<script type="text/javascript">
+var SHOWN_COUNTRIES = {
+  cn: true,
+  ir: true,
+  us: true,
+  sp: true,
+  total: true
+};
 
-    var INVITE_COUNTRIES = {
-        lantern: true,
-        users: true,
-        total: true
-    };
+var INVITE_COUNTRIES = {
+  lantern: true,
+  users: true,
+  total: true
+};
 
-    Highcharts.setOptions({
-        global: {
-            useUTC: false
+Highcharts.setOptions({
+  global: {
+    useUTC: false
+  }
+});
+
+/**
+ * Constructs a new chart and starts reading data
+ */
+
+function makeChart(id, title, dimName, dimKey, statType, statName, onData, options) {
+  var fullOptions = $.extend({
+    type: "spline",
+
+    rangeSelector: {
+      buttons: [{
+        count: 60,
+        type: 'minute',
+        text: 'Hr'
+      }, {
+        count: 1,
+        type: 'day',
+        text: 'Day'
+      }, {
+        count: 1,
+        type: 'week',
+        text: 'Wk'
+      }, {
+        count: 1,
+        type: 'month',
+        text: 'Mo'
+      }, {
+        type: 'all',
+        text: 'All'
+      }],
+      inputEnabled: false,
+      selected: 1
+    },
+
+    title: {
+      text: title
+    },
+
+    exporting: {
+      enabled: false
+    },
+
+    xAxis: {
+      type: "datetime",
+      ordinal: false,
+    },
+
+    series: []
+  }, options)
+
+  var chart = null;
+  var seriesByName = {};
+
+  var context = {
+    priorValues: {},
+    getSeries: function(asOf, name) {
+      var s = seriesByName[name];
+      if (!s) {
+        s = chart.addSeries({
+          name: name,
+          data: []
+        })
+        seriesByName[name] = s;
+      }
+      return s;
+    }
+  }
+
+  var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/" + dimName + "/" + dimKey + "/" + statType + "/" + statName);
+  ws.onopen = function() {
+    console.log("WebSocket opened")
+  };
+  ws.onmessage = function(evt) {
+    var msg = evt.data;
+    var resp = JSON.parse(msg);
+    if (resp.succeeded) {
+      if (!chart) {
+        // Lazily make the chart once we have some data
+        $('#' + id).highcharts('StockChart', fullOptions);
+        chart = $('#' + id).highcharts();
+      }
+      for (var i = 0; i < resp.intervals.length; i++) {
+        var interval = resp.intervals[i];
+        var asOf = interval.asOfSeconds * 1000;
+        onData(context, asOf, interval.values);
+      }
+      chart.redraw();
+    } else {
+      console.log("Response was unsuccessful", resp["error"]);
+    }
+  };
+  ws.onclose = function() {
+    // websocket is closed.
+    console.log("WebSocket closed");
+  };
+}
+
+$(function() {
+
+  makeChart(
+    'kbpsGiven',
+    'KBps Given (Fallbacks + Peers)',
+    'country',
+    'total',
+    'counter',
+    'bytesGiven',
+    function(context, asOf, values) {
+      Object.keys(values).forEach(function(name) {
+        var bytesGiven = values[name];
+        var priorValue = context.priorValues[name];
+        // Ignore the first period, since we have no baseline against which to calculate a delta
+        if (typeof priorValue !== "undefined") {
+          var delta = bytesGiven - (priorValue.value || 0);
+          var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+          var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
+          var s = context.getSeries(asOf, name);
+          s.addPoint([asOf, deltaKBps], false, false);
         }
+        context.priorValues[name] = {
+          asOf: asOf,
+          value: bytesGiven
+        };
+      });
     });
 
-    /**
-     * Constructs a new chart and starts reading data
-     */
+    makeChart(
+      'usersOnline',
+      'Users Online by Country',
+      'country',
+      '*',
+      'gauge',
+      'userOnline',
+      function(context, asOf, values) {
+        Object.keys(values).forEach(function(name) {
+          if (!(name in SHOWN_COUNTRIES)) {
+            return;
+          }
+          var online = values[name] || 0;
+          var s = context.getSeries(asOf, name);
+          s.addPoint([asOf, online], false, false);
+        });
+      });
 
-    function makeChart(id, title, dimName, dimKey, statType, statName, onData, options) {
-        var fullOptions = $.extend({
-            type: "spline",
-
-            rangeSelector: {
-                buttons: [{
-                    count: 60,
-                    type: 'minute',
-                    text: 'Hr'
-                }, {
-                    count: 1,
-                    type: 'day',
-                    text: 'Day'
-                }, {
-                    count: 1,
-                    type: 'week',
-                    text: 'Wk'
-                }, {
-                    count: 1,
-                    type: 'month',
-                    text: 'Mo'
-                }, {
-                    type: 'all',
-                    text: 'All'
-                }],
-                inputEnabled: false,
-                selected: 1
-            },
-
-            title: {
-                text: title
-            },
-
-            exporting: {
-                enabled: false
-            },
-
-            xAxis: {
-                type: "datetime",
-                ordinal: false,
-            },
-
-            series: []
-        }, options)
-
-        var chart = null;
-        var seriesByName = {};
-
-        var context = {
-            priorValues: {},
-            getSeries: function(asOf, name) {
-                var s = seriesByName[name];
-                if (!s) {
-                    s = chart.addSeries({
-                        name: name,
-                        data: []
-                    })
-                    seriesByName[name] = s;
-                }
-                return s;
-            }
-        }
-
-        var ws = new WebSocket("wss://pure-journey-3547.herokuapp.com/stream/" + dimName + "/" + dimKey + "/" + statType + "/" + statName);
-        ws.onopen = function() {
-            console.log("WebSocket opened")
-        };
-        ws.onmessage = function(evt) {
-            var msg = evt.data;
-            var resp = JSON.parse(msg);
-            if (resp.succeeded) {
-                if (!chart) {
-                    // Lazily make the chart once we have some data
-                    $('#' + id).highcharts('StockChart', fullOptions);
-                    chart = $('#' + id).highcharts();
-                }
-                for (var i = 0; i < resp.intervals.length; i++) {
-                    var interval = resp.intervals[i];
-                    var asOf = interval.asOfSeconds * 1000;
-                    onData(context, asOf, interval.values);
-                }
-                chart.redraw();
-            } else {
-                console.log("Response was unsuccessful", resp["error"]);
-            }
-        };
-        ws.onclose = function() {
-            // websocket is closed.
-            console.log("WebSocket closed");
-        };
-    }
-
-    $(function() {
+      makeChart(
+        'gigabytesGiven',
+        'Gigabytes Given',
+        'country',
+        'total',
+        'counter',
+        'bytesGiven',
+        function(context, asOf, values) {
+          Object.keys(values).forEach(function(name) {
+            var bytesGiven = values[name] || 0;
+            var s = context.getSeries(asOf, name);
+            s.addPoint([asOf, bytesGiven / 1024 / 1024 / 1024], false, false);
+          });
+        }, {
+          yAxis: {
+            type: 'logarithmic',
+          }
+        });
 
         makeChart(
-            'kbpsGiven',
-            'KBps Given (Fallbacks + Peers)',
-            'country',
-            'total',
-            'counter',
-            'bytesGiven',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    var bytesGiven = values[name];
-                    var priorValue = context.priorValues[name];
-                    // Ignore the first period, since we have no baseline against which to calculate a delta
-                    if (typeof priorValue !== "undefined") {
-                        var delta = bytesGiven - (priorValue.value || 0);
-                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
-                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
-                        var s = context.getSeries(asOf, name);
-                        s.addPoint([asOf, deltaKBps], false, false);
-                    }
-                    context.priorValues[name] = {
-                        asOf: asOf,
-                        value: bytesGiven
-                    };
-                });
+          'usersOnlineEver',
+          'Users Ever Online by Country',
+          'country',
+          '*',
+          'gauge',
+          'userOnlineEver',
+          function(context, asOf, values) {
+            Object.keys(values).forEach(function(name) {
+              if (!(name in SHOWN_COUNTRIES)) {
+                return;
+              }
+              var online = values[name] || 0;
+              var s = context.getSeries(asOf, name);
+              s.addPoint([asOf, online], false, false);
             });
+          });
 
-        makeChart(
-            'usersOnline',
-            'Users Online by Country',
-            'country',
-            '*',
-            'gauge',
-            'userOnline',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    if (!(name in SHOWN_COUNTRIES)) {
-                        return;
-                    }
-                    var online = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, online], false, false);
-                });
-            });
-
-        makeChart(
-            'gigabytesGiven',
-            'Gigabytes Given',
-            'country',
-            'total',
-            'counter',
-            'bytesGiven',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    var bytesGiven = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, bytesGiven / 1024 / 1024 / 1024], false, false);
-                });
-            }, {
-                yAxis: {
-                    type: 'logarithmic',
-                }
-            });
-
-        makeChart(
-            'usersOnlineEver',
-            'Users Ever Online by Country',
-            'country',
-            '*',
-            'gauge',
-            'userOnlineEver',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    if (!(name in SHOWN_COUNTRIES)) {
-                        return;
-                    }
-                    var online = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, online], false, false);
-                });
-            });
-
-        makeChart(
+          makeChart(
             'kbpsFlashlight',
             'KBps Given (Flashlight)',
             'country',
@@ -216,162 +216,162 @@
             'counter',
             'bytesGivenByFlashlight',
             function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
-                    if (!(name in SHOWN_COUNTRIES)) {
-                        // Only show the countries we're interested in
-                        return;
-                    }
-                    var bytesGiven = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    var priorValue = context.priorValues[name];
-                    // Ignore the first period, since we have no baseline against which to calculate a delta
-                    if (typeof priorValue !== "undefined") {
-                        var delta = bytesGiven - (priorValue.value || 0);
-                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
-                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
-                        s.addPoint([asOf, deltaKBps], false, false);
-                    }
-                    context.priorValues[name] = {
-                        asOf: asOf,
-                        value: bytesGiven
-                    };
-                });
+              Object.keys(values).forEach(function(name) {
+                if (!(name in SHOWN_COUNTRIES)) {
+                  // Only show the countries we're interested in
+                  return;
+                }
+                var bytesGiven = values[name] || 0;
+                var s = context.getSeries(asOf, name);
+                var priorValue = context.priorValues[name];
+                // Ignore the first period, since we have no baseline against which to calculate a delta
+                if (typeof priorValue !== "undefined") {
+                  var delta = bytesGiven - (priorValue.value || 0);
+                  var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                  var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
+                  s.addPoint([asOf, deltaKBps], false, false);
+                }
+                context.priorValues[name] = {
+                  asOf: asOf,
+                  value: bytesGiven
+                };
+              });
             });
 
-        makeChart(
-            'kbpsFallbacks',
-            'KBps Given (Fallbacks)',
-            'fallback',
-            '*',
-            'counter',
-            'bytesGiven',
-            function(context, asOf, values) {
+            makeChart(
+              'kbpsFallbacks',
+              'KBps Given (Fallbacks)',
+              'fallback',
+              '*',
+              'counter',
+              'bytesGiven',
+              function(context, asOf, values) {
                 var points = [];
-                
+
                 Object.keys(values).forEach(function(name) {
-                    var bytesGiven = values[name];
-                    // Remove leading "instance_"
-                    name = name == "total" ? name : name.substring(9)
-                    var priorValue = context.priorValues[name];
-                    // Ignore the first period, since we have no baseline against which to calculate a delta
-                    if (typeof priorValue !== "undefined") {
-                        var delta = bytesGiven - (priorValue.value || 0);
-                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
-                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
-                        // Filter out fallbacks that are basically doing no work
-                        if (deltaKBps > 10) {
-                            points.push({
-                                name: name,
-                                delta: deltaKBps
-                            });
-                        }
+                  var bytesGiven = values[name];
+                  // Remove leading "instance_"
+                  name = name == "total" ? name : name.substring(9)
+                  var priorValue = context.priorValues[name];
+                  // Ignore the first period, since we have no baseline against which to calculate a delta
+                  if (typeof priorValue !== "undefined") {
+                    var delta = bytesGiven - (priorValue.value || 0);
+                    var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                    var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
+                    // Filter out fallbacks that are basically doing no work
+                    if (deltaKBps > 10) {
+                      points.push({
+                        name: name,
+                        delta: deltaKBps
+                      });
                     }
-                    context.priorValues[name] = {
-                        asOf: asOf,
-                        value: bytesGiven
-                    };
+                  }
+                  context.priorValues[name] = {
+                    asOf: asOf,
+                    value: bytesGiven
+                  };
                 });
 
                 // Sort points based on size of delta, in order to get highest
                 // valued names to show up first on legend.
                 points.sort(function(a, b) {
-                    return b.delta - a.delta;
+                  return b.delta - a.delta;
                 });
 
                 for (var i = 0; i < points.length; i++) {
-                    var point = points[i];
-                    var s = context.getSeries(asOf, point.name);
-                    s.addPoint([asOf, point.delta], false, false);
+                  var point = points[i];
+                  var s = context.getSeries(asOf, point.name);
+                  s.addPoint([asOf, point.delta], false, false);
                 }
-            }, {
+              }, {
                 yAxis: {
-                    type: 'logarithmic',
+                  type: 'logarithmic',
                 }
-            });
+              });
 
-        makeChart(
-            'kbpsPeers',
-            'KBps Given (Peers)',
-            'country',
-            '*',
-            'counter',
-            'bytesGivenByPeer',
-            function(context, asOf, values) {
-                Object.keys(values).forEach(function(name) {
+              makeChart(
+                'kbpsPeers',
+                'KBps Given (Peers)',
+                'country',
+                '*',
+                'counter',
+                'bytesGivenByPeer',
+                function(context, asOf, values) {
+                  Object.keys(values).forEach(function(name) {
                     if (!(name in SHOWN_COUNTRIES)) {
-                        // Only show the countries we're interested in
-                        return;
+                      // Only show the countries we're interested in
+                      return;
                     }
                     var bytesGiven = values[name] || 0;
                     var s = context.getSeries(asOf, name);
                     var priorValue = context.priorValues[name];
                     // Ignore the first period, since we have no baseline against which to calculate a delta
                     if (typeof priorValue !== "undefined") {
-                        var delta = bytesGiven - (priorValue.value || 0);
-                        var secondsElapsed = (asOf - priorValue.asOf) / 1000;
-                        var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
-                        s.addPoint([asOf, deltaKBps], false, false);
+                      var delta = bytesGiven - (priorValue.value || 0);
+                      var secondsElapsed = (asOf - priorValue.asOf) / 1000;
+                      var deltaKBps = Math.ceil(delta / 1024.0 / secondsElapsed);
+                      s.addPoint([asOf, deltaKBps], false, false);
                     }
                     context.priorValues[name] = {
-                        asOf: asOf,
-                        value: bytesGiven
+                      asOf: asOf,
+                      value: bytesGiven
                     };
+                  });
                 });
-            });
 
-        makeChart(
-            'usersInvited',
-            'Users Invited',
-            'country',
-            '*',
-            'counter',
-            'usersInvited',
-            function(context, asOf, values) {
-                // Calculate # invited by users
-                var numberByUsers = 0;
-                Object.keys(values).forEach(function(name) {
-                    if (name != "lantern" && name != "total") {
+                makeChart(
+                  'usersInvited',
+                  'Users Invited',
+                  'country',
+                  '*',
+                  'counter',
+                  'usersInvited',
+                  function(context, asOf, values) {
+                    // Calculate # invited by users
+                    var numberByUsers = 0;
+                    Object.keys(values).forEach(function(name) {
+                      if (name != "lantern" && name != "total") {
                         numberByUsers += values[name];
-                    }
-                });
-                values["users"] = numberByUsers;
+                      }
+                    });
+                    values["users"] = numberByUsers;
 
-                // Update chart
-                Object.keys(values).forEach(function(name) {
-                    if (!(name in INVITE_COUNTRIES)) {
+                    // Update chart
+                    Object.keys(values).forEach(function(name) {
+                      if (!(name in INVITE_COUNTRIES)) {
                         return;
-                    }
-                    var invited = values[name] || 0;
-                    var s = context.getSeries(asOf, name);
-                    s.addPoint([asOf, invited], false, false);
-                });
-            });
+                      }
+                      var invited = values[name] || 0;
+                      var s = context.getSeries(asOf, name);
+                      s.addPoint([asOf, invited], false, false);
+                    });
+                  });
 
-    }); // end $(function() {
-    </script>
+}); // end $(function() {
+</script>
 
-    <style type="text/css">
-    .chart {
-        width: 500px;
-        height: 300px;
-        float: left;
-        border: 1px solid;
-        margin-left: 10px;
-        margin-top: 10px;
-        background:url(spinner.gif) center center no-repeat;
-    }
-    </style>
+<style type="text/css">
+.chart {
+  width: 500px;
+  height: 300px;
+  float: left;
+  border: 1px solid;
+  margin-left: 10px;
+  margin-top: 10px;
+  background:url(spinner.gif) center center no-repeat;
+}
+</style>
 </head>
 
 <body>
-    <div id="kbpsGiven" class="chart"></div>
-    <div id="usersOnline" class="chart"></div>
-    <div id="gigabytesGiven" class="chart"></div>
-    <div id="usersOnlineEver" class="chart"></div>
-    <div id="kbpsFlashlight" class="chart"></div>
-    <div id="usersInvited" class="chart"></div>
-    <div id="kbpsFallbacks" class="chart"></div>
-    <div id="kbpsPeers" class="chart"></div>
+<div id="kbpsGiven" class="chart"></div>
+<div id="usersOnline" class="chart"></div>
+<div id="gigabytesGiven" class="chart"></div>
+<div id="usersOnlineEver" class="chart"></div>
+<div id="kbpsFlashlight" class="chart"></div>
+<div id="usersInvited" class="chart"></div>
+<div id="kbpsFallbacks" class="chart"></div>
+<div id="kbpsPeers" class="chart"></div>
 </body>
 
 </html>
