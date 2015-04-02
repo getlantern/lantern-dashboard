@@ -1,9 +1,8 @@
 <!DOCTYPE html>
 <html>
 <!-- Based on example from http://stackoverflow.com/questions/12479895/obtaining-bigquery-data-from-javascript-code -->
-
 <head>
-<meta charset="utf-8"> 
+<meta charset="utf-8">
 <style type="text/css">
 .chart {
   width: 500px;
@@ -19,8 +18,6 @@
 
 <body>
 <div id="container"></div>
-<!--<div id="cn-facebook-2.0.0-loadTime" class="chart"></div>
-<div id="cn-facebook-2.0.0-totalSize" class="chart"></div>-->
 
 <script src="jquery-2.1.0.min.js"></script>
 <script src="highstock.js"></script>
@@ -74,10 +71,10 @@ var defaultOptions = {
 };
 
 var charts = {};
-var getChart = function(id, name){
+var getChart = function(id){
   if (!charts[id]) {
     // Lazily make the chart once we have some data
-    var options = $.extend({}, defaultOptions, {title: {text: name}});
+    var options = $.extend({}, defaultOptions, {title: {text: id}});
     elem = $('<div>', {id: id, class: "chart"});
     elem.appendTo($('#container'));
     elem.highcharts('StockChart', options);
@@ -94,10 +91,10 @@ function makeChart(dimName, dimKey, statType, statName, onData) {
 
   var context = {
     priorValues: {},
-    getSeries: function(asOf, id, name) {
+    getSeries: function(chartId, name) {
       var s = seriesByName[name];
       if (!s) {
-        s = charts[id].addSeries({
+        s = charts[chartId].addSeries({
           name: name,
           data: []
         })
@@ -121,72 +118,67 @@ function makeChart(dimName, dimKey, statType, statName, onData) {
     for (var i = 0; i < resp.intervals.length; i++) {
       var interval = resp.intervals[i];
       var asOf = interval.asOfSeconds * 1000;
-      onData(context, asOf, interval.values);
+      Object.keys(interval.values).forEach(function(name) {
+        onData(context, asOf, name, interval.values[name]);
+        context.priorValues[name] = {
+          asOf: asOf,
+          value: interval.values[name]
+        };
+      });
     }
   };
   ws.onclose = function() {
-    // websocket is closed.
     console.log("WebSocket closed");
   };
 }
 
 $(function() {
+  makeChart(
+    'sonar',
+    '*',
+    'gauge',
+    'loadTime',
+    function(context, asOf, name, loadTime) {
+      if (name === 'total') {
+        return; // total load time is meaningless
+      }
+      if (loadTime === 0) {
+        return; // no data available
+      }
+      var parts = name.split('-');
+      var country = parts[0];
+      var chartId = parts[1]+" load time (sec)";
+      var elem = getChart(chartId);
+      var s = context.getSeries(chartId, name);
+      s.addPoint([asOf, loadTime/1000.0], false, false);
+      elem.redraw();
+    });
 
   makeChart(
     'sonar',
     '*',
     'counter',
-    'totalSize',
-    function(context, asOf, values) {
-      Object.keys(values).forEach(function(name) {
-        var id = '#' + name + '-totalSize';
-        var totalSize = values[name];
-        var priorValue = context.priorValues[name];
-        elem = getChart(id, name);
-        // Ignore the first period, since we have no baseline against which to calculate a delta
-        if (typeof priorValue !== "undefined") {
-          var delta = totalSize - (priorValue.value || 0);
-          var secondsElapsed = (asOf - priorValue.asOf) / 1000;
-          var deltaSeconds = delta / 1000.0;
-          var s = context.getSeries(asOf, id, name);
-          s.addPoint([asOf, deltaSeconds], false, false);
-        }
-        context.priorValues[name] = {
-          asOf: asOf,
-          value: totalSize
-        };
-        elem.redraw();
-      });
+    'failCount',
+    function(context, asOf, name, failCount) {
+      if (name === 'total') {
+        return; // total load time is meaningless
+      }
+      var parts = name.split('-');
+      var country = parts[0];
+      var chartId = parts[1]+" fail count per hour";
+      var elem = getChart(chartId);
+      var priorValue = context.priorValues[name];
+      // Ignore the first period, since we have no baseline against which to calculate a delta
+      if (typeof priorValue !== "undefined") {
+        var delta = failCount - (priorValue.value || 0);
+        var hoursElapsed = (asOf - priorValue.asOf) / 1000 / 3600;
+        var deltaFph = Math.ceil(delta / hoursElapsed);
+        var s = context.getSeries(chartId, name);
+        s.addPoint([asOf, deltaFph], false, false);
+      }
+      elem.redraw();
     });
-
-    makeChart(
-      'sonar',
-      '*',
-      'gauge',
-      'loadTime',
-      function(context, asOf, values) {
-        Object.keys(values).forEach(function(name) {
-          var id = '#' + name + '-loadTime';
-          var loadTime = values[name];
-          var priorValue = context.priorValues[name];
-          elem = getChart(id, name);
-          // Ignore the first period, since we have no baseline against which to calculate a delta
-          if (typeof priorValue !== "undefined") {
-            var delta = loadTime - (priorValue.value || 0);
-            var secondsElapsed = (asOf - priorValue.asOf) / 1000;
-            var deltaSeconds = delta / 1000.0;
-            var s = context.getSeries(asOf, id, name);
-            s.addPoint([asOf, deltaSeconds], false, false);
-          }
-          context.priorValues[name] = {
-            asOf: asOf,
-            value: loadTime
-          };
-          elem.redraw();
-        });
-      });
-
-}); // end $(function() {
+});
 </script>
 
 </body>
