@@ -1,6 +1,0 @@
-{
-    "src":          ".",
-    "dest":         "qiniu:access_key=OwIWN73I6IBqEBmlCHxaMaQ_8nNnTuRplSTCwDUt&secret_key=tf6xyuiTLVtObA1Fbya_Fphki07v5S6z8lZFPDCg&bucket=dashboard",
-    "deletable":    0,
-    "debug_level":  1
-}
