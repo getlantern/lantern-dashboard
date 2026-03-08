@@ -877,14 +877,14 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
               const isCensored = CENSORED.has(iso);
               const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
               const isSelected = selectedCountry === iso;
-              let fill = "#1a2030";
-              let stroke = "#2a3548";
-              if (isCensored) { fill = "#261e30"; stroke = "#3e3460"; }
-              if (hasData) { fill = "#2a2240"; stroke = "#4a4070"; }
+              let fill = "#252d3e";
+              let stroke = "#38445a";
+              if (isCensored) { fill = "#332a42"; stroke = "#504470"; }
+              if (hasData) { fill = "#382e50"; stroke = "#5a4e80"; }
               if (isSelected) {
                 const rc = regionColor(iso);
-                fill = rc + "28";
-                stroke = rc + "60";
+                fill = rc + "35";
+                stroke = rc + "70";
               }
               return (
                 <Geography
@@ -896,7 +896,7 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
                   onClick={() => handleGeoClick(iso)}
                   style={{
                     default: { outline: "none", cursor: isCensored || hasData ? "pointer" : "default" },
-                    hover: { outline: "none", fill: isSelected ? fill : hasData ? "#342e50" : isCensored ? "#30263c" : "#222838", cursor: isCensored || hasData ? "pointer" : "default" },
+                    hover: { outline: "none", fill: isSelected ? fill : hasData ? "#443860" : isCensored ? "#3e3250" : "#2e3648", cursor: isCensored || hasData ? "pointer" : "default" },
                     pressed: { outline: "none" },
                   }}
                 />
