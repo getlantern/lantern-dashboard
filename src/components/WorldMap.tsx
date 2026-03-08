@@ -1,4 +1,4 @@
-import { memo, useMemo, useEffect, useState, useRef, useCallback } from "react";
+import { memo, useMemo, useEffect, useState, useRef } from "react";
 import {
   ComposableMap,
   Geographies,
@@ -11,7 +11,6 @@ import type { DashboardCountry } from "../api/client";
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const CENSORED = new Set(["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "SA", "PK", "UZ", "TH"]);
 
-// [lng, lat] for country centroids
 const COORDS: Record<string, [number, number]> = {
   IR: [53.69, 32.43], CN: [104.20, 35.86], RU: [40.32, 55.75],
   MM: [96.08, 19.76], BY: [27.95, 53.71], TM: [59.56, 38.97],
@@ -21,8 +20,7 @@ const COORDS: Record<string, [number, number]> = {
   TR: [35.24, 38.96], VE: [-66.59, 6.42], KZ: [66.92, 48.02],
 };
 
-// Proxy server locations (approximate data center cities)
-const PROXY_NODES: { id: string; lng: number; lat: number; label: string }[] = [
+const PROXY_NODES = [
   { id: "us-east", lng: -74.0, lat: 40.7, label: "US-East" },
   { id: "us-west", lng: -118.2, lat: 34.1, label: "US-West" },
   { id: "eu-west", lng: -0.13, lat: 51.5, label: "EU-West" },
@@ -33,9 +31,9 @@ const PROXY_NODES: { id: string; lng: number; lat: number; label: string }[] = [
 
 interface TrafficArc {
   id: string;
-  from: [number, number]; // [lng, lat] — proxy
-  to: [number, number];   // [lng, lat] — censored country
-  traffic: number;         // 0-1 normalized
+  from: [number, number];
+  to: [number, number];
+  traffic: number;
   color: string;
 }
 
@@ -49,7 +47,6 @@ function blockRateColor(rate: number): string {
   return "#00e5c8";
 }
 
-// Pick nearest proxy for a country coordinate
 function nearestProxy(lng: number, lat: number) {
   let best = PROXY_NODES[0];
   let bestDist = Infinity;
@@ -60,7 +57,6 @@ function nearestProxy(lng: number, lat: number) {
   return best;
 }
 
-// Build arcs from mock data (volunteer→user pairs)
 function buildMockArcs(): TrafficArc[] {
   const volunteers = mockNodes.filter((n) => n.type === "volunteer" && n.active);
   const users = mockNodes.filter((n) => n.type === "user" && n.active);
@@ -76,18 +72,14 @@ function buildMockArcs(): TrafficArc[] {
   });
 }
 
-// Build arcs from live country data
 function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
   const maxASN = Math.max(1, ...countries.map((c) => c.asnCount));
   const arcs: TrafficArc[] = [];
-
   for (const country of countries) {
     const coords = COORDS[country.country];
     if (!coords) continue;
     const proxy = nearestProxy(coords[0], coords[1]);
-    // Also connect to a second proxy for countries with more traffic
     const traffic = country.asnCount / maxASN;
-
     arcs.push({
       id: `${proxy.id}-${country.country}`,
       from: [proxy.lng, proxy.lat],
@@ -95,8 +87,6 @@ function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
       traffic,
       color: blockRateColor(country.avgBlockRate),
     });
-
-    // High-traffic countries get a second route
     if (traffic > 0.4) {
       const secondProxy = PROXY_NODES.find((p) => p.id !== proxy.id)!;
       arcs.push({
@@ -108,131 +98,220 @@ function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
       });
     }
   }
-
   return arcs;
 }
 
-// SVG quadratic bezier arc with curvature
-function arcPath(from: [number, number], to: [number, number], projection: (coords: [number, number]) => [number, number] | null): string | null {
-  const p1 = projection(from);
-  const p2 = projection(to);
-  if (!p1 || !p2) return null;
+// ── Arc geometry ──
 
+function arcPath(
+  from: [number, number],
+  to: [number, number],
+  proj: (c: [number, number]) => [number, number] | null
+): string | null {
+  const p1 = proj(from);
+  const p2 = proj(to);
+  if (!p1 || !p2) return null;
   const dx = p2[0] - p1[0];
   const dy = p2[1] - p1[1];
   const dist = Math.sqrt(dx * dx + dy * dy);
-  // Curve outward — perpendicular offset proportional to distance
-  const curvature = dist * 0.25;
+  if (dist < 1) return null;
+  const curvature = dist * 0.3;
   const mx = (p1[0] + p2[0]) / 2 - (dy / dist) * curvature;
   const my = (p1[1] + p2[1]) / 2 + (dx / dist) * curvature;
-
   return `M${p1[0]},${p1[1]} Q${mx},${my} ${p2[0]},${p2[1]}`;
 }
 
-// Animated arc component using SVG stroke-dashoffset
-function AnimatedArc({
+// ── Luminous pulse arc ──
+// Each arc renders:
+//   1. A barely-visible static trace (the "rail")
+//   2. Multiple luminous pulses that shoot along it — bright head, fading tail
+//   The pulse is a short stroke-dasharray segment animated via stroke-dashoffset.
+//   Traffic controls: number of pulses, stroke width, brightness, speed.
+
+function LuminousArc({
   arc,
-  projection,
-  delay,
+  proj,
+  index,
 }: {
   arc: TrafficArc;
-  projection: (coords: [number, number]) => [number, number] | null;
-  delay: number;
+  proj: (c: [number, number]) => [number, number] | null;
+  index: number;
 }) {
-  const pathRef = useRef<SVGPathElement>(null);
-  const d = arcPath(arc.from, arc.to, projection);
+  const trailRef = useRef<SVGPathElement>(null);
+  const [pathLen, setPathLen] = useState(0);
+  const d = arcPath(arc.from, arc.to, proj);
+
+  useEffect(() => {
+    if (trailRef.current) {
+      setPathLen(trailRef.current.getTotalLength());
+    }
+  }, [d]);
+
   if (!d) return null;
 
-  const strokeWidth = 0.4 + arc.traffic * 2.2;
-  const glowWidth = strokeWidth + 2;
+  const baseWidth = 0.3 + arc.traffic * 1.5;
+  // How many pulses on this arc — busier routes get more
+  const pulseCount = arc.traffic > 0.6 ? 3 : arc.traffic > 0.3 ? 2 : 1;
+  // Pulse length as fraction of total path — shorter = sharper comet
+  const pulseLen = Math.max(12, pathLen * (0.08 + arc.traffic * 0.10));
+  // Duration — busier = faster
+  const dur = 2.8 + (1 - arc.traffic) * 3.5;
+
+  const gradientId = `pulse-grad-${arc.id}-${index}`;
 
   return (
     <g>
-      {/* Glow layer */}
+      {/* Gradient for comet tail effect */}
+      <defs>
+        <linearGradient id={gradientId} gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={arc.color} stopOpacity="0" />
+          <stop offset="70%" stopColor={arc.color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={arc.color} stopOpacity="1" />
+        </linearGradient>
+      </defs>
+
+      {/* 1. Static rail — very faint */}
       <path
+        ref={trailRef}
         d={d}
         fill="none"
         stroke={arc.color}
-        strokeWidth={glowWidth}
+        strokeWidth={baseWidth * 0.2}
         strokeLinecap="round"
-        opacity={0.06 + arc.traffic * 0.06}
+        opacity={0.07}
       />
-      {/* Base path — faint static line */}
-      <path
-        d={d}
-        fill="none"
-        stroke={arc.color}
-        strokeWidth={strokeWidth * 0.3}
-        strokeLinecap="round"
-        opacity={0.15}
-      />
-      {/* Animated flowing dash */}
-      <path
-        ref={pathRef}
-        d={d}
-        fill="none"
-        stroke={arc.color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        opacity={0.25 + arc.traffic * 0.35}
-        strokeDasharray="6 10"
-      >
-        <animate
-          attributeName="stroke-dashoffset"
-          from="0"
-          to="-32"
-          dur={`${1.5 + (1 - arc.traffic) * 2}s`}
-          begin={`${delay}s`}
-          repeatCount="indefinite"
-        />
-      </path>
-      {/* Bright leading particle */}
-      <circle r={strokeWidth * 0.6} fill={arc.color} opacity={0.6 + arc.traffic * 0.3}>
-        <animateMotion
-          dur={`${3 + (1 - arc.traffic) * 4}s`}
-          begin={`${delay}s`}
-          repeatCount="indefinite"
-          path={d}
-        />
-      </circle>
+
+      {/* 2. Soft glow underneath the pulses */}
+      {pathLen > 0 && Array.from({ length: pulseCount }).map((_, pi) => {
+        const stagger = (pi / pulseCount) * dur;
+        const glowDash = `${pulseLen * 1.5} ${pathLen + pulseLen * 2}`;
+        return (
+          <path
+            key={`glow-${pi}`}
+            d={d}
+            fill="none"
+            stroke={arc.color}
+            strokeWidth={baseWidth * 3}
+            strokeLinecap="round"
+            opacity={0.04 + arc.traffic * 0.03}
+            strokeDasharray={glowDash}
+            strokeDashoffset={pathLen + pulseLen}
+          >
+            <animate
+              attributeName="stroke-dashoffset"
+              from={String(pathLen + pulseLen)}
+              to={String(-pulseLen * 2)}
+              dur={`${dur}s`}
+              begin={`${stagger + index * 0.2}s`}
+              repeatCount="indefinite"
+            />
+          </path>
+        );
+      })}
+
+      {/* 3. Luminous comet pulses */}
+      {pathLen > 0 && Array.from({ length: pulseCount }).map((_, pi) => {
+        const stagger = (pi / pulseCount) * dur;
+        // The dash: [bright segment] [gap big enough to hide the rest]
+        const cometDash = `${pulseLen} ${pathLen + pulseLen * 2}`;
+        return (
+          <path
+            key={`comet-${pi}`}
+            d={d}
+            fill="none"
+            stroke={arc.color}
+            strokeWidth={baseWidth}
+            strokeLinecap="round"
+            opacity={0.5 + arc.traffic * 0.4}
+            strokeDasharray={cometDash}
+            strokeDashoffset={pathLen + pulseLen}
+          >
+            <animate
+              attributeName="stroke-dashoffset"
+              from={String(pathLen + pulseLen)}
+              to={String(-pulseLen * 2)}
+              dur={`${dur}s`}
+              begin={`${stagger + index * 0.2}s`}
+              repeatCount="indefinite"
+            />
+            <animate
+              attributeName="opacity"
+              values={`0;${0.5 + arc.traffic * 0.4};${0.5 + arc.traffic * 0.4};0`}
+              keyTimes="0;0.05;0.85;1"
+              dur={`${dur}s`}
+              begin={`${stagger + index * 0.2}s`}
+              repeatCount="indefinite"
+            />
+          </path>
+        );
+      })}
+
+      {/* 4. Bright head dot — travels the path */}
+      {pathLen > 0 && Array.from({ length: pulseCount }).map((_, pi) => {
+        const stagger = (pi / pulseCount) * dur;
+        return (
+          <circle
+            key={`head-${pi}`}
+            r={baseWidth * 0.8}
+            fill="white"
+            opacity={0}
+          >
+            <animateMotion
+              dur={`${dur}s`}
+              begin={`${stagger + index * 0.2}s`}
+              repeatCount="indefinite"
+              path={d}
+              keyPoints="0;1"
+              keyTimes="0;1"
+            />
+            <animate
+              attributeName="opacity"
+              values="0;0.9;0.9;0"
+              keyTimes="0;0.05;0.85;1"
+              dur={`${dur}s`}
+              begin={`${stagger + index * 0.2}s`}
+              repeatCount="indefinite"
+            />
+            <animate
+              attributeName="r"
+              values={`${baseWidth * 0.4};${baseWidth * 0.9};${baseWidth * 0.4}`}
+              dur={`${dur}s`}
+              begin={`${stagger + index * 0.2}s`}
+              repeatCount="indefinite"
+            />
+          </circle>
+        );
+      })}
     </g>
   );
 }
 
+// ── Markers ──
+
 function ProxyMarker({ node }: { node: typeof PROXY_NODES[0] }) {
   return (
     <Marker coordinates={[node.lng, node.lat]}>
-      <circle r={3} fill="#00e5c8" opacity={0.15} />
-      <circle r={1.8} fill="#00e5c8" opacity={0.7} style={{ filter: "drop-shadow(0 0 3px #00e5c8)" }} />
-      <text
-        y={-6}
-        textAnchor="middle"
-        style={{ fontFamily: "var(--font-mono)", fontSize: "4.5px", fill: "#00e5c8", opacity: 0.5 }}
-      >
-        {node.label}
-      </text>
+      <circle r={3} fill="#00e5c8" opacity={0.08} />
+      <circle r={1.5} fill="#00e5c8" opacity={0.6} style={{ filter: "drop-shadow(0 0 2px #00e5c8)" }} />
     </Marker>
   );
 }
 
 function NodeMarker({ node, pulse }: { node: ConnectionNode; pulse: boolean }) {
   const color = node.type === "volunteer" ? "#00e5c8" : "#f0a030";
-  const size = node.type === "volunteer" ? 3.5 : 3;
-
+  const size = node.type === "volunteer" ? 3 : 2.5;
   return (
     <Marker coordinates={[node.lng, node.lat]}>
       {node.active && pulse && (
-        <circle r={size + 6} fill="none" stroke={color} strokeWidth={0.5} opacity={0.3}>
-          <animate attributeName="r" from={String(size + 2)} to={String(size + 10)} dur="2.5s" repeatCount="indefinite" />
-          <animate attributeName="opacity" from="0.5" to="0" dur="2.5s" repeatCount="indefinite" />
+        <circle r={size + 5} fill="none" stroke={color} strokeWidth={0.4} opacity={0.2}>
+          <animate attributeName="r" from={String(size + 1)} to={String(size + 9)} dur="2.5s" repeatCount="indefinite" />
+          <animate attributeName="opacity" from="0.4" to="0" dur="2.5s" repeatCount="indefinite" />
         </circle>
       )}
       <circle
         r={size}
         fill={color}
-        stroke={node.active ? color : "#4a5568"}
-        strokeWidth={0.6}
-        opacity={node.active ? 0.85 : 0.3}
+        opacity={node.active ? 0.8 : 0.2}
         style={{ filter: node.active ? `drop-shadow(0 0 3px ${color})` : "none" }}
       />
     </Marker>
@@ -242,34 +321,27 @@ function NodeMarker({ node, pulse }: { node: ConnectionNode; pulse: boolean }) {
 function LiveCountryMarker({ country, index }: { country: DashboardCountry; index: number }) {
   const coords = COORDS[country.country];
   if (!coords) return null;
-
   const color = blockRateColor(country.avgBlockRate);
-  const size = Math.max(2.5, Math.min(6, country.asnCount / 2));
-
+  const size = Math.max(2, Math.min(5, country.asnCount / 2));
   return (
     <Marker coordinates={coords}>
-      <circle r={size + 3} fill="none" stroke={color} strokeWidth={0.3} opacity={0.15}>
-        <animate
-          attributeName="r" from={String(size)} to={String(size + 7)}
-          dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite"
-        />
-        <animate attributeName="opacity" from="0.3" to="0" dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
+      <circle r={size + 3} fill="none" stroke={color} strokeWidth={0.25} opacity={0.12}>
+        <animate attributeName="r" from={String(size)} to={String(size + 6)} dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.25" to="0" dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
       </circle>
-      <circle r={size} fill={color} opacity={0.6} style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
-      <text
-        y={-size - 3}
-        textAnchor="middle"
-        style={{ fontFamily: "var(--font-mono)", fontSize: "5px", fill: "#e8ecf4", opacity: 0.7 }}
-      >
+      <circle r={size} fill={color} opacity={0.55} style={{ filter: `drop-shadow(0 0 3px ${color})` }} />
+      <text y={-size - 3} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "4.5px", fill: "#e8ecf4", opacity: 0.6 }}>
         {country.country}
       </text>
     </Marker>
   );
 }
 
+// ── Main ──
+
 function WorldMap({ liveCountries }: WorldMapProps) {
   const [pulseIndex, setPulseIndex] = useState(0);
-  const [projectionFn, setProjectionFn] = useState<((coords: [number, number]) => [number, number] | null) | null>(null);
+  const [projectionFn, setProjectionFn] = useState<((c: [number, number]) => [number, number] | null) | null>(null);
   const hasLiveData = liveCountries && liveCountries.length > 0;
 
   const arcs = useMemo(
@@ -278,19 +350,10 @@ function WorldMap({ liveCountries }: WorldMapProps) {
   );
 
   useEffect(() => {
-    const nodes = hasLiveData ? (liveCountries || []) : mockNodes;
-    const interval = setInterval(() => {
-      setPulseIndex((p) => (p + 1) % Math.max(1, nodes.length));
-    }, 3000);
+    const len = hasLiveData ? (liveCountries?.length || 1) : mockNodes.length;
+    const interval = setInterval(() => setPulseIndex((p) => (p + 1) % len), 3000);
     return () => clearInterval(interval);
   }, [hasLiveData, liveCountries]);
-
-  // Capture projection function from ComposableMap via a hidden Marker
-  const captureProjection = useCallback((geo: { projection: () => (coords: [number, number]) => [number, number] | null }) => {
-    if (geo?.projection) {
-      setProjectionFn(() => geo.projection());
-    }
-  }, []);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}>
@@ -301,28 +364,26 @@ function WorldMap({ liveCountries }: WorldMapProps) {
       >
         <Geographies geography={GEO_URL}>
           {(renderProps) => {
-            // Capture the projection on first render
             if (!projectionFn && renderProps.projection) {
-              // Schedule to avoid setState during render
               setTimeout(() => setProjectionFn(() => renderProps.projection), 0);
             }
             return renderProps.geographies.map((geo) => {
               const iso = geo.properties.ISO_A2 || geo.id;
               const isCensored = CENSORED.has(iso);
               const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
-              let fill = "#0c0f16";
-              if (isCensored) fill = "#14101c";
-              if (hasData) fill = "#18142a";
+              let fill = "#0a0d14";
+              if (isCensored) fill = "#110e18";
+              if (hasData) fill = "#14112a";
               return (
                 <Geography
                   key={geo.rsmKey}
                   geography={geo}
                   fill={fill}
-                  stroke="#1a2030"
-                  strokeWidth={0.3}
+                  stroke="#151a28"
+                  strokeWidth={0.25}
                   style={{
                     default: { outline: "none" },
-                    hover: { outline: "none", fill: hasData ? "#221a3a" : isCensored ? "#1c1528" : "#111620" },
+                    hover: { outline: "none", fill: hasData ? "#1c1836" : isCensored ? "#171224" : "#0e111a" },
                     pressed: { outline: "none" },
                   }}
                 />
@@ -331,29 +392,18 @@ function WorldMap({ liveCountries }: WorldMapProps) {
           }}
         </Geographies>
 
-        {/* Animated traffic arcs */}
+        {/* Luminous traffic arcs */}
         {projectionFn && arcs.map((arc, i) => (
-          <AnimatedArc
-            key={arc.id}
-            arc={arc}
-            projection={projectionFn}
-            delay={i * 0.3}
-          />
+          <LuminousArc key={arc.id} arc={arc} proj={projectionFn} index={i} />
         ))}
 
-        {/* Proxy server markers (always shown) */}
-        {hasLiveData && PROXY_NODES.map((node) => (
-          <ProxyMarker key={node.id} node={node} />
-        ))}
+        {/* Proxy markers */}
+        {hasLiveData && PROXY_NODES.map((n) => <ProxyMarker key={n.id} node={n} />)}
 
-        {/* Country/node markers */}
+        {/* Country / node markers */}
         {hasLiveData
-          ? liveCountries.map((country, i) => (
-              <LiveCountryMarker key={country.country} country={country} index={i} />
-            ))
-          : mockNodes.map((node, i) => (
-              <NodeMarker key={node.id} node={node} pulse={i === pulseIndex} />
-            ))}
+          ? liveCountries.map((c, i) => <LiveCountryMarker key={c.country} country={c} index={i} />)
+          : mockNodes.map((n, i) => <NodeMarker key={n.id} node={n} pulse={i === pulseIndex} />)}
       </ComposableMap>
     </div>
   );
