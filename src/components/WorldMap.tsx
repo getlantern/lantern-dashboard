@@ -36,6 +36,22 @@ const COUNTRY_BOUNDS: Record<string, [number, number, number, number]> = {
   TH: [97, 106, 5, 21],
 };
 
+// ISO 3166-1 numeric → alpha-2 for countries we care about
+const NUM_TO_ALPHA2: Record<string, string> = {
+  "364": "IR", "156": "CN", "643": "RU", "104": "MM", "112": "BY",
+  "795": "TM", "704": "VN", "192": "CU", "682": "SA", "586": "PK",
+  "860": "UZ", "764": "TH", "356": "IN", "050": "BD", "818": "EG",
+  "792": "TR", "862": "VE", "398": "KZ",
+  // Uncensored proxy host countries
+  "840": "US", "826": "GB", "250": "FR", "276": "DE", "392": "JP",
+  "410": "KR", "036": "AU", "124": "CA", "752": "SE", "756": "CH",
+  "528": "NL", "702": "SG",
+};
+
+function geoToAlpha2(geo: { properties: Record<string, string>; id: string }): string {
+  return geo.properties.ISO_A2 || NUM_TO_ALPHA2[geo.id] || geo.id;
+}
+
 const PROXY_NODES = [
   { id: "us-east", lng: -74.0, lat: 40.7 },
   { id: "us-west", lng: -118.2, lat: 34.1 },
@@ -529,7 +545,7 @@ function WorldMap({ liveCountries }: WorldMapProps) {
               setTimeout(() => setProjectionFn(() => renderProps.projection), 0);
             }
             return renderProps.geographies.map((geo) => {
-              const iso = geo.properties.ISO_A2 || geo.id;
+              const iso = geoToAlpha2(geo);
               const isCensored = CENSORED.has(iso);
               const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
               const isSelected = selectedCountry === iso;
