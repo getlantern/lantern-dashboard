@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-primary: #06080f;
+  --bg-secondary: #0c1017;
+  --bg-card: #10141d;
+  --bg-card-hover: #151a26;
+  --bg-elevated: #1a2030;
+
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892a8;
+  --text-muted: #4a5568;
+
+  --accent-primary: #00e5c8;
+  --accent-primary-dim: #00e5c820;
+  --accent-primary-glow: #00e5c840;
+  --accent-secondary: #f0a030;
+  --accent-secondary-dim: #f0a03020;
+  --accent-danger: #ff4060;
+  --accent-danger-dim: #ff406020;
+  --accent-success: #20e070;
+  --accent-success-dim: #20e07020;
+  --accent-info: #4090ff;
+
+  --proto-samizdat: #00e5c8;
+  --proto-hydra: #4090ff;
+  --proto-mirage: #c060ff;
+  --proto-phantom: #ff6090;
+  --proto-echo: #f0a030;
+  --proto-drift: #20e070;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  --font-sans: 'Outfit', system-ui, sans-serif;
+
+  --shadow-glow: 0 0 20px var(--accent-primary-dim), 0 0 60px var(--accent-primary-dim);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, #00e5c808 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, #4090ff06 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 50% 50%, #10141d 0%, var(--bg-primary) 100%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+.mono { font-family: var(--font-mono); }
+.glow-text { text-shadow: 0 0 10px var(--accent-primary-glow); }
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
