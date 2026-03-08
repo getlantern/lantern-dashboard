@@ -11,6 +11,96 @@ import { fetchASNs, type DashboardCountry, type DashboardASN } from "../api/clie
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const CENSORED = new Set(["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "SA", "PK", "UZ", "TH"]);
 
+// Top 5 cities per censored country [lng, lat, relative population weight 0-1]
+interface City { name: string; lng: number; lat: number; weight: number }
+const CITIES: Record<string, City[]> = {
+  IR: [
+    { name: "Tehran", lng: 51.39, lat: 35.69, weight: 1.0 },
+    { name: "Mashhad", lng: 59.60, lat: 36.30, weight: 0.35 },
+    { name: "Isfahan", lng: 51.68, lat: 32.65, weight: 0.28 },
+    { name: "Tabriz", lng: 46.30, lat: 38.08, weight: 0.22 },
+    { name: "Shiraz", lng: 52.53, lat: 29.59, weight: 0.20 },
+  ],
+  CN: [
+    { name: "Shanghai", lng: 121.47, lat: 31.23, weight: 1.0 },
+    { name: "Beijing", lng: 116.41, lat: 39.90, weight: 0.85 },
+    { name: "Guangzhou", lng: 113.26, lat: 23.13, weight: 0.60 },
+    { name: "Shenzhen", lng: 114.06, lat: 22.54, weight: 0.55 },
+    { name: "Chengdu", lng: 104.07, lat: 30.57, weight: 0.40 },
+  ],
+  RU: [
+    { name: "Moscow", lng: 37.62, lat: 55.76, weight: 1.0 },
+    { name: "St Petersburg", lng: 30.32, lat: 59.93, weight: 0.42 },
+    { name: "Novosibirsk", lng: 82.93, lat: 55.01, weight: 0.12 },
+    { name: "Yekaterinburg", lng: 60.60, lat: 56.84, weight: 0.11 },
+    { name: "Kazan", lng: 49.11, lat: 55.80, weight: 0.10 },
+  ],
+  MM: [
+    { name: "Yangon", lng: 96.20, lat: 16.87, weight: 1.0 },
+    { name: "Mandalay", lng: 96.08, lat: 21.97, weight: 0.35 },
+    { name: "Naypyidaw", lng: 96.13, lat: 19.76, weight: 0.18 },
+    { name: "Mawlamyine", lng: 97.63, lat: 16.49, weight: 0.10 },
+    { name: "Taunggyi", lng: 97.04, lat: 20.78, weight: 0.08 },
+  ],
+  BY: [
+    { name: "Minsk", lng: 27.56, lat: 53.90, weight: 1.0 },
+    { name: "Gomel", lng: 30.98, lat: 52.44, weight: 0.26 },
+    { name: "Mogilev", lng: 30.34, lat: 53.91, weight: 0.18 },
+    { name: "Vitebsk", lng: 30.20, lat: 55.19, weight: 0.17 },
+    { name: "Grodno", lng: 23.83, lat: 53.68, weight: 0.16 },
+  ],
+  TM: [
+    { name: "Ashgabat", lng: 58.39, lat: 37.95, weight: 1.0 },
+    { name: "Turkmenabat", lng: 63.58, lat: 39.07, weight: 0.28 },
+    { name: "Dashoguz", lng: 59.97, lat: 41.84, weight: 0.22 },
+    { name: "Mary", lng: 61.83, lat: 37.60, weight: 0.18 },
+    { name: "Balkanabat", lng: 54.37, lat: 39.51, weight: 0.10 },
+  ],
+  VN: [
+    { name: "Ho Chi Minh", lng: 106.63, lat: 10.82, weight: 1.0 },
+    { name: "Hanoi", lng: 105.85, lat: 21.03, weight: 0.85 },
+    { name: "Da Nang", lng: 108.21, lat: 16.05, weight: 0.20 },
+    { name: "Hai Phong", lng: 106.68, lat: 20.86, weight: 0.18 },
+    { name: "Can Tho", lng: 105.77, lat: 10.04, weight: 0.15 },
+  ],
+  CU: [
+    { name: "Havana", lng: -82.37, lat: 23.11, weight: 1.0 },
+    { name: "Santiago", lng: -75.83, lat: 20.02, weight: 0.25 },
+    { name: "Camaguey", lng: -77.92, lat: 21.38, weight: 0.15 },
+    { name: "Holguin", lng: -76.26, lat: 20.72, weight: 0.14 },
+    { name: "Santa Clara", lng: -79.97, lat: 22.41, weight: 0.12 },
+  ],
+  SA: [
+    { name: "Riyadh", lng: 46.68, lat: 24.71, weight: 1.0 },
+    { name: "Jeddah", lng: 39.17, lat: 21.49, weight: 0.55 },
+    { name: "Mecca", lng: 39.83, lat: 21.39, weight: 0.30 },
+    { name: "Medina", lng: 39.61, lat: 24.47, weight: 0.22 },
+    { name: "Dammam", lng: 50.10, lat: 26.43, weight: 0.20 },
+  ],
+  PK: [
+    { name: "Karachi", lng: 67.01, lat: 24.86, weight: 1.0 },
+    { name: "Lahore", lng: 74.35, lat: 31.55, weight: 0.75 },
+    { name: "Islamabad", lng: 73.05, lat: 33.69, weight: 0.30 },
+    { name: "Faisalabad", lng: 73.08, lat: 31.42, weight: 0.25 },
+    { name: "Rawalpindi", lng: 73.05, lat: 33.60, weight: 0.22 },
+  ],
+  UZ: [
+    { name: "Tashkent", lng: 69.28, lat: 41.30, weight: 1.0 },
+    { name: "Samarkand", lng: 66.96, lat: 39.65, weight: 0.25 },
+    { name: "Namangan", lng: 71.67, lat: 41.00, weight: 0.20 },
+    { name: "Bukhara", lng: 64.42, lat: 39.77, weight: 0.15 },
+    { name: "Andijan", lng: 72.34, lat: 40.78, weight: 0.14 },
+  ],
+  TH: [
+    { name: "Bangkok", lng: 100.50, lat: 13.76, weight: 1.0 },
+    { name: "Chiang Mai", lng: 98.98, lat: 18.79, weight: 0.15 },
+    { name: "Pattaya", lng: 100.88, lat: 12.93, weight: 0.12 },
+    { name: "Nakhon Ratchasima", lng: 102.10, lat: 14.97, weight: 0.10 },
+    { name: "Khon Kaen", lng: 102.83, lat: 16.43, weight: 0.09 },
+  ],
+};
+
+// Country center coords (used for country markers / fallback)
 const COORDS: Record<string, [number, number]> = {
   IR: [53.69, 32.43], CN: [104.20, 35.86], RU: [40.32, 55.75],
   MM: [96.08, 19.76], BY: [27.95, 53.71], TM: [59.56, 38.97],
@@ -18,22 +108,6 @@ const COORDS: Record<string, [number, number]> = {
   TH: [100.99, 15.87], UZ: [64.59, 41.38], SA: [45.08, 23.89],
   IN: [78.96, 20.59], BD: [90.36, 23.68], EG: [30.80, 26.82],
   TR: [35.24, 38.96], VE: [-66.59, 6.42], KZ: [66.92, 48.02],
-};
-
-// Approximate bounding boxes [minLng, maxLng, minLat, maxLat] for scattering user nodes
-const COUNTRY_BOUNDS: Record<string, [number, number, number, number]> = {
-  IR: [44, 63, 25, 40],
-  CN: [74, 135, 18, 53],
-  RU: [28, 180, 42, 70],
-  MM: [92, 101, 10, 28],
-  BY: [23, 33, 51, 56],
-  TM: [52, 66, 35, 42],
-  VN: [102, 110, 8, 23],
-  CU: [-85, -74, 19, 23],
-  SA: [35, 56, 16, 32],
-  PK: [61, 77, 24, 37],
-  UZ: [56, 73, 37, 46],
-  TH: [97, 106, 5, 21],
 };
 
 // ISO 3166-1 numeric → alpha-2 for countries we care about
@@ -113,23 +187,29 @@ function seededRandom(seed: number): () => number {
   };
 }
 
+// Scatter user nodes around cities proportional to city population
 function scatterNodes(country: string, count: number, color: string): ScatteredNode[] {
-  const bounds = COUNTRY_BOUNDS[country];
-  if (!bounds) return [];
-  const [minLng, maxLng, minLat, maxLat] = bounds;
+  const cities = CITIES[country];
+  if (!cities) return [];
   const rand = seededRandom(country.charCodeAt(0) * 1000 + country.charCodeAt(1) * 100 + count);
+  const totalWeight = cities.reduce((s, c) => s + c.weight, 0);
   const nodes: ScatteredNode[] = [];
-  for (let i = 0; i < count; i++) {
-    nodes.push({
-      id: `scatter-${country}-${i}`,
-      lng: minLng + rand() * (maxLng - minLng),
-      lat: minLat + rand() * (maxLat - minLat),
-      country,
-      color,
-    });
+  for (const city of cities) {
+    const cityCount = Math.max(1, Math.round((city.weight / totalWeight) * count));
+    const spread = 2.5 + city.weight * 1.5; // bigger cities get wider spread
+    for (let i = 0; i < cityCount && nodes.length < count; i++) {
+      nodes.push({
+        id: `scatter-${country}-${nodes.length}`,
+        lng: city.lng + (rand() - 0.5) * spread,
+        lat: city.lat + (rand() - 0.5) * spread * 0.7,
+        country,
+        color,
+      });
+    }
   }
   return nodes;
 }
+
 
 function nearestProxy(lng: number, lat: number) {
   let best = PROXY_NODES[0];
@@ -142,40 +222,38 @@ function nearestProxy(lng: number, lat: number) {
 }
 
 function buildMockArcs(): { arcs: TrafficArc[]; scattered: ScatteredNode[] } {
-  const volunteers = mockNodes.filter((n) => n.type === "volunteer" && n.active);
-  const users = mockNodes.filter((n) => n.type === "user" && n.active);
   const arcs: TrafficArc[] = [];
   const allScattered: ScatteredNode[] = [];
 
-  // Group users by country to generate scatter nodes
-  const usersByCountry = new Map<string, ConnectionNode[]>();
-  for (const u of users) {
-    const list = usersByCountry.get(u.country) || [];
-    list.push(u);
-    usersByCountry.set(u.country, list);
-  }
-
-  for (const [country, countryUsers] of usersByCountry) {
+  // Build arcs from cities in each censored country
+  const censoredCountries = Array.from(CENSORED);
+  let arcIndex = 0;
+  for (const country of censoredCountries) {
+    const cities = CITIES[country];
+    if (!cities) continue;
     const color = regionColor(country);
-    // Scatter proportional to user count: 3-15 nodes
-    const scatterCount = Math.min(15, Math.max(3, countryUsers.length * 3));
-    allScattered.push(...scatterNodes(country, scatterCount, color));
-  }
 
-  for (const u of users) {
-    const v = volunteers[arcs.length % volunteers.length];
-    const traffic = 0.3 + Math.random() * 0.7;
-    const count = traffic > 0.7 ? 3 : traffic > 0.45 ? 2 : 1;
-    for (let k = 0; k < count; k++) {
-      arcs.push({
-        id: `${u.id}-${v.id}-${k}`,
-        from: [u.lng, u.lat],
-        to: [v.lng, v.lat],
-        traffic,
-        color: regionColor(u.country),
-        curveIndex: k,
-        country: u.country,
-      });
+    // Scatter nodes around cities
+    const scatterCount = Math.min(15, Math.max(4, cities.length * 3));
+    allScattered.push(...scatterNodes(country, scatterCount, color));
+
+    // Each city gets arcs proportional to its weight
+    for (const city of cities) {
+      const proxy = nearestProxy(city.lng, city.lat);
+      const traffic = 0.2 + city.weight * 0.6;
+      const count = city.weight > 0.6 ? 2 : 1;
+      for (let k = 0; k < count; k++) {
+        arcs.push({
+          id: `mock-${country}-${city.name}-${proxy.id}-${k}`,
+          from: [city.lng, city.lat],
+          to: [proxy.lng, proxy.lat],
+          traffic,
+          color,
+          curveIndex: k,
+          country,
+        });
+        arcIndex++;
+      }
     }
   }
   return { arcs, scattered: allScattered };
@@ -186,27 +264,47 @@ function buildLiveArcs(countries: DashboardCountry[]): { arcs: TrafficArc[]; sca
   const arcs: TrafficArc[] = [];
   const allScattered: ScatteredNode[] = [];
 
-  for (const country of countries) {
-    const coords = COORDS[country.country];
-    if (!coords) continue;
-    const color = regionColor(country.country);
-    const proxy = nearestProxy(coords[0], coords[1]);
-    const traffic = country.asnCount / maxASN;
-    const arcCount = traffic > 0.7 ? 3 : traffic > 0.4 ? 2 : 1;
+  for (const cd of countries) {
+    const cities = CITIES[cd.country];
+    const color = regionColor(cd.country);
+    const traffic = cd.asnCount / maxASN;
 
-    // Scatter nodes: sqrt scale, clamped 3-20
-    const scatterCount = Math.min(20, Math.max(3, Math.round(Math.sqrt(country.asnCount) * 2)));
-    allScattered.push(...scatterNodes(country.country, scatterCount, color));
+    // Scatter nodes around cities
+    const scatterCount = Math.min(20, Math.max(3, Math.round(Math.sqrt(cd.asnCount) * 2)));
+    allScattered.push(...scatterNodes(cd.country, scatterCount, color));
 
-    for (let k = 0; k < arcCount; k++) {
+    if (cities && cities.length > 0) {
+      // Distribute arcs across cities weighted by population
+      const totalWeight = cities.reduce((s, c) => s + c.weight, 0);
+      for (const city of cities) {
+        const cityTraffic = traffic * (city.weight / totalWeight) * cities.length;
+        const proxy = nearestProxy(city.lng, city.lat);
+        const count = cityTraffic > 0.6 ? 2 : 1;
+        for (let k = 0; k < count; k++) {
+          arcs.push({
+            id: `${cd.country}-${city.name}-${proxy.id}-${k}`,
+            from: [city.lng, city.lat],
+            to: [proxy.lng, proxy.lat],
+            traffic: Math.min(1, cityTraffic),
+            color,
+            curveIndex: k,
+            country: cd.country,
+          });
+        }
+      }
+    } else {
+      // Fallback to country center
+      const coords = COORDS[cd.country];
+      if (!coords) continue;
+      const proxy = nearestProxy(coords[0], coords[1]);
       arcs.push({
-        id: `${country.country}-${proxy.id}-${k}`,
+        id: `${cd.country}-${proxy.id}-0`,
         from: coords,
         to: [proxy.lng, proxy.lat],
         traffic,
         color,
-        curveIndex: k,
-        country: country.country,
+        curveIndex: 0,
+        country: cd.country,
       });
     }
   }
