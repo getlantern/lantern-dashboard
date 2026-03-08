@@ -1,4 +1,4 @@
-import { memo, useMemo, useEffect, useState, useRef } from "react";
+import { memo, useMemo, useEffect, useState, useRef, useCallback } from "react";
 import {
   ComposableMap,
   Geographies,
@@ -21,12 +21,12 @@ const COORDS: Record<string, [number, number]> = {
 };
 
 const PROXY_NODES = [
-  { id: "us-east", lng: -74.0, lat: 40.7, label: "US-East" },
-  { id: "us-west", lng: -118.2, lat: 34.1, label: "US-West" },
-  { id: "eu-west", lng: -0.13, lat: 51.5, label: "EU-West" },
-  { id: "eu-central", lng: 13.4, lat: 52.5, label: "EU-Central" },
-  { id: "ap-east", lng: 139.7, lat: 35.7, label: "AP-East" },
-  { id: "ap-south", lng: 103.9, lat: 1.35, label: "AP-South" },
+  { id: "us-east", lng: -74.0, lat: 40.7 },
+  { id: "us-west", lng: -118.2, lat: 34.1 },
+  { id: "eu-west", lng: -0.13, lat: 51.5 },
+  { id: "eu-central", lng: 13.4, lat: 52.5 },
+  { id: "ap-east", lng: 139.7, lat: 35.7 },
+  { id: "ap-south", lng: 103.9, lat: 1.35 },
 ];
 
 interface TrafficArc {
@@ -42,9 +42,9 @@ interface WorldMapProps {
 }
 
 function blockRateColor(rate: number): string {
-  if (rate > 0.5) return "#ff4060";
-  if (rate > 0.2) return "#f0a030";
-  return "#00e5c8";
+  if (rate > 0.5) return "#e08050";
+  if (rate > 0.2) return "#d4a860";
+  return "#c8b878";
 }
 
 function nearestProxy(lng: number, lat: number) {
@@ -67,7 +67,7 @@ function buildMockArcs(): TrafficArc[] {
       from: [v.lng, v.lat],
       to: [u.lng, u.lat],
       traffic: 0.3 + Math.random() * 0.7,
-      color: "#4090ff",
+      color: "#c8b070",
     };
   });
 }
@@ -101,12 +101,11 @@ function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
   return arcs;
 }
 
-// ── Arc geometry ──
-
+// High graceful arc — curvature peaks well above midpoint
 function arcPath(
   from: [number, number],
   to: [number, number],
-  proj: (c: [number, number]) => [number, number] | null
+  proj: (c: [number, number]) => [number, number] | null,
 ): string | null {
   const p1 = proj(from);
   const p2 = proj(to);
@@ -115,171 +114,177 @@ function arcPath(
   const dy = p2[1] - p1[1];
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
-  const curvature = dist * 0.3;
+  // High graceful arc — perpendicular offset scaled strongly with distance
+  const curvature = dist * 0.4;
   const mx = (p1[0] + p2[0]) / 2 - (dy / dist) * curvature;
   const my = (p1[1] + p2[1]) / 2 + (dx / dist) * curvature;
   return `M${p1[0]},${p1[1]} Q${mx},${my} ${p2[0]},${p2[1]}`;
 }
 
-// ── Luminous pulse arc ──
-// Each arc renders:
-//   1. A barely-visible static trace (the "rail")
-//   2. Multiple luminous pulses that shoot along it — bright head, fading tail
-//   The pulse is a short stroke-dasharray segment animated via stroke-dashoffset.
-//   Traffic controls: number of pulses, stroke width, brightness, speed.
+// ── Draw-on arc: line grows from origin to destination, holds, fades ──
 
-function LuminousArc({
+interface ActiveArc {
+  arc: TrafficArc;
+  startTime: number;
+}
+
+function DrawOnArc({
   arc,
   proj,
-  index,
+  progress,
+  opacity,
 }: {
   arc: TrafficArc;
   proj: (c: [number, number]) => [number, number] | null;
-  index: number;
+  progress: number; // 0→1 how much of the arc is drawn
+  opacity: number;  // overall opacity (for fade-out)
 }) {
-  const trailRef = useRef<SVGPathElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
   const [pathLen, setPathLen] = useState(0);
-  const d = arcPath(arc.from, arc.to, proj);
+
+  const d = useMemo(() => arcPath(arc.from, arc.to, proj), [arc, proj]);
 
   useEffect(() => {
-    if (trailRef.current) {
-      setPathLen(trailRef.current.getTotalLength());
+    if (pathRef.current) {
+      setPathLen(pathRef.current.getTotalLength());
     }
   }, [d]);
 
   if (!d) return null;
 
-  const baseWidth = 0.3 + arc.traffic * 1.5;
-  // How many pulses on this arc — busier routes get more
-  const pulseCount = arc.traffic > 0.6 ? 3 : arc.traffic > 0.3 ? 2 : 1;
-  // Pulse length as fraction of total path — shorter = sharper comet
-  const pulseLen = Math.max(12, pathLen * (0.08 + arc.traffic * 0.10));
-  // Duration — busier = faster
-  const dur = 2.8 + (1 - arc.traffic) * 3.5;
+  const baseWidth = 0.5 + arc.traffic * 1.0;
+  const drawn = pathLen * Math.min(progress, 1);
+  const dashOffset = pathLen - drawn;
 
-  const gradientId = `pulse-grad-${arc.id}-${index}`;
+  // Origin glow — bright point where the arc begins
+  const originPt = proj(arc.from);
 
   return (
-    <g>
-      {/* Gradient for comet tail effect */}
-      <defs>
-        <linearGradient id={gradientId} gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor={arc.color} stopOpacity="0" />
-          <stop offset="70%" stopColor={arc.color} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={arc.color} stopOpacity="1" />
-        </linearGradient>
-      </defs>
-
-      {/* 1. Static rail — very faint */}
+    <g opacity={opacity}>
+      {/* Soft glow under the arc */}
+      {pathLen > 0 && (
+        <path
+          d={d}
+          fill="none"
+          stroke={arc.color}
+          strokeWidth={baseWidth * 4}
+          strokeLinecap="round"
+          opacity={0.06}
+          strokeDasharray={pathLen}
+          strokeDashoffset={dashOffset}
+        />
+      )}
+      {/* Main solid arc — draws on progressively */}
       <path
-        ref={trailRef}
+        ref={pathRef}
         d={d}
         fill="none"
         stroke={arc.color}
-        strokeWidth={baseWidth * 0.2}
+        strokeWidth={baseWidth}
         strokeLinecap="round"
-        opacity={0.07}
+        opacity={0.7}
+        strokeDasharray={pathLen || 1000}
+        strokeDashoffset={pathLen > 0 ? dashOffset : 1000}
       />
+      {/* Brighter leading edge — thin bright line at the drawn front */}
+      {pathLen > 0 && progress > 0 && progress < 1 && (
+        <path
+          d={d}
+          fill="none"
+          stroke="white"
+          strokeWidth={baseWidth * 0.5}
+          strokeLinecap="round"
+          opacity={0.4}
+          strokeDasharray={`${Math.min(drawn, 8)} ${pathLen}`}
+          strokeDashoffset={-Math.max(drawn - 8, 0)}
+        />
+      )}
+      {/* Origin glow point */}
+      {originPt && progress > 0 && (
+        <circle
+          cx={originPt[0]}
+          cy={originPt[1]}
+          r={baseWidth * 1.5}
+          fill={arc.color}
+          opacity={0.6}
+          style={{ filter: `drop-shadow(0 0 3px ${arc.color})` }}
+        />
+      )}
+    </g>
+  );
+}
 
-      {/* 2. Soft glow underneath the pulses */}
-      {pathLen > 0 && Array.from({ length: pulseCount }).map((_, pi) => {
-        const stagger = (pi / pulseCount) * dur;
-        const glowDash = `${pulseLen * 1.5} ${pathLen + pulseLen * 2}`;
-        return (
-          <path
-            key={`glow-${pi}`}
-            d={d}
-            fill="none"
-            stroke={arc.color}
-            strokeWidth={baseWidth * 3}
-            strokeLinecap="round"
-            opacity={0.04 + arc.traffic * 0.03}
-            strokeDasharray={glowDash}
-            strokeDashoffset={pathLen + pulseLen}
-          >
-            <animate
-              attributeName="stroke-dashoffset"
-              from={String(pathLen + pulseLen)}
-              to={String(-pulseLen * 2)}
-              dur={`${dur}s`}
-              begin={`${stagger + index * 0.2}s`}
-              repeatCount="indefinite"
-            />
-          </path>
-        );
-      })}
+// ── Arc scheduler — staggers arcs so a few are always animating ──
 
-      {/* 3. Luminous comet pulses */}
-      {pathLen > 0 && Array.from({ length: pulseCount }).map((_, pi) => {
-        const stagger = (pi / pulseCount) * dur;
-        // The dash: [bright segment] [gap big enough to hide the rest]
-        const cometDash = `${pulseLen} ${pathLen + pulseLen * 2}`;
-        return (
-          <path
-            key={`comet-${pi}`}
-            d={d}
-            fill="none"
-            stroke={arc.color}
-            strokeWidth={baseWidth}
-            strokeLinecap="round"
-            opacity={0.5 + arc.traffic * 0.4}
-            strokeDasharray={cometDash}
-            strokeDashoffset={pathLen + pulseLen}
-          >
-            <animate
-              attributeName="stroke-dashoffset"
-              from={String(pathLen + pulseLen)}
-              to={String(-pulseLen * 2)}
-              dur={`${dur}s`}
-              begin={`${stagger + index * 0.2}s`}
-              repeatCount="indefinite"
-            />
-            <animate
-              attributeName="opacity"
-              values={`0;${0.5 + arc.traffic * 0.4};${0.5 + arc.traffic * 0.4};0`}
-              keyTimes="0;0.05;0.85;1"
-              dur={`${dur}s`}
-              begin={`${stagger + index * 0.2}s`}
-              repeatCount="indefinite"
-            />
-          </path>
-        );
-      })}
+function ArcLayer({
+  arcs,
+  proj,
+}: {
+  arcs: TrafficArc[];
+  proj: (c: [number, number]) => [number, number] | null;
+}) {
+  const [time, setTime] = useState(0);
+  const rafRef = useRef<number>(0);
+  const startRef = useRef(performance.now());
 
-      {/* 4. Bright head dot — travels the path */}
-      {pathLen > 0 && Array.from({ length: pulseCount }).map((_, pi) => {
-        const stagger = (pi / pulseCount) * dur;
+  useEffect(() => {
+    function tick() {
+      const elapsed = (performance.now() - startRef.current) / 1000;
+      setTime(elapsed);
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  if (arcs.length === 0) return null;
+
+  // Each arc gets a cycle: draw (1.5s) → hold (1s) → fade (0.8s) → pause
+  // Stagger them so multiple are visible at once
+  const drawDur = 1.6;
+  const holdDur = 1.2;
+  const fadeDur = 0.8;
+  const cycleDur = drawDur + holdDur + fadeDur;
+  // Stagger: space arcs evenly but overlap so ~3-4 are visible at once
+  const stagger = Math.max(0.8, cycleDur / Math.min(arcs.length, 5));
+
+  return (
+    <g>
+      {arcs.map((arc, i) => {
+        // Each arc's local time within its cycle
+        const offset = i * stagger;
+        const localTime = ((time - offset) % (cycleDur + stagger * 0.5));
+        if (localTime < 0) return null;
+
+        let progress: number;
+        let opacity: number;
+
+        if (localTime < drawDur) {
+          // Drawing phase — ease-out curve for natural feel
+          const t = localTime / drawDur;
+          progress = 1 - Math.pow(1 - t, 2.5);
+          opacity = 1;
+        } else if (localTime < drawDur + holdDur) {
+          // Hold phase — fully drawn
+          progress = 1;
+          opacity = 1;
+        } else if (localTime < cycleDur) {
+          // Fade phase
+          const t = (localTime - drawDur - holdDur) / fadeDur;
+          progress = 1;
+          opacity = 1 - t;
+        } else {
+          return null;
+        }
+
         return (
-          <circle
-            key={`head-${pi}`}
-            r={baseWidth * 0.8}
-            fill="white"
-            opacity={0}
-          >
-            <animateMotion
-              dur={`${dur}s`}
-              begin={`${stagger + index * 0.2}s`}
-              repeatCount="indefinite"
-              path={d}
-              keyPoints="0;1"
-              keyTimes="0;1"
-            />
-            <animate
-              attributeName="opacity"
-              values="0;0.9;0.9;0"
-              keyTimes="0;0.05;0.85;1"
-              dur={`${dur}s`}
-              begin={`${stagger + index * 0.2}s`}
-              repeatCount="indefinite"
-            />
-            <animate
-              attributeName="r"
-              values={`${baseWidth * 0.4};${baseWidth * 0.9};${baseWidth * 0.4}`}
-              dur={`${dur}s`}
-              begin={`${stagger + index * 0.2}s`}
-              repeatCount="indefinite"
-            />
-          </circle>
+          <DrawOnArc
+            key={arc.id}
+            arc={arc}
+            proj={proj}
+            progress={progress}
+            opacity={opacity}
+          />
         );
       })}
     </g>
@@ -291,28 +296,28 @@ function LuminousArc({
 function ProxyMarker({ node }: { node: typeof PROXY_NODES[0] }) {
   return (
     <Marker coordinates={[node.lng, node.lat]}>
-      <circle r={3} fill="#00e5c8" opacity={0.08} />
-      <circle r={1.5} fill="#00e5c8" opacity={0.6} style={{ filter: "drop-shadow(0 0 2px #00e5c8)" }} />
+      <circle r={2} fill="#c8b070" opacity={0.08} />
+      <circle r={1} fill="#c8b070" opacity={0.35} style={{ filter: "drop-shadow(0 0 2px #c8b070)" }} />
     </Marker>
   );
 }
 
 function NodeMarker({ node, pulse }: { node: ConnectionNode; pulse: boolean }) {
-  const color = node.type === "volunteer" ? "#00e5c8" : "#f0a030";
-  const size = node.type === "volunteer" ? 3 : 2.5;
+  const color = node.type === "volunteer" ? "#c8b878" : "#d4a860";
+  const size = node.type === "volunteer" ? 2.5 : 2;
   return (
     <Marker coordinates={[node.lng, node.lat]}>
       {node.active && pulse && (
-        <circle r={size + 5} fill="none" stroke={color} strokeWidth={0.4} opacity={0.2}>
-          <animate attributeName="r" from={String(size + 1)} to={String(size + 9)} dur="2.5s" repeatCount="indefinite" />
-          <animate attributeName="opacity" from="0.4" to="0" dur="2.5s" repeatCount="indefinite" />
+        <circle r={size + 5} fill="none" stroke={color} strokeWidth={0.3} opacity={0.15}>
+          <animate attributeName="r" from={String(size + 1)} to={String(size + 8)} dur="2.5s" repeatCount="indefinite" />
+          <animate attributeName="opacity" from="0.3" to="0" dur="2.5s" repeatCount="indefinite" />
         </circle>
       )}
       <circle
         r={size}
         fill={color}
-        opacity={node.active ? 0.8 : 0.2}
-        style={{ filter: node.active ? `drop-shadow(0 0 3px ${color})` : "none" }}
+        opacity={node.active ? 0.6 : 0.15}
+        style={{ filter: node.active ? `drop-shadow(0 0 2px ${color})` : "none" }}
       />
     </Marker>
   );
@@ -322,15 +327,15 @@ function LiveCountryMarker({ country, index }: { country: DashboardCountry; inde
   const coords = COORDS[country.country];
   if (!coords) return null;
   const color = blockRateColor(country.avgBlockRate);
-  const size = Math.max(2, Math.min(5, country.asnCount / 2));
+  const size = Math.max(1.5, Math.min(4, country.asnCount / 2));
   return (
     <Marker coordinates={coords}>
-      <circle r={size + 3} fill="none" stroke={color} strokeWidth={0.25} opacity={0.12}>
-        <animate attributeName="r" from={String(size)} to={String(size + 6)} dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
-        <animate attributeName="opacity" from="0.25" to="0" dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
+      <circle r={size + 2} fill="none" stroke={color} strokeWidth={0.2} opacity={0.1}>
+        <animate attributeName="r" from={String(size)} to={String(size + 5)} dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.2" to="0" dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
       </circle>
-      <circle r={size} fill={color} opacity={0.55} style={{ filter: `drop-shadow(0 0 3px ${color})` }} />
-      <text y={-size - 3} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "4.5px", fill: "#e8ecf4", opacity: 0.6 }}>
+      <circle r={size} fill={color} opacity={0.45} style={{ filter: `drop-shadow(0 0 2px ${color})` }} />
+      <text y={-size - 2.5} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "4px", fill: "#e8ecf4", opacity: 0.5 }}>
         {country.country}
       </text>
     </Marker>
@@ -346,7 +351,7 @@ function WorldMap({ liveCountries }: WorldMapProps) {
 
   const arcs = useMemo(
     () => (hasLiveData ? buildLiveArcs(liveCountries) : buildMockArcs()),
-    [hasLiveData, liveCountries]
+    [hasLiveData, liveCountries],
   );
 
   useEffect(() => {
@@ -371,19 +376,21 @@ function WorldMap({ liveCountries }: WorldMapProps) {
               const iso = geo.properties.ISO_A2 || geo.id;
               const isCensored = CENSORED.has(iso);
               const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
-              let fill = "#0a0d14";
-              if (isCensored) fill = "#110e18";
-              if (hasData) fill = "#14112a";
+              // Dark slate blue-gray to match the Lantern video aesthetic
+              let fill = "#1a2030";
+              let stroke = "#2a3548";
+              if (isCensored) { fill = "#1c2234"; stroke = "#3a4a60"; }
+              if (hasData) { fill = "#1e2438"; stroke = "#4a5a70"; }
               return (
                 <Geography
                   key={geo.rsmKey}
                   geography={geo}
                   fill={fill}
-                  stroke="#151a28"
-                  strokeWidth={0.25}
+                  stroke={stroke}
+                  strokeWidth={0.4}
                   style={{
                     default: { outline: "none" },
-                    hover: { outline: "none", fill: hasData ? "#1c1836" : isCensored ? "#171224" : "#0e111a" },
+                    hover: { outline: "none", fill: hasData ? "#242a40" : isCensored ? "#222838" : "#1e2636" },
                     pressed: { outline: "none" },
                   }}
                 />
@@ -392,15 +399,13 @@ function WorldMap({ liveCountries }: WorldMapProps) {
           }}
         </Geographies>
 
-        {/* Luminous traffic arcs */}
-        {projectionFn && arcs.map((arc, i) => (
-          <LuminousArc key={arc.id} arc={arc} proj={projectionFn} index={i} />
-        ))}
+        {/* Draw-on arcs */}
+        {projectionFn && <ArcLayer arcs={arcs} proj={projectionFn} />}
 
         {/* Proxy markers */}
         {hasLiveData && PROXY_NODES.map((n) => <ProxyMarker key={n.id} node={n} />)}
 
-        {/* Country / node markers */}
+        {/* Node markers */}
         {hasLiveData
           ? liveCountries.map((c, i) => <LiveCountryMarker key={c.country} country={c} index={i} />)
           : mockNodes.map((n, i) => <NodeMarker key={n.id} node={n} pulse={i === pulseIndex} />)}
