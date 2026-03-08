@@ -850,7 +850,7 @@ function WorldMap({ liveCountries }: WorldMapProps) {
 
       <ComposableMap
         projection="geoMercator"
-        projectionConfig={{ scale: 150, center: [40, 28] }}
+        projectionConfig={{ scale: 140, center: [20, 25] }}
         style={{ width: "100%", height: "100%" }}
       >
         <Geographies geography={GEO_URL}>
