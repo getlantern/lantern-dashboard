@@ -1,9 +1,11 @@
+import { useState, useMemo, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveData } from "../hooks/useLiveData";
-import WorldMap from "./WorldMap";
+import WorldMap, { type MapSelection, asnDisplayName } from "./WorldMap";
 import StatsRow from "./StatsRow";
 import ImpactCard from "./ImpactCard";
 import ProtocolFeed from "./ProtocolFeed";
+import type { GlobalStats } from "../data/mock";
 
 function LanternLogo() {
   return (
@@ -24,6 +26,57 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
   const { globalStats, volunteerStats, isLive, blockedRoutes } = useLiveData();
+  const [mapSelection, setMapSelection] = useState<MapSelection>({ country: null, asn: null, asnName: null, countryASNs: [] });
+
+  const handleSelectionChange = useCallback((sel: MapSelection) => {
+    setMapSelection(sel);
+  }, []);
+
+  // Compute filtered stats based on map selection
+  const { displayStats, filterLabel } = useMemo(() => {
+    const { country, asn, asnName, countryASNs } = mapSelection;
+
+    if (!country) return { displayStats: globalStats, filterLabel: null };
+
+    // Find the country data
+    const countryData = globalStats.countries?.find((c) => c.country === country);
+    const totalASNs = globalStats.countries?.reduce((s, c) => s + c.asnCount, 0) || 1;
+    const countryASNCount = countryData?.asnCount || 0;
+    const countryFraction = countryASNCount / Math.max(totalASNs, 1);
+
+    if (asn) {
+      // Filter to specific ISP
+      const ispData = countryASNs.find((a) => a.asn === asn);
+      const ispPulls = ispData?.totalPulls || 0;
+      const countryTotalPulls = countryASNs.reduce((s, a) => s + a.totalPulls, 0) || 1;
+      const ispFraction = countryFraction * (ispPulls / countryTotalPulls);
+
+      const filtered: GlobalStats = {
+        activeVolunteers: Math.max(1, Math.round(globalStats.activeVolunteers * ispFraction * 0.5)),
+        activeUsers: Math.max(1, Math.round(globalStats.activeUsers * ispFraction)),
+        countriesReached: 1,
+        protocolsGenerated: globalStats.protocolsGenerated,
+        protocolsActive: ispData?.numArms || globalStats.protocolsActive,
+        blocksEvadedToday: ispData?.numBlocked || Math.round(globalStats.blocksEvadedToday * ispFraction),
+        totalSessionsToday: Math.round(globalStats.totalSessionsToday * ispFraction),
+        bandwidthTodayTB: +(globalStats.bandwidthTodayTB * ispFraction).toFixed(2),
+      };
+      return { displayStats: filtered, filterLabel: `${country} / ${asnName || asn}` };
+    }
+
+    // Filter to country
+    const filtered: GlobalStats = {
+      activeVolunteers: Math.max(1, Math.round(globalStats.activeVolunteers * countryFraction * 0.3)),
+      activeUsers: Math.max(1, Math.round(globalStats.activeUsers * countryFraction)),
+      countriesReached: 1,
+      protocolsGenerated: globalStats.protocolsGenerated,
+      protocolsActive: globalStats.protocolsActive,
+      blocksEvadedToday: Math.round(globalStats.blocksEvadedToday * countryFraction),
+      totalSessionsToday: Math.round(globalStats.totalSessionsToday * countryFraction),
+      bandwidthTodayTB: +(globalStats.bandwidthTodayTB * countryFraction).toFixed(2),
+    };
+    return { displayStats: filtered, filterLabel: country };
+  }, [globalStats, mapSelection]);
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -114,7 +167,7 @@ export default function Dashboard() {
                 : "Simulated connections"}
             </p>
           </div>
-          <WorldMap liveCountries={globalStats.countries.length > 0 ? globalStats.countries : undefined} />
+          <WorldMap liveCountries={globalStats.countries.length > 0 ? globalStats.countries : undefined} onSelectionChange={handleSelectionChange} />
           <div className="map-legend">
             {isLive ? (
               <>
@@ -144,7 +197,7 @@ export default function Dashboard() {
               </>
             )}
           </div>
-          <StatsRow stats={globalStats} />
+          <StatsRow stats={displayStats} filterLabel={filterLabel} />
         </div>
 
         <div className="right-panel">

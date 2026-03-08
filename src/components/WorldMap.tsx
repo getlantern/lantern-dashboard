@@ -153,8 +153,16 @@ interface ScatteredNode {
   color: string;
 }
 
+export interface MapSelection {
+  country: string | null;
+  asn: string | null;
+  asnName: string | null;
+  countryASNs: DashboardASN[];
+}
+
 interface WorldMapProps {
   liveCountries?: DashboardCountry[];
+  onSelectionChange?: (selection: MapSelection) => void;
 }
 
 // Each censored region gets a distinct warm hue
@@ -591,7 +599,7 @@ const ASN_NAMES: Record<string, string> = {
   AS17974: "Telkom Indonesia", AS209: "CenturyLink",
 };
 
-function asnDisplayName(asn: string): string {
+export function asnDisplayName(asn: string): string {
   return ASN_NAMES[asn] || asn;
 }
 
@@ -736,13 +744,23 @@ function ISPPanel({
 
 // ── Main ──
 
-function WorldMap({ liveCountries }: WorldMapProps) {
+function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [projectionFn, setProjectionFn] = useState<((c: [number, number]) => [number, number] | null) | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [selectedASN, setSelectedASN] = useState<string | null>(null);
   const [countryASNs, setCountryASNs] = useState<DashboardASN[]>([]);
   const [asnLoading, setAsnLoading] = useState(false);
+
+  // Notify parent of selection changes
+  useEffect(() => {
+    onSelectionChange?.({
+      country: selectedCountry,
+      asn: selectedASN,
+      asnName: selectedASN ? asnDisplayName(selectedASN) : null,
+      countryASNs,
+    });
+  }, [selectedCountry, selectedASN, countryASNs, onSelectionChange]);
   const hasLiveData = liveCountries && liveCountries.length > 0;
 
   const { arcs: allArcs, scattered: allScattered } = useMemo(
