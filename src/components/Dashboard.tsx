@@ -25,7 +25,7 @@ function LanternLogo() {
 
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
-  const { globalStats, volunteerStats, isLive, blockedRoutes } = useLiveData();
+  const { globalStats, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
   const [mapSelection, setMapSelection] = useState<MapSelection>({ country: null, asn: null, asnName: null, countryASNs: [] });
 
   const handleSelectionChange = useCallback((sel: MapSelection) => {
@@ -92,21 +92,22 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          {isLive && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.55rem",
-                padding: "0.15rem 0.45rem",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--accent-primary-dim)",
-                color: "var(--accent-primary)",
-                border: "1px solid #00e5c830",
-              }}
-            >
-              LIVE DATA
-            </div>
-          )}
+          <div
+            onClick={toggleDemoMode}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.55rem",
+              padding: "0.15rem 0.45rem",
+              borderRadius: "var(--radius-sm)",
+              background: demoMode ? "var(--accent-secondary-dim)" : isLive ? "var(--accent-primary-dim)" : "#ffffff08",
+              color: demoMode ? "var(--accent-secondary)" : isLive ? "var(--accent-primary)" : "var(--text-muted)",
+              border: `1px solid ${demoMode ? "#f0a03030" : isLive ? "#00e5c830" : "#ffffff10"}`,
+              cursor: "pointer",
+              userSelect: "none",
+            }}
+          >
+            {demoMode ? "DEMO" : isLive ? "LIVE DATA" : "CONNECTING..."}
+          </div>
           {blockedRoutes.length > 0 && (
             <div
               style={{

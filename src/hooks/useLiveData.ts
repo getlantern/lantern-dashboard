@@ -43,10 +43,11 @@ export function useLiveData() {
   });
   const [blockedRoutes, setBlockedRoutes] = useState<string[]>([]);
   const [isLive, setIsLive] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || demoMode) return;
 
     try {
       const [global, blocked] = await Promise.all([
@@ -61,7 +62,6 @@ export function useLiveData() {
         countriesReached: global.countries.length,
         blocksEvadedToday: global.blockedCount > 0 ? global.blockedCount : prev.blocksEvadedToday,
         countries: global.countries,
-        // Estimate users from ASN counts (each ASN represents many users)
         activeUsers: totalASNs > 0 ? totalASNs * 50 : prev.activeUsers,
       }));
 
@@ -73,16 +73,36 @@ export function useLiveData() {
       setError(err instanceof Error ? err.message : "API error");
       setIsLive(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, demoMode]);
+
+  const toggleDemoMode = useCallback(() => {
+    setDemoMode((prev) => {
+      const next = !prev;
+      if (next) {
+        // Switch to demo: reset to mock data
+        setGlobalStats({ ...mockGlobalStats, countries: [] });
+        setBlockedRoutes([]);
+        setIsLive(false);
+      }
+      return next;
+    });
+  }, []);
+
+  // When leaving demo mode, trigger a refresh
+  useEffect(() => {
+    if (!demoMode && isAuthenticated) {
+      refresh();
+    }
+  }, [demoMode, isAuthenticated, refresh]);
 
   // Initial fetch + polling every 30s
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || demoMode) return;
 
     refresh();
     const interval = setInterval(refresh, 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, refresh]);
+  }, [isAuthenticated, demoMode, refresh]);
 
   // Simulate stat updates between API polls
   useEffect(() => {
@@ -101,8 +121,10 @@ export function useLiveData() {
   return {
     globalStats,
     blockedRoutes,
-    volunteerStats: mockVolunteerStats, // TODO: wire to unbounded data
+    volunteerStats: mockVolunteerStats,
     isLive,
+    demoMode,
+    toggleDemoMode,
     error,
     countryCoords: COUNTRY_COORDS,
     refresh,
