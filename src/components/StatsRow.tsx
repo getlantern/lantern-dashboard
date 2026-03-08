@@ -35,7 +35,7 @@ function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: num
 
 export default function StatsRow({ stats }: { stats: GlobalStats }) {
   return (
-    <div className="stats-row">
+    <div className="stats-overlay">
       <div className="stat-card">
         <span className="stat-label">Active Volunteers</span>
         <span className="stat-value accent mono">

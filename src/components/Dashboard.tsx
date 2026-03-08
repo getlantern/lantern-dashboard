@@ -38,13 +38,13 @@ export default function Dashboard() {
             <div className="header-subtitle">Impact Dashboard</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           {isLive && (
             <div
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: "0.6rem",
-                padding: "0.2rem 0.5rem",
+                fontSize: "0.55rem",
+                padding: "0.15rem 0.45rem",
                 borderRadius: "var(--radius-sm)",
                 background: "var(--accent-primary-dim)",
                 color: "var(--accent-primary)",
@@ -58,8 +58,8 @@ export default function Dashboard() {
             <div
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: "0.6rem",
-                padding: "0.2rem 0.5rem",
+                fontSize: "0.55rem",
+                padding: "0.15rem 0.45rem",
                 borderRadius: "var(--radius-sm)",
                 background: "var(--accent-danger-dim)",
                 color: "var(--accent-danger)",
@@ -81,21 +81,21 @@ export default function Dashboard() {
                 background: "none",
                 border: "1px solid #ffffff10",
                 borderRadius: "var(--radius-sm)",
-                padding: "0.3rem 0.6rem",
+                padding: "0.2rem 0.5rem",
                 color: "var(--text-secondary)",
                 fontFamily: "var(--font-mono)",
-                fontSize: "0.65rem",
+                fontSize: "0.6rem",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
-                gap: "0.4rem",
+                gap: "0.35rem",
               }}
             >
               {user.picture && (
                 <img
                   src={user.picture}
                   alt=""
-                  style={{ width: 18, height: 18, borderRadius: "50%" }}
+                  style={{ width: 16, height: 16, borderRadius: "50%" }}
                 />
               )}
               {user.name.split(" ")[0]}
@@ -104,16 +104,14 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="main-grid">
-        <StatsRow stats={globalStats} />
-
+      <div className="main-layout">
         <div className="map-section">
           <div className="map-header">
             <h2>Global Network</h2>
             <p>
               {isLive
                 ? `Live bandit data — ${globalStats.countries.length} countries`
-                : "Simulated connections (sign in for live data)"}
+                : "Simulated connections"}
             </p>
           </div>
           <WorldMap liveCountries={globalStats.countries.length > 0 ? globalStats.countries : undefined} />
@@ -126,11 +124,11 @@ export default function Dashboard() {
                 </div>
                 <div className="legend-item">
                   <div className="legend-dot" style={{ background: "#f0a030", boxShadow: "0 0 6px #f0a03040" }} />
-                  <span>Medium block rate</span>
+                  <span>Medium</span>
                 </div>
                 <div className="legend-item">
                   <div className="legend-dot" style={{ background: "#ff4060", boxShadow: "0 0 6px #ff406040" }} />
-                  <span>High block rate</span>
+                  <span>High</span>
                 </div>
               </>
             ) : (
@@ -141,15 +139,12 @@ export default function Dashboard() {
                 </div>
                 <div className="legend-item">
                   <div className="legend-dot user" />
-                  <span>User</span>
-                </div>
-                <div className="legend-item">
-                  <div className="legend-dot route" />
-                  <span>Active Route</span>
+                  <span>User (censored)</span>
                 </div>
               </>
             )}
           </div>
+          <StatsRow stats={globalStats} />
         </div>
 
         <div className="right-panel">
