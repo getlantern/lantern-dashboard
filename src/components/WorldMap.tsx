@@ -333,14 +333,20 @@ function ArcLayer({
   const holdDur = 2.0;
   const fadeDur = 1.4;
   const cycleDur = drawDur + holdDur + fadeDur;
-  const stagger = Math.max(1.0, cycleDur / Math.min(arcs.length, 6));
+  const totalCycle = cycleDur + 1.5;
 
   return (
     <g>
-      {arcs.map((arc, i) => {
+      {arcs.map((arc) => {
+        // Stable offset derived from arc ID so filtering doesn't disrupt timing
+        let hash = 0;
+        for (let j = 0; j < arc.id.length; j++) {
+          hash = ((hash << 5) - hash + arc.id.charCodeAt(j)) | 0;
+        }
+        const stableOffset = (Math.abs(hash) % 1000) / 1000 * totalCycle * 3;
         const siblingDelay = (arc.curveIndex ?? 0) * 0.6;
-        const offset = i * stagger + siblingDelay;
-        const localTime = ((time - offset) % (cycleDur + stagger * 0.5));
+        const offset = stableOffset + siblingDelay;
+        const localTime = ((time - offset) % totalCycle + totalCycle) % totalCycle;
         if (localTime < 0) return null;
 
         let progress: number;
