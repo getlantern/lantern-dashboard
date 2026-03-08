@@ -6,7 +6,7 @@ import {
   Marker,
 } from "react-simple-maps";
 import { mockNodes, type ConnectionNode } from "../data/mock";
-import type { DashboardCountry } from "../api/client";
+import { fetchASNs, type DashboardCountry, type DashboardASN } from "../api/client";
 
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const CENSORED = new Set(["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "SA", "PK", "UZ", "TH"]);
@@ -461,18 +461,217 @@ function LiveCountryMarker({ country, index, dimmed }: { country: DashboardCount
   );
 }
 
+// ── Mock ISP data for when API is unavailable ──
+
+const MOCK_ISPS: Record<string, DashboardASN[]> = {
+  IR: [
+    { asn: "AS44244", country: "IR", numArms: 18, numBlocked: 3, totalPulls: 4200, entropy: 2.1, snapshotTime: "", topArms: [] },
+    { asn: "AS197207", country: "IR", numArms: 12, numBlocked: 5, totalPulls: 3100, entropy: 1.4, snapshotTime: "", topArms: [] },
+    { asn: "AS58224", country: "IR", numArms: 9, numBlocked: 1, totalPulls: 1800, entropy: 2.8, snapshotTime: "", topArms: [] },
+    { asn: "AS12880", country: "IR", numArms: 15, numBlocked: 7, totalPulls: 5200, entropy: 0.9, snapshotTime: "", topArms: [] },
+  ],
+  CN: [
+    { asn: "AS4134", country: "CN", numArms: 24, numBlocked: 8, totalPulls: 9400, entropy: 1.8, snapshotTime: "", topArms: [] },
+    { asn: "AS4837", country: "CN", numArms: 20, numBlocked: 6, totalPulls: 7200, entropy: 2.0, snapshotTime: "", topArms: [] },
+    { asn: "AS9808", country: "CN", numArms: 16, numBlocked: 4, totalPulls: 5100, entropy: 2.4, snapshotTime: "", topArms: [] },
+    { asn: "AS56040", country: "CN", numArms: 11, numBlocked: 9, totalPulls: 3800, entropy: 0.6, snapshotTime: "", topArms: [] },
+    { asn: "AS56046", country: "CN", numArms: 8, numBlocked: 2, totalPulls: 2100, entropy: 2.7, snapshotTime: "", topArms: [] },
+  ],
+  RU: [
+    { asn: "AS12389", country: "RU", numArms: 14, numBlocked: 4, totalPulls: 3900, entropy: 1.9, snapshotTime: "", topArms: [] },
+    { asn: "AS25513", country: "RU", numArms: 10, numBlocked: 2, totalPulls: 2400, entropy: 2.5, snapshotTime: "", topArms: [] },
+    { asn: "AS8359", country: "RU", numArms: 12, numBlocked: 5, totalPulls: 3200, entropy: 1.3, snapshotTime: "", topArms: [] },
+  ],
+};
+
+// Well-known ASN → ISP name mapping
+const ASN_NAMES: Record<string, string> = {
+  AS44244: "Irancell", AS197207: "MCI", AS58224: "TCI", AS12880: "Afranet",
+  AS4134: "China Telecom", AS4837: "China Unicom", AS9808: "China Mobile",
+  AS56040: "China Mobile GD", AS56046: "China Mobile ZJ",
+  AS12389: "Rostelecom", AS25513: "PJSC MTS", AS8359: "MTS OJSC",
+  AS17974: "Telkom Indonesia", AS209: "CenturyLink",
+};
+
+function asnDisplayName(asn: string): string {
+  return ASN_NAMES[asn] || asn;
+}
+
+// ── ISP Panel — shown when a country is selected ──
+
+function ISPPanel({
+  country,
+  asns,
+  loading,
+  selectedASN,
+  onSelectASN,
+  onClose,
+}: {
+  country: string;
+  asns: DashboardASN[];
+  loading: boolean;
+  selectedASN: string | null;
+  onSelectASN: (asn: string | null) => void;
+  onClose: () => void;
+}) {
+  const color = regionColor(country);
+  const maxPulls = Math.max(1, ...asns.map((a) => a.totalPulls));
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom: "5.5rem",
+        right: "0.75rem",
+        zIndex: 20,
+        width: "220px",
+        background: "rgba(12, 14, 20, 0.92)",
+        backdropFilter: "blur(12px)",
+        border: `1px solid ${color}30`,
+        borderRadius: "6px",
+        overflow: "hidden",
+        fontFamily: "var(--font-mono)",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0.5rem 0.65rem",
+          borderBottom: `1px solid ${color}18`,
+          background: `${color}08`,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "0.65rem", fontWeight: 600, color }}>
+            {country}
+          </div>
+          <div style={{ fontSize: "0.5rem", color: "#8890a0", marginTop: "1px" }}>
+            {asns.length} ISP{asns.length !== 1 ? "s" : ""} detected
+          </div>
+        </div>
+        <div
+          onClick={onClose}
+          style={{
+            fontSize: "0.65rem",
+            color: "#6670800",
+            cursor: "pointer",
+            padding: "2px 6px",
+            borderRadius: "3px",
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </div>
+      </div>
+
+      {/* ISP list */}
+      <div style={{ maxHeight: "200px", overflowY: "auto", padding: "0.3rem 0" }}>
+        {loading ? (
+          <div style={{ padding: "1rem", textAlign: "center", fontSize: "0.55rem", color: "#667080" }}>
+            Loading ISPs...
+          </div>
+        ) : asns.length === 0 ? (
+          <div style={{ padding: "1rem", textAlign: "center", fontSize: "0.55rem", color: "#667080" }}>
+            No ISP data
+          </div>
+        ) : (
+          asns.map((asn) => {
+            const isSelected = selectedASN === asn.asn;
+            const blockRate = asn.numArms > 0 ? asn.numBlocked / asn.numArms : 0;
+            const pullBar = asn.totalPulls / maxPulls;
+            return (
+              <div
+                key={asn.asn}
+                onClick={() => onSelectASN(isSelected ? null : asn.asn)}
+                style={{
+                  padding: "0.4rem 0.65rem",
+                  cursor: "pointer",
+                  background: isSelected ? `${color}15` : "transparent",
+                  borderLeft: isSelected ? `2px solid ${color}` : "2px solid transparent",
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) e.currentTarget.style.background = `${color}0a`;
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <span style={{ fontSize: "0.58rem", fontWeight: 500, color: isSelected ? color : "#c8ccd4" }}>
+                    {asnDisplayName(asn.asn)}
+                  </span>
+                  <span style={{ fontSize: "0.48rem", color: "#667080" }}>
+                    {asn.asn}
+                  </span>
+                </div>
+                {/* Traffic bar */}
+                <div style={{ marginTop: "3px", height: "3px", background: "#ffffff08", borderRadius: "2px", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pullBar * 100}%`, background: color, opacity: 0.5, borderRadius: "2px" }} />
+                </div>
+                {/* Stats row */}
+                <div style={{ display: "flex", gap: "0.6rem", marginTop: "3px", fontSize: "0.48rem", color: "#667080" }}>
+                  <span>{asn.numArms} arms</span>
+                  <span style={{ color: blockRate > 0.3 ? "#e0a080" : blockRate > 0.1 ? "#d8c090" : "#a0c8a0" }}>
+                    {asn.numBlocked} blocked
+                  </span>
+                  <span>{asn.totalPulls.toLocaleString()} pulls</span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Footer hint */}
+      {selectedASN && (
+        <div style={{ padding: "0.35rem 0.65rem", borderTop: `1px solid ${color}18`, fontSize: "0.48rem", color: "#667080" }}>
+          Showing traffic for {asnDisplayName(selectedASN)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──
 
 function WorldMap({ liveCountries }: WorldMapProps) {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [projectionFn, setProjectionFn] = useState<((c: [number, number]) => [number, number] | null) | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [selectedASN, setSelectedASN] = useState<string | null>(null);
+  const [countryASNs, setCountryASNs] = useState<DashboardASN[]>([]);
+  const [asnLoading, setAsnLoading] = useState(false);
   const hasLiveData = liveCountries && liveCountries.length > 0;
 
   const { arcs: allArcs, scattered: allScattered } = useMemo(
     () => (hasLiveData ? buildLiveArcs(liveCountries) : buildMockArcs()),
     [hasLiveData, liveCountries],
   );
+
+  // Fetch ASN data when a country is selected
+  useEffect(() => {
+    if (!selectedCountry) {
+      setCountryASNs([]);
+      setSelectedASN(null);
+      return;
+    }
+    setSelectedASN(null);
+    setAsnLoading(true);
+
+    fetchASNs(selectedCountry)
+      .then((asns) => {
+        setCountryASNs(asns.length > 0 ? asns : (MOCK_ISPS[selectedCountry] ?? []));
+        setAsnLoading(false);
+      })
+      .catch(() => {
+        setCountryASNs(MOCK_ISPS[selectedCountry] ?? []);
+        setAsnLoading(false);
+      });
+  }, [selectedCountry]);
 
   // Filter arcs and scatter nodes when a country is selected
   const arcs = useMemo(() => {
@@ -495,6 +694,11 @@ function WorldMap({ liveCountries }: WorldMapProps) {
     setSelectedCountry((prev) => (prev === iso ? null : iso));
   }, []);
 
+  const handleClearSelection = useCallback(() => {
+    setSelectedCountry(null);
+    setSelectedASN(null);
+  }, []);
+
   // Determine which proxy IDs are involved in filtered arcs (for dimming)
   const activeProxyIds = useMemo(() => {
     if (!selectedCountry) return null;
@@ -513,7 +717,7 @@ function WorldMap({ liveCountries }: WorldMapProps) {
       {/* Selected country indicator */}
       {selectedCountry && (
         <div
-          onClick={() => setSelectedCountry(null)}
+          onClick={handleClearSelection}
           style={{
             position: "absolute",
             top: "0.75rem",
@@ -530,8 +734,20 @@ function WorldMap({ liveCountries }: WorldMapProps) {
             userSelect: "none",
           }}
         >
-          {selectedCountry} — click to clear
+          {selectedCountry}{selectedASN ? ` / ${asnDisplayName(selectedASN)}` : ""} — click to clear
         </div>
+      )}
+
+      {/* ISP Panel */}
+      {selectedCountry && (
+        <ISPPanel
+          country={selectedCountry}
+          asns={countryASNs}
+          loading={asnLoading}
+          selectedASN={selectedASN}
+          onSelectASN={setSelectedASN}
+          onClose={handleClearSelection}
+        />
       )}
 
       <ComposableMap
