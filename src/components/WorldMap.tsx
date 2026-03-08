@@ -35,6 +35,7 @@ interface TrafficArc {
   to: [number, number];
   traffic: number;
   color: string;
+  curveIndex?: number;
 }
 
 interface WorldMapProps {
@@ -42,9 +43,9 @@ interface WorldMapProps {
 }
 
 function blockRateColor(rate: number): string {
-  if (rate > 0.5) return "#e08050";
-  if (rate > 0.2) return "#d4a860";
-  return "#c8b878";
+  if (rate > 0.5) return "#e0a080";
+  if (rate > 0.2) return "#dbc090";
+  return "#d5c8a0";
 }
 
 function nearestProxy(lng: number, lat: number) {
@@ -60,16 +61,23 @@ function nearestProxy(lng: number, lat: number) {
 function buildMockArcs(): TrafficArc[] {
   const volunteers = mockNodes.filter((n) => n.type === "volunteer" && n.active);
   const users = mockNodes.filter((n) => n.type === "user" && n.active);
-  return users.map((u, i) => {
-    const v = volunteers[i % volunteers.length];
-    return {
-      id: `${v.id}-${u.id}`,
-      from: [v.lng, v.lat],
-      to: [u.lng, u.lat],
-      traffic: 0.3 + Math.random() * 0.7,
-      color: "#c8b070",
-    };
-  });
+  const arcs: TrafficArc[] = [];
+  for (const u of users) {
+    const v = volunteers[arcs.length % volunteers.length];
+    const traffic = 0.3 + Math.random() * 0.7;
+    const count = traffic > 0.7 ? 3 : traffic > 0.45 ? 2 : 1;
+    for (let k = 0; k < count; k++) {
+      arcs.push({
+        id: `${u.id}-${v.id}-${k}`,
+        from: [u.lng, u.lat],
+        to: [v.lng, v.lat],
+        traffic,
+        color: "#d5c8a0",
+        curveIndex: k,
+      });
+    }
+  }
+  return arcs;
 }
 
 function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
@@ -80,21 +88,15 @@ function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
     if (!coords) continue;
     const proxy = nearestProxy(coords[0], coords[1]);
     const traffic = country.asnCount / maxASN;
-    arcs.push({
-      id: `${proxy.id}-${country.country}`,
-      from: [proxy.lng, proxy.lat],
-      to: coords,
-      traffic,
-      color: blockRateColor(country.avgBlockRate),
-    });
-    if (traffic > 0.4) {
-      const secondProxy = PROXY_NODES.find((p) => p.id !== proxy.id)!;
+    const count = traffic > 0.7 ? 3 : traffic > 0.4 ? 2 : 1;
+    for (let k = 0; k < count; k++) {
       arcs.push({
-        id: `${secondProxy.id}-${country.country}`,
-        from: [secondProxy.lng, secondProxy.lat],
-        to: coords,
-        traffic: traffic * 0.6,
+        id: `${country.country}-${proxy.id}-${k}`,
+        from: coords,
+        to: [proxy.lng, proxy.lat],
+        traffic,
         color: blockRateColor(country.avgBlockRate),
+        curveIndex: k,
       });
     }
   }
@@ -102,10 +104,12 @@ function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
 }
 
 // High graceful arc — curvature peaks well above midpoint
+// curveIndex offsets parallel arcs so they don't overlap
 function arcPath(
   from: [number, number],
   to: [number, number],
   proj: (c: [number, number]) => [number, number] | null,
+  curveIndex = 0,
 ): string | null {
   const p1 = proj(from);
   const p2 = proj(to);
@@ -114,8 +118,10 @@ function arcPath(
   const dy = p2[1] - p1[1];
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
-  // High graceful arc — perpendicular offset scaled strongly with distance
-  const curvature = dist * 0.4;
+  const baseCurvature = dist * 0.35;
+  const spread = dist * 0.12;
+  const offset = (curveIndex - 0.5) * spread;
+  const curvature = baseCurvature + offset;
   const mx = (p1[0] + p2[0]) / 2 - (dy / dist) * curvature;
   const my = (p1[1] + p2[1]) / 2 + (dx / dist) * curvature;
   return `M${p1[0]},${p1[1]} Q${mx},${my} ${p2[0]},${p2[1]}`;
@@ -142,7 +148,7 @@ function DrawOnArc({
   const pathRef = useRef<SVGPathElement>(null);
   const [pathLen, setPathLen] = useState(0);
 
-  const d = useMemo(() => arcPath(arc.from, arc.to, proj), [arc, proj]);
+  const d = useMemo(() => arcPath(arc.from, arc.to, proj, arc.curveIndex ?? 0), [arc, proj]);
 
   useEffect(() => {
     if (pathRef.current) {
@@ -239,20 +245,18 @@ function ArcLayer({
 
   if (arcs.length === 0) return null;
 
-  // Each arc gets a cycle: draw (1.5s) → hold (1s) → fade (0.8s) → pause
-  // Stagger them so multiple are visible at once
-  const drawDur = 1.6;
-  const holdDur = 1.2;
-  const fadeDur = 0.8;
+  const drawDur = 2.8;
+  const holdDur = 2.0;
+  const fadeDur = 1.4;
   const cycleDur = drawDur + holdDur + fadeDur;
-  // Stagger: space arcs evenly but overlap so ~3-4 are visible at once
-  const stagger = Math.max(0.8, cycleDur / Math.min(arcs.length, 5));
+  const stagger = Math.max(1.0, cycleDur / Math.min(arcs.length, 6));
 
   return (
     <g>
       {arcs.map((arc, i) => {
-        // Each arc's local time within its cycle
-        const offset = i * stagger;
+        // Sibling arcs (same connection) get a small sub-offset
+        const siblingDelay = (arc.curveIndex ?? 0) * 0.6;
+        const offset = i * stagger + siblingDelay;
         const localTime = ((time - offset) % (cycleDur + stagger * 0.5));
         if (localTime < 0) return null;
 
@@ -260,9 +264,9 @@ function ArcLayer({
         let opacity: number;
 
         if (localTime < drawDur) {
-          // Drawing phase — ease-out curve for natural feel
+          // Drawing phase — gentle ease-in-out for mesmerizing feel
           const t = localTime / drawDur;
-          progress = 1 - Math.pow(1 - t, 2.5);
+          progress = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
           opacity = 1;
         } else if (localTime < drawDur + holdDur) {
           // Hold phase — fully drawn
@@ -296,8 +300,8 @@ function ArcLayer({
 function ProxyMarker({ node }: { node: typeof PROXY_NODES[0] }) {
   return (
     <Marker coordinates={[node.lng, node.lat]}>
-      <circle r={2} fill="#c8b070" opacity={0.08} />
-      <circle r={1} fill="#c8b070" opacity={0.35} style={{ filter: "drop-shadow(0 0 2px #c8b070)" }} />
+      <circle r={2} fill="#d5c8a0" opacity={0.08} />
+      <circle r={1} fill="#d5c8a0" opacity={0.35} style={{ filter: "drop-shadow(0 0 2px #d5c8a0)" }} />
     </Marker>
   );
 }
@@ -376,11 +380,10 @@ function WorldMap({ liveCountries }: WorldMapProps) {
               const iso = geo.properties.ISO_A2 || geo.id;
               const isCensored = CENSORED.has(iso);
               const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
-              // Dark slate blue-gray to match the Lantern video aesthetic
-              let fill = "#1a2030";
-              let stroke = "#2a3548";
-              if (isCensored) { fill = "#1c2234"; stroke = "#3a4a60"; }
-              if (hasData) { fill = "#1e2438"; stroke = "#4a5a70"; }
+              let fill = "#0f1318";
+              let stroke = "#1a2030";
+              if (isCensored) { fill = "#1a1520"; stroke = "#2a2540"; }
+              if (hasData) { fill = "#1c1828"; stroke = "#3a3555"; }
               return (
                 <Geography
                   key={geo.rsmKey}
@@ -390,7 +393,7 @@ function WorldMap({ liveCountries }: WorldMapProps) {
                   strokeWidth={0.4}
                   style={{
                     default: { outline: "none" },
-                    hover: { outline: "none", fill: hasData ? "#242a40" : isCensored ? "#222838" : "#1e2636" },
+                    hover: { outline: "none", fill: hasData ? "#22203a" : isCensored ? "#201a2a" : "#161a22" },
                     pressed: { outline: "none" },
                   }}
                 />
