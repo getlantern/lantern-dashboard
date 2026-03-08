@@ -42,10 +42,25 @@ interface WorldMapProps {
   liveCountries?: DashboardCountry[];
 }
 
-function blockRateColor(rate: number): string {
-  if (rate > 0.5) return "#e0a080";
-  if (rate > 0.2) return "#dbc090";
-  return "#d5c8a0";
+// Each censored region gets a distinct warm hue
+const REGION_COLORS: Record<string, string> = {
+  IR: "#e8b87a",  // amber
+  CN: "#d4a0c8",  // mauve
+  RU: "#a0c8e0",  // pale steel
+  MM: "#c8d8a0",  // sage
+  BY: "#b0b8d8",  // lavender
+  TM: "#e0c0a0",  // sand
+  VN: "#a8d0b8",  // seafoam
+  CU: "#e0a8a0",  // coral
+  SA: "#d0b890",  // wheat
+  PK: "#c0d0c0",  // celadon
+  UZ: "#d8c090",  // honey
+  TH: "#b8c8d0",  // mist
+};
+const DEFAULT_ARC_COLOR = "#d5c8a0";
+
+function regionColor(country: string): string {
+  return REGION_COLORS[country] ?? DEFAULT_ARC_COLOR;
 }
 
 function nearestProxy(lng: number, lat: number) {
@@ -72,7 +87,7 @@ function buildMockArcs(): TrafficArc[] {
         from: [u.lng, u.lat],
         to: [v.lng, v.lat],
         traffic,
-        color: "#d5c8a0",
+        color: regionColor(u.country),
         curveIndex: k,
       });
     }
@@ -95,7 +110,7 @@ function buildLiveArcs(countries: DashboardCountry[]): TrafficArc[] {
         from: coords,
         to: [proxy.lng, proxy.lat],
         traffic,
-        color: blockRateColor(country.avgBlockRate),
+        color: regionColor(country.country),
         curveIndex: k,
       });
     }
@@ -330,7 +345,7 @@ function NodeMarker({ node, pulse }: { node: ConnectionNode; pulse: boolean }) {
 function LiveCountryMarker({ country, index }: { country: DashboardCountry; index: number }) {
   const coords = COORDS[country.country];
   if (!coords) return null;
-  const color = blockRateColor(country.avgBlockRate);
+  const color = regionColor(country.country);
   const size = Math.max(1.5, Math.min(4, country.asnCount / 2));
   return (
     <Marker coordinates={coords}>
