@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg-primary: #06080f;
-  --bg-secondary: #0c1017;
-  --bg-card: #10141d;
+  --bg-primary: #0a0e18;
+  --bg-secondary: #10151f;
+  --bg-card: #141a26;
   --bg-card-hover: #151a26;
   --bg-elevated: #1a2030;
 

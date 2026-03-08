@@ -384,7 +384,7 @@ function DrawOnArc({
           stroke={arc.color}
           strokeWidth={baseWidth * 4}
           strokeLinecap="round"
-          opacity={0.06}
+          opacity={0.12}
           strokeDasharray={pathLen}
           strokeDashoffset={dashOffset}
         />
@@ -396,7 +396,7 @@ function DrawOnArc({
         stroke={arc.color}
         strokeWidth={baseWidth}
         strokeLinecap="round"
-        opacity={0.7}
+        opacity={0.85}
         strokeDasharray={pathLen || 1000}
         strokeDashoffset={pathLen > 0 ? dashOffset : 1000}
       />
@@ -407,7 +407,7 @@ function DrawOnArc({
           stroke="white"
           strokeWidth={baseWidth * 0.5}
           strokeLinecap="round"
-          opacity={0.4}
+          opacity={0.55}
           strokeDasharray={`${Math.min(drawn, 8)} ${pathLen}`}
           strokeDashoffset={-Math.max(drawn - 8, 0)}
         />
@@ -418,8 +418,8 @@ function DrawOnArc({
           cy={originPt[1]}
           r={baseWidth * 1.5}
           fill={arc.color}
-          opacity={0.6}
-          style={{ filter: `drop-shadow(0 0 3px ${arc.color})` }}
+          opacity={0.8}
+          style={{ filter: `drop-shadow(0 0 4px ${arc.color})` }}
         />
       )}
     </g>
@@ -508,8 +508,8 @@ function ArcLayer({
 function ProxyMarker({ node, dimmed }: { node: typeof PROXY_NODES[0]; dimmed: boolean }) {
   return (
     <Marker coordinates={[node.lng, node.lat]}>
-      <circle r={2} fill="#d5c8a0" opacity={dimmed ? 0.03 : 0.08} />
-      <circle r={1} fill="#d5c8a0" opacity={dimmed ? 0.12 : 0.35} style={{ filter: "drop-shadow(0 0 2px #d5c8a0)" }} />
+      <circle r={2} fill="#d5c8a0" opacity={dimmed ? 0.05 : 0.14} />
+      <circle r={1} fill="#d5c8a0" opacity={dimmed ? 0.18 : 0.5} style={{ filter: "drop-shadow(0 0 3px #d5c8a0)" }} />
     </Marker>
   );
 }
@@ -517,7 +517,7 @@ function ProxyMarker({ node, dimmed }: { node: typeof PROXY_NODES[0]; dimmed: bo
 function NodeMarker({ node, pulse, dimmed }: { node: ConnectionNode; pulse: boolean; dimmed: boolean }) {
   const color = node.type === "volunteer" ? "#c8b878" : "#d4a860";
   const size = node.type === "volunteer" ? 2.5 : 2;
-  const baseOpacity = dimmed ? 0.08 : node.active ? 0.6 : 0.15;
+  const baseOpacity = dimmed ? 0.12 : node.active ? 0.75 : 0.25;
   return (
     <Marker coordinates={[node.lng, node.lat]}>
       {node.active && pulse && !dimmed && (
@@ -537,7 +537,7 @@ function NodeMarker({ node, pulse, dimmed }: { node: ConnectionNode; pulse: bool
 }
 
 function ScatterMarker({ node, dimmed }: { node: ScatteredNode; dimmed: boolean }) {
-  const opacity = dimmed ? 0.06 : 0.3;
+  const opacity = dimmed ? 0.1 : 0.45;
   return (
     <Marker coordinates={[node.lng, node.lat]}>
       <circle r={1} fill={node.color} opacity={opacity} />
@@ -550,17 +550,17 @@ function LiveCountryMarker({ country, index, dimmed }: { country: DashboardCount
   if (!coords) return null;
   const color = regionColor(country.country);
   const size = Math.max(1.5, Math.min(4, country.asnCount / 2));
-  const baseOpacity = dimmed ? 0.1 : 0.45;
+  const baseOpacity = dimmed ? 0.15 : 0.6;
   return (
     <Marker coordinates={coords}>
       {!dimmed && (
-        <circle r={size + 2} fill="none" stroke={color} strokeWidth={0.2} opacity={0.1}>
+        <circle r={size + 2} fill="none" stroke={color} strokeWidth={0.3} opacity={0.15}>
           <animate attributeName="r" from={String(size)} to={String(size + 5)} dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
           <animate attributeName="opacity" from="0.2" to="0" dur="3s" begin={`${index * 0.3}s`} repeatCount="indefinite" />
         </circle>
       )}
-      <circle r={size} fill={color} opacity={baseOpacity} style={{ filter: dimmed ? "none" : `drop-shadow(0 0 2px ${color})` }} />
-      <text y={-size - 2.5} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "4px", fill: "#e8ecf4", opacity: dimmed ? 0.15 : 0.5 }}>
+      <circle r={size} fill={color} opacity={baseOpacity} style={{ filter: dimmed ? "none" : `drop-shadow(0 0 4px ${color})` }} />
+      <text y={-size - 2.5} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "4px", fill: "#e8ecf4", opacity: dimmed ? 0.2 : 0.65 }}>
         {country.country}
       </text>
     </Marker>
@@ -877,14 +877,14 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
               const isCensored = CENSORED.has(iso);
               const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
               const isSelected = selectedCountry === iso;
-              let fill = "#0f1318";
-              let stroke = "#1a2030";
-              if (isCensored) { fill = "#1a1520"; stroke = "#2a2540"; }
-              if (hasData) { fill = "#1c1828"; stroke = "#3a3555"; }
+              let fill = "#1a2030";
+              let stroke = "#2a3548";
+              if (isCensored) { fill = "#261e30"; stroke = "#3e3460"; }
+              if (hasData) { fill = "#2a2240"; stroke = "#4a4070"; }
               if (isSelected) {
                 const rc = regionColor(iso);
-                fill = rc + "18";
-                stroke = rc + "50";
+                fill = rc + "28";
+                stroke = rc + "60";
               }
               return (
                 <Geography
@@ -896,7 +896,7 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
                   onClick={() => handleGeoClick(iso)}
                   style={{
                     default: { outline: "none", cursor: isCensored || hasData ? "pointer" : "default" },
-                    hover: { outline: "none", fill: isSelected ? fill : hasData ? "#22203a" : isCensored ? "#201a2a" : "#161a22", cursor: isCensored || hasData ? "pointer" : "default" },
+                    hover: { outline: "none", fill: isSelected ? fill : hasData ? "#342e50" : isCensored ? "#30263c" : "#222838", cursor: isCensored || hasData ? "pointer" : "default" },
                     pressed: { outline: "none" },
                   }}
                 />
