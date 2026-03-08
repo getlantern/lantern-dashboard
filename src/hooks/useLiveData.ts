@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import {
   fetchGlobalStats,
   fetchBlockedRoutes,
-  type DashboardGlobalStats,
   type DashboardCountry,
 } from "../api/client";
 import { mockGlobalStats, mockVolunteerStats, type GlobalStats } from "../data/mock";

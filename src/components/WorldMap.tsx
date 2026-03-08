@@ -795,10 +795,6 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
     return allArcs.filter((a) => a.country === selectedCountry);
   }, [allArcs, selectedCountry]);
 
-  const scattered = useMemo(() => {
-    if (!selectedCountry) return allScattered;
-    return allScattered.filter((s) => s.country === selectedCountry);
-  }, [allScattered, selectedCountry]);
 
   useEffect(() => {
     const len = hasLiveData ? (liveCountries?.length || 1) : mockNodes.length;

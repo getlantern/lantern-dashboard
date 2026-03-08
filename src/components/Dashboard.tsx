@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveData } from "../hooks/useLiveData";
-import WorldMap, { type MapSelection, asnDisplayName } from "./WorldMap";
+import WorldMap, { type MapSelection } from "./WorldMap";
 import StatsRow from "./StatsRow";
 import ImpactCard from "./ImpactCard";
 import ProtocolFeed from "./ProtocolFeed";
