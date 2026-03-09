@@ -130,6 +130,16 @@ export function useProxy() {
       unsubs.push(proxy.on<number>("throughput", (v) => setLiveData((d) => ({ ...d, throughputBps: v }))));
       unsubs.push(proxy.on<number>("lifetimeConnections", (v) => setLiveData((d) => ({ ...d, lifetimeConnections: v }))));
       unsubsRef.current = unsubs;
+
+      // Sync state that may have been emitted during init() before subscriptions
+      const state = proxy.getState();
+      setLiveData({
+        connectionDetails: (state.connections ?? []) as ProxyConnection[],
+        throughputBps: state.throughput ?? 0,
+        lifetimeConnections: state.lifetimeConnections ?? 0,
+        ready: state.ready ?? false,
+        sharing: state.sharing ?? false,
+      });
     } catch {
       setScriptError(true);
     }
