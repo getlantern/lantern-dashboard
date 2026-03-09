@@ -427,7 +427,6 @@ function DrawOnArc({
           r={baseWidth * 1.5}
           fill={arc.color}
           opacity={0.8}
-          style={{ filter: `drop-shadow(0 0 4px ${arc.color})` }}
         />
       )}
     </g>
@@ -444,17 +443,14 @@ function ArcLayer({
   proj: (c: [number, number]) => [number, number] | null;
 }) {
   const [time, setTime] = useState(0);
-  const rafRef = useRef<number>(0);
   const startRef = useRef(performance.now());
 
+  // 10fps is plenty for slow arc draw-on animations — avoids 60fps React reconciliation
   useEffect(() => {
-    function tick() {
-      const elapsed = (performance.now() - startRef.current) / 1000;
-      setTime(elapsed);
-      rafRef.current = requestAnimationFrame(tick);
-    }
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
+    const id = setInterval(() => {
+      setTime((performance.now() - startRef.current) / 1000);
+    }, 100);
+    return () => clearInterval(id);
   }, []);
 
   if (arcs.length === 0) return null;
@@ -513,16 +509,16 @@ function ArcLayer({
 
 // ── Markers ──
 
-function ProxyMarker({ node, dimmed }: { node: typeof PROXY_NODES[0]; dimmed: boolean }) {
+const ProxyMarker = memo(function ProxyMarker({ node, dimmed }: { node: typeof PROXY_NODES[0]; dimmed: boolean }) {
   return (
     <Marker coordinates={[node.lng, node.lat]}>
       <circle r={2} fill="#d5c8a0" opacity={dimmed ? 0.05 : 0.14} />
       <circle r={1} fill="#d5c8a0" opacity={dimmed ? 0.18 : 0.5} style={{ filter: "drop-shadow(0 0 3px #d5c8a0)" }} />
     </Marker>
   );
-}
+});
 
-function NodeMarker({ node, pulse, dimmed }: { node: ConnectionNode; pulse: boolean; dimmed: boolean }) {
+const NodeMarker = memo(function NodeMarker({ node, pulse, dimmed }: { node: ConnectionNode; pulse: boolean; dimmed: boolean }) {
   const color = node.type === "volunteer" ? "#c8b878" : "#d4a860";
   const size = node.type === "volunteer" ? 2.5 : 2;
   const baseOpacity = dimmed ? 0.12 : node.active ? 0.75 : 0.25;
@@ -542,18 +538,18 @@ function NodeMarker({ node, pulse, dimmed }: { node: ConnectionNode; pulse: bool
       />
     </Marker>
   );
-}
+});
 
-function ScatterMarker({ node, dimmed }: { node: ScatteredNode; dimmed: boolean }) {
+const ScatterMarker = memo(function ScatterMarker({ node, dimmed }: { node: ScatteredNode; dimmed: boolean }) {
   const opacity = dimmed ? 0.1 : 0.45;
   return (
     <Marker coordinates={[node.lng, node.lat]}>
       <circle r={1} fill={node.color} opacity={opacity} />
     </Marker>
   );
-}
+});
 
-function LiveCountryMarker({ country, index, dimmed }: { country: DashboardCountry; index: number; dimmed: boolean }) {
+const LiveCountryMarker = memo(function LiveCountryMarker({ country, index, dimmed }: { country: DashboardCountry; index: number; dimmed: boolean }) {
   const coords = COORDS[country.country];
   if (!coords) return null;
   const color = regionColor(country.country);
@@ -573,7 +569,7 @@ function LiveCountryMarker({ country, index, dimmed }: { country: DashboardCount
       </text>
     </Marker>
   );
-}
+});
 
 // ── Mock ISP data for when API is unavailable ──
 
@@ -670,7 +666,7 @@ function ISPPanel({
           onClick={onClose}
           style={{
             fontSize: "0.65rem",
-            color: "#6670800",
+            color: "#667080",
             cursor: "pointer",
             padding: "2px 6px",
             borderRadius: "3px",
@@ -770,6 +766,12 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
     });
   }, [selectedCountry, selectedASN, countryASNs, onSelectionChange]);
   const hasLiveData = liveCountries && liveCountries.length > 0;
+
+  // Pre-compute set for O(1) lookups in geography render loop
+  const liveCountrySet = useMemo(
+    () => hasLiveData ? new Set(liveCountries.map((c) => c.country)) : new Set<string>(),
+    [hasLiveData, liveCountries],
+  );
 
   const { arcs: allArcs, scattered: allScattered } = useMemo(
     () => (hasLiveData ? buildLiveArcs(liveCountries) : buildMockArcs()),
@@ -878,12 +880,13 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
         <Geographies geography={GEO_URL}>
           {(renderProps) => {
             if (!projectionFn && renderProps.projection) {
-              setTimeout(() => setProjectionFn(() => renderProps.projection), 0);
+              // Defer to avoid setState during render
+              Promise.resolve().then(() => setProjectionFn(() => renderProps.projection));
             }
             return renderProps.geographies.map((geo) => {
               const iso = geoToAlpha2(geo);
               const isCensored = CENSORED.has(iso);
-              const hasData = hasLiveData && liveCountries.some((c) => c.country === iso);
+              const hasData = liveCountrySet.has(iso);
               const isSelected = selectedCountry === iso;
               let fill = "#252d3e";
               let stroke = "#38445a";
