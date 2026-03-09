@@ -9,8 +9,15 @@ export interface ProxySessionStats {
   lastSessionStart: number | null;
 }
 
+export interface ProxyConnection {
+  state: 1 | -1;
+  workerIdx: number;
+  addr: string;
+}
+
 export interface ProxyLiveData {
   connections: number;
+  connectionDetails: ProxyConnection[];
   throughputBps: number;
   lifetimeConnections: number;
   ready: boolean;
@@ -69,6 +76,7 @@ export function useProxy() {
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [liveData, setLiveData] = useState<ProxyLiveData>({
     connections: 0,
+    connectionDetails: [],
     throughputBps: 0,
     lifetimeConnections: 0,
     ready: false,
@@ -117,7 +125,7 @@ export function useProxy() {
       const unsubs: Array<() => void> = [];
       unsubs.push(proxy.on<boolean>("ready", (v) => setLiveData((d) => ({ ...d, ready: v }))));
       unsubs.push(proxy.on<boolean>("sharing", (v) => setLiveData((d) => ({ ...d, sharing: v }))));
-      unsubs.push(proxy.on<unknown[]>("connections", (v) => setLiveData((d) => ({ ...d, connections: v.length }))));
+      unsubs.push(proxy.on<ProxyConnection[]>("connections", (v) => setLiveData((d) => ({ ...d, connections: v.length, connectionDetails: v }))));
       unsubs.push(proxy.on<number>("throughput", (v) => setLiveData((d) => ({ ...d, throughputBps: v }))));
       unsubs.push(proxy.on<number>("lifetimeConnections", (v) => setLiveData((d) => ({ ...d, lifetimeConnections: v }))));
       unsubsRef.current = unsubs;

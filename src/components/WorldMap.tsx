@@ -7,6 +7,7 @@ import {
 } from "react-simple-maps";
 import { mockNodes, type ConnectionNode } from "../data/mock";
 import { fetchASNs, type DashboardCountry, type DashboardASN } from "../api/client";
+import type { GeoResult } from "../hooks/useGeoLookup";
 
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const CENSORED = new Set(["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "SA", "PK", "UZ", "TH", "AE"]);
@@ -170,6 +171,9 @@ export interface MapSelection {
 interface WorldMapProps {
   liveCountries?: DashboardCountry[];
   onSelectionChange?: (selection: MapSelection) => void;
+  myProxyView?: boolean;
+  myGeo?: GeoResult | null;
+  peerGeos?: GeoResult[];
 }
 
 // Each censored region gets a distinct warm hue
@@ -748,7 +752,42 @@ function ISPPanel({
 
 // ── Main ──
 
-function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
+// ── "My Proxy" markers ──
+
+const MyLocationMarker = memo(function MyLocationMarker({ geo }: { geo: GeoResult }) {
+  return (
+    <Marker coordinates={[geo.lng, geo.lat]}>
+      <circle r={6} fill="none" stroke="#00e5c8" strokeWidth={0.5} opacity={0.3}>
+        <animate attributeName="r" from="4" to="14" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.4" to="0" dur="3s" repeatCount="indefinite" />
+      </circle>
+      <circle r={4} fill="#00e5c8" opacity={0.2} />
+      <circle r={2.5} fill="#00e5c8" opacity={0.7} style={{ filter: "drop-shadow(0 0 4px #00e5c8)" }} />
+      <text y={-7} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "4px", fill: "#00e5c8", fontWeight: 600 }}>
+        YOU
+      </text>
+    </Marker>
+  );
+});
+
+const PeerMarker = memo(function PeerMarker({ geo, index }: { geo: GeoResult; index: number }) {
+  return (
+    <Marker coordinates={[geo.lng, geo.lat]}>
+      <circle r={3} fill="none" stroke="#f0a030" strokeWidth={0.3} opacity={0.2}>
+        <animate attributeName="r" from="2" to="8" dur="2.5s" begin={`${index * 0.4}s`} repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.3" to="0" dur="2.5s" begin={`${index * 0.4}s`} repeatCount="indefinite" />
+      </circle>
+      <circle r={2} fill="#f0a030" opacity={0.6} style={{ filter: "drop-shadow(0 0 3px #f0a030)" }} />
+      {geo.city && (
+        <text y={-5} textAnchor="middle" style={{ fontFamily: "var(--font-mono)", fontSize: "3px", fill: "#f0a030", opacity: 0.7 }}>
+          {geo.city}
+        </text>
+      )}
+    </Marker>
+  );
+});
+
+function WorldMap({ liveCountries, onSelectionChange, myProxyView, myGeo, peerGeos }: WorldMapProps) {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [projectionFn, setProjectionFn] = useState<((c: [number, number]) => [number, number] | null) | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -799,11 +838,26 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
       });
   }, [selectedCountry]);
 
+  // Build "My Proxy" arcs from self → each peer
+  const proxyArcs = useMemo((): TrafficArc[] => {
+    if (!myProxyView || !myGeo || !peerGeos || peerGeos.length === 0) return [];
+    return peerGeos.map((peer, i) => ({
+      id: `proxy-${peer.ip}-${i}`,
+      from: [myGeo.lng, myGeo.lat],
+      to: [peer.lng, peer.lat],
+      traffic: 0.6,
+      color: "#00e5c8",
+      curveIndex: 0,
+      country: peer.country,
+    }));
+  }, [myProxyView, myGeo, peerGeos]);
+
   // Filter arcs and scatter nodes when a country is selected
   const arcs = useMemo(() => {
+    if (myProxyView) return proxyArcs;
     if (!selectedCountry) return allArcs;
     return allArcs.filter((a) => a.country === selectedCountry);
-  }, [allArcs, selectedCountry]);
+  }, [allArcs, selectedCountry, myProxyView, proxyArcs]);
 
 
   useEffect(() => {
@@ -917,7 +971,7 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
         </Geographies>
 
         {/* Scattered user nodes within censored countries */}
-        {allScattered.map((node) => (
+        {!myProxyView && allScattered.map((node) => (
           <ScatterMarker
             key={node.id}
             node={node}
@@ -928,8 +982,8 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
         {/* Draw-on arcs */}
         {projectionFn && <ArcLayer arcs={arcs} proj={projectionFn} />}
 
-        {/* Proxy markers */}
-        {PROXY_NODES.map((n) => (
+        {/* Proxy markers (global view) */}
+        {!myProxyView && PROXY_NODES.map((n) => (
           <ProxyMarker
             key={n.id}
             node={n}
@@ -937,8 +991,8 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
           />
         ))}
 
-        {/* Node markers */}
-        {hasLiveData
+        {/* Node markers (global view) */}
+        {!myProxyView && (hasLiveData
           ? liveCountries.map((c, i) => (
               <LiveCountryMarker
                 key={c.country}
@@ -954,7 +1008,13 @@ function WorldMap({ liveCountries, onSelectionChange }: WorldMapProps) {
                 pulse={i === pulseIndex}
                 dimmed={!!selectedCountry && n.country !== selectedCountry}
               />
-            ))}
+            )))}
+
+        {/* My Proxy view markers */}
+        {myProxyView && myGeo && <MyLocationMarker geo={myGeo} />}
+        {myProxyView && peerGeos?.map((peer, i) => (
+          <PeerMarker key={peer.ip} geo={peer} index={i} />
+        ))}
       </ComposableMap>
     </div>
   );

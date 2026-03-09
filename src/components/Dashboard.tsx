@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveData } from "../hooks/useLiveData";
 import { useProxy } from "../hooks/useProxy";
+import { useGeoLookup } from "../hooks/useGeoLookup";
 import WorldMap, { type MapSelection } from "./WorldMap";
 import StatsRow from "./StatsRow";
 import ImpactCard from "./ImpactCard";
@@ -29,6 +30,12 @@ export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
   const { globalStats, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
   const proxy = useProxy();
+  const [myProxyView, setMyProxyView] = useState(false);
+  const connectionAddrs = useMemo(
+    () => proxy.liveData.connectionDetails.map((c) => c.addr),
+    [proxy.liveData.connectionDetails],
+  );
+  const { self: myGeo, peers: peerGeos } = useGeoLookup(connectionAddrs);
   const [mapSelection, setMapSelection] = useState<MapSelection>({ country: null, asn: null, asnName: null, countryASNs: [] });
   const handleSelectionChange = useCallback((sel: MapSelection) => {
     setMapSelection(sel);
@@ -170,9 +177,44 @@ export default function Dashboard() {
                 : "Simulated connections"}
             </p>
           </div>
-          <WorldMap liveCountries={globalStats.countries.length > 0 ? globalStats.countries : undefined} onSelectionChange={handleSelectionChange} />
+          <WorldMap
+            liveCountries={globalStats.countries.length > 0 ? globalStats.countries : undefined}
+            onSelectionChange={handleSelectionChange}
+            myProxyView={myProxyView}
+            myGeo={myGeo}
+            peerGeos={peerGeos}
+          />
           <div className="map-legend">
-            {isLive ? (
+            {proxy.isRunning && (
+              <div
+                onClick={() => setMyProxyView((v) => !v)}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.6rem",
+                  padding: "0.2rem 0.55rem",
+                  borderRadius: "4px",
+                  background: myProxyView ? "var(--accent-primary-dim)" : "#ffffff08",
+                  color: myProxyView ? "var(--accent-primary)" : "var(--text-secondary)",
+                  border: `1px solid ${myProxyView ? "#00e5c830" : "#ffffff10"}`,
+                  cursor: "pointer",
+                  userSelect: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                }}
+              >
+                {myProxyView && (
+                  <span style={{
+                    width: 5, height: 5, borderRadius: "50%",
+                    background: "var(--accent-primary)",
+                    boxShadow: "0 0 4px var(--accent-primary-glow)",
+                    display: "inline-block",
+                  }} />
+                )}
+                MY PROXY
+              </div>
+            )}
+            {!myProxyView && (isLive ? (
               <>
                 <div className="legend-item">
                   <div className="legend-dot" style={{ background: "#00e5c8", boxShadow: "0 0 6px #00e5c840" }} />
@@ -196,6 +238,18 @@ export default function Dashboard() {
                 <div className="legend-item">
                   <div className="legend-dot user" />
                   <span>User (censored)</span>
+                </div>
+              </>
+            ))}
+            {myProxyView && (
+              <>
+                <div className="legend-item">
+                  <div className="legend-dot" style={{ background: "#00e5c8", boxShadow: "0 0 6px #00e5c840" }} />
+                  <span>You</span>
+                </div>
+                <div className="legend-item">
+                  <div className="legend-dot" style={{ background: "#f0a030", boxShadow: "0 0 6px #f0a03040" }} />
+                  <span>Users you're helping</span>
                 </div>
               </>
             )}
