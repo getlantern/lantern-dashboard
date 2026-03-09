@@ -17,6 +17,11 @@ const COUNTRY_NAMES: Record<string, string> = {
   TM: "Turkmenistan",
   VN: "Vietnam",
   CU: "Cuba",
+  AE: "U.A.E.",
+  SA: "Saudi Arabia",
+  PK: "Pakistan",
+  UZ: "Uzbekistan",
+  TH: "Thailand",
 };
 
 export default function ImpactCard({ stats }: { stats: VolunteerStats }) {
