@@ -9,7 +9,7 @@ import { mockNodes, type ConnectionNode } from "../data/mock";
 import { fetchASNs, type DashboardCountry, type DashboardASN } from "../api/client";
 
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
-const CENSORED = new Set(["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "SA", "PK", "UZ", "TH"]);
+const CENSORED = new Set(["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "SA", "PK", "UZ", "TH", "AE"]);
 
 // Top 5 cities per censored country [lng, lat, relative population weight 0-1]
 interface City { name: string; lng: number; lat: number; weight: number }
@@ -98,6 +98,13 @@ const CITIES: Record<string, City[]> = {
     { name: "Nakhon Ratchasima", lng: 102.10, lat: 14.97, weight: 0.10 },
     { name: "Khon Kaen", lng: 102.83, lat: 16.43, weight: 0.09 },
   ],
+  AE: [
+    { name: "Dubai", lng: 55.27, lat: 25.20, weight: 1.0 },
+    { name: "Abu Dhabi", lng: 54.37, lat: 24.45, weight: 0.60 },
+    { name: "Sharjah", lng: 55.39, lat: 25.34, weight: 0.30 },
+    { name: "Al Ain", lng: 55.76, lat: 24.19, weight: 0.15 },
+    { name: "Ajman", lng: 55.44, lat: 25.41, weight: 0.10 },
+  ],
 };
 
 // Country center coords (used for country markers / fallback)
@@ -105,7 +112,7 @@ const COORDS: Record<string, [number, number]> = {
   IR: [53.69, 32.43], CN: [104.20, 35.86], RU: [40.32, 55.75],
   MM: [96.08, 19.76], BY: [27.95, 53.71], TM: [59.56, 38.97],
   VN: [108.28, 14.06], CU: [-77.78, 21.52], PK: [69.35, 30.38],
-  TH: [100.99, 15.87], UZ: [64.59, 41.38], SA: [45.08, 23.89],
+  TH: [100.99, 15.87], UZ: [64.59, 41.38], SA: [45.08, 23.89], AE: [53.85, 23.42],
   IN: [78.96, 20.59], BD: [90.36, 23.68], EG: [30.80, 26.82],
   TR: [35.24, 38.96], VE: [-66.59, 6.42], KZ: [66.92, 48.02],
 };
@@ -179,6 +186,7 @@ const REGION_COLORS: Record<string, string> = {
   PK: "#c0d0c0",  // celadon
   UZ: "#d8c090",  // honey
   TH: "#b8c8d0",  // mist
+  AE: "#d0b0c0",  // rose dust
 };
 const DEFAULT_ARC_COLOR = "#d5c8a0";
 
