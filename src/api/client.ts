@@ -1,9 +1,14 @@
 const API_URL = import.meta.env.VITE_API_URL || "https://api.staging.iantem.io";
 
 let authToken: string | null = null;
+let onAuthExpired: (() => Promise<string | null>) | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
+}
+
+export function setOnAuthExpired(handler: () => Promise<string | null>) {
+  onAuthExpired = handler;
 }
 
 async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -19,7 +24,18 @@ async function apiFetch<T>(path: string, params?: Record<string, string>): Promi
     headers.Authorization = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(url.toString(), { headers });
+  let res = await fetch(url.toString(), { headers });
+
+  // If 401 and we have a refresh handler, try to get a new token and retry once
+  if (res.status === 401 && onAuthExpired) {
+    const newToken = await onAuthExpired();
+    if (newToken) {
+      authToken = newToken;
+      headers.Authorization = `Bearer ${newToken}`;
+      res = await fetch(url.toString(), { headers });
+    }
+  }
+
   if (!res.ok) {
     throw new Error(`API ${path}: ${res.status} ${res.statusText}`);
   }
