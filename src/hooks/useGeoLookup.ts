@@ -21,12 +21,13 @@ async function lookupIP(ip: string): Promise<GeoResult | null> {
       const res = await fetch(`${GEO_API}/${ip}`);
       if (!res.ok) return null;
       const data = await res.json();
+      const loc = data.Location ?? data.location ?? {};
       const result: GeoResult = {
         ip,
-        lat: data.Latitude ?? data.latitude ?? 0,
-        lng: data.Longitude ?? data.longitude ?? 0,
-        country: data.Country ?? data.country ?? "",
-        city: data.City ?? data.city,
+        lat: loc.Latitude ?? loc.latitude ?? data.Latitude ?? data.latitude ?? 0,
+        lng: loc.Longitude ?? loc.longitude ?? data.Longitude ?? data.longitude ?? 0,
+        country: data.Country?.IsoCode ?? data.Country?.isoCode ?? data.country ?? "",
+        city: data.City?.Names?.en ?? data.City?.names?.en ?? data.city,
       };
       cache.set(ip, result);
       return result;
@@ -53,12 +54,13 @@ async function lookupSelf(): Promise<GeoResult | null> {
       const res = await fetch(GEO_API);
       if (!res.ok) return null;
       const data = await res.json();
+      const loc = data.Location ?? data.location ?? {};
       selfGeo = {
         ip: data.IP ?? data.ip ?? "self",
-        lat: data.Latitude ?? data.latitude ?? 0,
-        lng: data.Longitude ?? data.longitude ?? 0,
-        country: data.Country ?? data.country ?? "",
-        city: data.City ?? data.city,
+        lat: loc.Latitude ?? loc.latitude ?? data.Latitude ?? data.latitude ?? 0,
+        lng: loc.Longitude ?? loc.longitude ?? data.Longitude ?? data.longitude ?? 0,
+        country: data.Country?.IsoCode ?? data.Country?.isoCode ?? data.country ?? "",
+        city: data.City?.Names?.en ?? data.City?.names?.en ?? data.city,
       };
       return selfGeo;
     } catch {
