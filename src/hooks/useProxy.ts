@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const EMBED_SCRIPT_URL = "https://embed.lantern.io/static/js/main.js";
+const EMBED_SCRIPT_URL = "https://embed.lantern.io/beta/static/js/main.js";
 const STORAGE_KEY = "lantern_proxy_stats";
 
 export interface ProxySessionStats {
