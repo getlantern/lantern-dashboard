@@ -16,7 +16,6 @@ export interface ProxyConnection {
 }
 
 export interface ProxyLiveData {
-  connections: number;
   connectionDetails: ProxyConnection[];
   throughputBps: number;
   lifetimeConnections: number;
@@ -48,14 +47,17 @@ declare global {
   }
 }
 
+function elapsedSeconds(start: number): number {
+  return Math.max(0, Math.floor((Date.now() - start) / 1000));
+}
+
 function loadStoredStats(): ProxySessionStats {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as ProxySessionStats;
       if (parsed.lastSessionStart) {
-        const crashed = Math.max(0, Math.floor((Date.now() - parsed.lastSessionStart) / 1000));
-        parsed.totalSessionSeconds += crashed;
+        parsed.totalSessionSeconds += elapsedSeconds(parsed.lastSessionStart);
         parsed.lastSessionStart = null;
       }
       return parsed;
@@ -75,14 +77,13 @@ export function useProxy() {
   const [stats, setStats] = useState<ProxySessionStats>(loadStoredStats);
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [liveData, setLiveData] = useState<ProxyLiveData>({
-    connections: 0,
     connectionDetails: [],
     throughputBps: 0,
     lifetimeConnections: 0,
     ready: false,
     sharing: false,
   });
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const sessionStartRef = useRef<number | null>(null);
   const statsRef = useRef(stats);
   statsRef.current = stats;
@@ -125,7 +126,7 @@ export function useProxy() {
       const unsubs: Array<() => void> = [];
       unsubs.push(proxy.on<boolean>("ready", (v) => setLiveData((d) => ({ ...d, ready: v }))));
       unsubs.push(proxy.on<boolean>("sharing", (v) => setLiveData((d) => ({ ...d, sharing: v }))));
-      unsubs.push(proxy.on<ProxyConnection[]>("connections", (v) => setLiveData((d) => ({ ...d, connections: v.length, connectionDetails: v }))));
+      unsubs.push(proxy.on<ProxyConnection[]>("connections", (v) => setLiveData((d) => ({ ...d, connectionDetails: v }))));
       unsubs.push(proxy.on<number>("throughput", (v) => setLiveData((d) => ({ ...d, throughputBps: v }))));
       unsubs.push(proxy.on<number>("lifetimeConnections", (v) => setLiveData((d) => ({ ...d, lifetimeConnections: v }))));
       unsubsRef.current = unsubs;
@@ -159,7 +160,7 @@ export function useProxy() {
 
     timerRef.current = setInterval(() => {
       if (!sessionStartRef.current) return;
-      setCurrentSeconds(Math.floor((Date.now() - sessionStartRef.current) / 1000));
+      setCurrentSeconds(elapsedSeconds(sessionStartRef.current));
     }, 1000);
   }, []);
 
@@ -176,7 +177,7 @@ export function useProxy() {
       timerRef.current = undefined;
     }
     if (sessionStartRef.current) {
-      const elapsed = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+      const elapsed = elapsedSeconds(sessionStartRef.current);
       setStats((prev) => {
         const updated = {
           ...prev,
@@ -194,7 +195,7 @@ export function useProxy() {
   useEffect(() => {
     const handleUnload = () => {
       if (sessionStartRef.current) {
-        const elapsed = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+        const elapsed = elapsedSeconds(sessionStartRef.current);
         const current = statsRef.current;
         saveStats({
           ...current,
@@ -211,7 +212,7 @@ export function useProxy() {
         timerRef.current = undefined;
       }
       if (sessionStartRef.current) {
-        const elapsed = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+        const elapsed = elapsedSeconds(sessionStartRef.current);
         const current = statsRef.current;
         saveStats({
           ...current,
@@ -220,9 +221,10 @@ export function useProxy() {
         });
         sessionStartRef.current = null;
       }
-      // Unsubscribe from proxy events
+      // Unsubscribe from proxy events and allow re-init
       unsubsRef.current.forEach((u) => u());
       unsubsRef.current = [];
+      proxyInitializedRef.current = false;
     };
   }, []);
 

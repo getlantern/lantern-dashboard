@@ -35,7 +35,7 @@ export default function Dashboard() {
     () => proxy.liveData.connectionDetails.map((c) => c.addr),
     [proxy.liveData.connectionDetails],
   );
-  const { self: myGeo, peers: peerGeos } = useGeoLookup(connectionAddrs);
+  const { self: myGeo, peers: peerGeos } = useGeoLookup(connectionAddrs, proxy.isRunning);
   const [mapSelection, setMapSelection] = useState<MapSelection>({ country: null, asn: null, asnName: null, countryASNs: [] });
   const handleSelectionChange = useCallback((sel: MapSelection) => {
     setMapSelection(sel);

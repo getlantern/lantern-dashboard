@@ -12,6 +12,17 @@ const GEO_API = "https://geo.getiantem.org/lookup";
 const cache = new Map<string, GeoResult>();
 const inflight = new Map<string, Promise<GeoResult | null>>();
 
+function parseGeoResponse(ip: string, data: Record<string, any>): GeoResult {
+  const loc = data.Location ?? data.location ?? {};
+  return {
+    ip,
+    lat: loc.Latitude ?? loc.latitude ?? data.Latitude ?? data.latitude ?? 0,
+    lng: loc.Longitude ?? loc.longitude ?? data.Longitude ?? data.longitude ?? 0,
+    country: data.Country?.IsoCode ?? data.Country?.isoCode ?? data.country ?? "",
+    city: data.City?.Names?.en ?? data.City?.names?.en ?? data.city,
+  };
+}
+
 async function lookupIP(ip: string): Promise<GeoResult | null> {
   if (cache.has(ip)) return cache.get(ip)!;
   if (inflight.has(ip)) return inflight.get(ip)!;
@@ -21,14 +32,7 @@ async function lookupIP(ip: string): Promise<GeoResult | null> {
       const res = await fetch(`${GEO_API}/${ip}`);
       if (!res.ok) return null;
       const data = await res.json();
-      const loc = data.Location ?? data.location ?? {};
-      const result: GeoResult = {
-        ip,
-        lat: loc.Latitude ?? loc.latitude ?? data.Latitude ?? data.latitude ?? 0,
-        lng: loc.Longitude ?? loc.longitude ?? data.Longitude ?? data.longitude ?? 0,
-        country: data.Country?.IsoCode ?? data.Country?.isoCode ?? data.country ?? "",
-        city: data.City?.Names?.en ?? data.City?.names?.en ?? data.city,
-      };
+      const result = parseGeoResponse(ip, data);
       cache.set(ip, result);
       return result;
     } catch {
@@ -54,17 +58,13 @@ async function lookupSelf(): Promise<GeoResult | null> {
       const res = await fetch(GEO_API);
       if (!res.ok) return null;
       const data = await res.json();
-      const loc = data.Location ?? data.location ?? {};
-      selfGeo = {
-        ip: data.IP ?? data.ip ?? "self",
-        lat: loc.Latitude ?? loc.latitude ?? data.Latitude ?? data.latitude ?? 0,
-        lng: loc.Longitude ?? loc.longitude ?? data.Longitude ?? data.longitude ?? 0,
-        country: data.Country?.IsoCode ?? data.Country?.isoCode ?? data.country ?? "",
-        city: data.City?.Names?.en ?? data.City?.names?.en ?? data.city,
-      };
+      selfGeo = parseGeoResponse(data.IP ?? data.ip ?? "self", data);
       return selfGeo;
     } catch {
       return null;
+    } finally {
+      // Clear promise on failure so retries are possible
+      if (!selfGeo) selfGeoPromise = null;
     }
   })();
   return selfGeoPromise;
@@ -73,9 +73,9 @@ async function lookupSelf(): Promise<GeoResult | null> {
 /**
  * Given a list of IP:port addresses, resolve them to geo locations.
  * Also resolves the user's own location.
- * Batches lookups and caches results.
+ * Lookups are deferred until `enabled` is true.
  */
-export function useGeoLookup(addresses: string[]): {
+export function useGeoLookup(addresses: string[], enabled = true): {
   self: GeoResult | null;
   peers: GeoResult[];
 } {
@@ -83,15 +83,18 @@ export function useGeoLookup(addresses: string[]): {
   const [peers, setPeers] = useState<GeoResult[]>([]);
   const prevAddrsRef = useRef("");
 
-  // Look up own location once
+  // Look up own location once (only when enabled)
   useEffect(() => {
-    if (!self) {
-      lookupSelf().then((r) => { if (r) setSelf(r); });
-    }
-  }, [self]);
+    if (!enabled || self) return;
+    let cancelled = false;
+    lookupSelf().then((r) => { if (r && !cancelled) setSelf(r); });
+    return () => { cancelled = true; };
+  }, [enabled, self]);
 
-  // Look up peer IPs (debounced — only when the set of IPs changes)
+  // Look up peer IPs (only when the set of IPs actually changes)
   useEffect(() => {
+    if (!enabled) return;
+
     const ips = [...new Set(addresses.map((a) => a.split(":")[0]).filter(Boolean))];
     const key = ips.sort().join(",");
     if (key === prevAddrsRef.current) return;
@@ -102,11 +105,14 @@ export function useGeoLookup(addresses: string[]): {
       return;
     }
 
-    // Resolve all (most will be cached)
+    let cancelled = false;
     Promise.all(ips.map(lookupIP)).then((results) => {
-      setPeers(results.filter((r): r is GeoResult => r !== null));
+      if (!cancelled) {
+        setPeers(results.filter((r): r is GeoResult => r !== null));
+      }
     });
-  }, [addresses]);
+    return () => { cancelled = true; };
+  }, [addresses, enabled]);
 
   return { self, peers };
 }

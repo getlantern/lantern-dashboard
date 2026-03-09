@@ -109,7 +109,7 @@ export default function StatsRow({ stats, filterLabel, proxyLive }: StatsRowProp
             Your Proxy
           </span>
           <span className="stat-value accent mono">
-            {proxyLive.connections}
+            {proxyLive.connectionDetails.length}
             <span style={{ fontSize: "0.5em", opacity: 0.7 }}> conns</span>
           </span>
           <span className="stat-detail">

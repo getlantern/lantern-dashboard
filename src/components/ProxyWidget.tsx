@@ -47,7 +47,7 @@ const SessionStats = memo(function SessionStats({
           </div>
           <div className="proxy-session-stat">
             <span className="proxy-session-value mono" style={{ color: "var(--accent-info)" }}>
-              {liveData.connections}
+              {liveData.connectionDetails.length}
             </span>
             <span className="proxy-session-label">Active conns</span>
           </div>
@@ -113,7 +113,7 @@ export default function ProxyWidget({
     if (!widgetEnabled || !scriptLoaded) return;
 
     const timer = setTimeout(() => {
-      if (liveData.ready || window.LanternProxy?.initialized) {
+      if (liveData.ready) {
         startSession();
       }
     }, 2000);
