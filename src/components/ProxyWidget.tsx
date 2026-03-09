@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useCallback, useState } from "react";
-import { useProxy, type ProxySessionStats } from "../hooks/useProxy";
+import { useProxy, type ProxySessionStats, type ProxyLiveData } from "../hooks/useProxy";
 
 function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -10,15 +10,23 @@ function formatDuration(totalSeconds: number): string {
   return `${s}s`;
 }
 
+function formatThroughput(bps: number): string {
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} MB/s`;
+  if (bps >= 1_000) return `${(bps / 1_000).toFixed(1)} KB/s`;
+  return `${bps} B/s`;
+}
+
 // Isolated component for the ticking counter — only this re-renders every second
 const SessionStats = memo(function SessionStats({
   stats,
   isRunning,
   currentSeconds,
+  liveData,
 }: {
   stats: ProxySessionStats;
   isRunning: boolean;
   currentSeconds: number;
+  liveData: ProxyLiveData;
 }) {
   const totalTime = stats.totalSessionSeconds + currentSeconds;
   return (
@@ -32,18 +40,31 @@ const SessionStats = memo(function SessionStats({
         <span className="proxy-session-label">Total time</span>
       </div>
       {isRunning && (
-        <div className="proxy-session-stat">
-          <span className="proxy-session-value mono current">{formatDuration(currentSeconds)}</span>
-          <span className="proxy-session-label">This session</span>
-        </div>
+        <>
+          <div className="proxy-session-stat">
+            <span className="proxy-session-value mono current">{formatDuration(currentSeconds)}</span>
+            <span className="proxy-session-label">This session</span>
+          </div>
+          <div className="proxy-session-stat">
+            <span className="proxy-session-value mono" style={{ color: "var(--accent-info)" }}>
+              {liveData.connections}
+            </span>
+            <span className="proxy-session-label">Active conns</span>
+          </div>
+          <div className="proxy-session-stat">
+            <span className="proxy-session-value mono" style={{ color: "var(--accent-success)" }}>
+              {formatThroughput(liveData.throughputBps)}
+            </span>
+            <span className="proxy-session-label">Throughput</span>
+          </div>
+        </>
       )}
     </div>
   );
 });
 
 export default function ProxyWidget() {
-  const { scriptLoaded, scriptError, isRunning, stats, currentSeconds, loadScript, startSession, stopSession } = useProxy();
-  const embedRef = useRef<HTMLDivElement>(null);
+  const { scriptLoaded, scriptError, isRunning, stats, currentSeconds, liveData, loadScript, initProxy, startSession, stopSession } = useProxy();
   const [widgetEnabled, setWidgetEnabled] = useState(false);
   const hasInitializedRef = useRef(false);
 
@@ -53,6 +74,14 @@ export default function ProxyWidget() {
       loadScript();
     }
   }, [widgetEnabled, scriptLoaded, scriptError, loadScript]);
+
+  // Initialize the headless proxy API once script is loaded
+  useEffect(() => {
+    if (widgetEnabled && scriptLoaded && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      initProxy();
+    }
+  }, [widgetEnabled, scriptLoaded, initProxy]);
 
   const handleToggle = useCallback(() => {
     if (!widgetEnabled) {
@@ -64,118 +93,84 @@ export default function ProxyWidget() {
     }
   }, [widgetEnabled, isRunning, stopSession]);
 
-  // Start tracking once the embed script has loaded
+  // Start proxying once the headless API is ready
   useEffect(() => {
     if (!widgetEnabled || !scriptLoaded) return;
 
-    // Give the embed a moment to initialize, then start tracking
     const timer = setTimeout(() => {
-      if (!hasInitializedRef.current) {
-        hasInitializedRef.current = true;
+      if (liveData.ready || window.LanternProxy?.initialized) {
         startSession();
       }
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [widgetEnabled, scriptLoaded, startSession]);
+  }, [widgetEnabled, scriptLoaded, liveData.ready, startSession]);
 
+  // Compact bar when off
+  if (!widgetEnabled) {
+    return (
+      <div className="proxy-bar" onClick={handleToggle}>
+        <div className="proxy-bar-left">
+          <span className="proxy-bar-icon">
+            {stats.totalSessions > 0 ? "◉" : "○"}
+          </span>
+          <span className="proxy-bar-label">
+            {stats.totalSessions > 0
+              ? `Shared ${formatDuration(stats.totalSessionSeconds)} across ${stats.totalSessions} session${stats.totalSessions !== 1 ? "s" : ""}`
+              : "Share your connection as a proxy"}
+          </span>
+        </div>
+        <button
+          className="proxy-toggle"
+          onClick={(e) => { e.stopPropagation(); handleToggle(); }}
+          aria-label="Start proxy"
+        >
+          <span className="proxy-toggle-knob" />
+        </button>
+      </div>
+    );
+  }
+
+  // Expanded view when on — fully native UI, no embedded widget
   return (
     <div className="proxy-widget">
       <div className="proxy-header">
         <div>
-          <h3>Volunteer as Proxy</h3>
+          <h3>Volunteering</h3>
           <p className="proxy-subtitle">
-            {widgetEnabled
-              ? isRunning
-                ? "Helping users in censored regions"
-                : "Initializing..."
-              : "Share your connection"}
+            {isRunning
+              ? liveData.sharing
+                ? "Actively helping users in censored regions"
+                : "Connected — waiting for traffic"
+              : liveData.ready
+                ? "Proxy ready — starting session..."
+                : "Initializing WASM proxy..."}
           </p>
         </div>
         <button
-          className={`proxy-toggle ${widgetEnabled ? "active" : ""}`}
+          className="proxy-toggle active"
           onClick={handleToggle}
-          aria-label={widgetEnabled ? "Stop proxy" : "Start proxy"}
+          aria-label="Stop proxy"
         >
           <span className="proxy-toggle-knob" />
         </button>
       </div>
 
-      {widgetEnabled && (
-        <>
-          {scriptError && (
-            <div className="proxy-error">
-              Failed to load proxy module. Check your connection.
-            </div>
-          )}
-
-          <SessionStats stats={stats} isRunning={isRunning} currentSeconds={currentSeconds} />
-
-          {/* The unbounded embed renders inside this custom element */}
-          <div className="proxy-embed-container" ref={embedRef}>
-            {scriptLoaded && (
-              <browsers-unbounded
-                data-layout="panel"
-                data-theme="dark"
-                data-globe="false"
-                data-branding="false"
-                data-exit="false"
-                data-keep-text="false"
-                data-menu="false"
-                data-title="false"
-                data-collapse="false"
-                style={{ width: "100%", display: "block" }}
-              />
-            )}
-          </div>
-        </>
-      )}
-
-      {!widgetEnabled && stats.totalSessions > 0 && (
-        <div className="proxy-lifetime">
-          <div className="proxy-lifetime-row">
-            <span className="proxy-lifetime-label">Lifetime sessions</span>
-            <span className="proxy-lifetime-value mono">{stats.totalSessions}</span>
-          </div>
-          <div className="proxy-lifetime-row">
-            <span className="proxy-lifetime-label">Total time shared</span>
-            <span className="proxy-lifetime-value mono">{formatDuration(stats.totalSessionSeconds)}</span>
-          </div>
+      {scriptError && (
+        <div className="proxy-error">
+          Failed to load proxy module. Check your connection.
         </div>
       )}
 
-      {!widgetEnabled && stats.totalSessions === 0 && (
-        <div className="proxy-cta">
-          <p>
-            Turn on to run as a proxy node directly in your browser.
-            Your spare bandwidth helps people in censored regions access the open internet.
-          </p>
+      {isRunning && liveData.sharing && (
+        <div className="proxy-live-indicator">
+          <div className="proxy-live-dot" />
+          <span>Proxying traffic</span>
+          <span className="proxy-live-conns">{liveData.lifetimeConnections} total connections served</span>
         </div>
       )}
+
+      <SessionStats stats={stats} isRunning={isRunning} currentSeconds={currentSeconds} liveData={liveData} />
     </div>
   );
-}
-
-// Declare the custom element for TypeScript
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
-      "browsers-unbounded": React.DetailedHTMLProps<
-        React.HTMLAttributes<HTMLElement> & {
-          "data-layout"?: string;
-          "data-theme"?: string;
-          "data-globe"?: string;
-          "data-branding"?: string;
-          "data-exit"?: string;
-          "data-keep-text"?: string;
-          "data-menu"?: string;
-          "data-mock"?: string;
-          "data-title"?: string;
-          "data-collapse"?: string;
-        },
-        HTMLElement
-      >;
-    }
-  }
 }

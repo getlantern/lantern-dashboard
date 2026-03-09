@@ -9,13 +9,43 @@ export interface ProxySessionStats {
   lastSessionStart: number | null;
 }
 
+export interface ProxyLiveData {
+  connections: number;
+  throughputBps: number;
+  lifetimeConnections: number;
+  ready: boolean;
+  sharing: boolean;
+}
+
+// LanternProxy headless API type (exposed by unbounded on window)
+interface LanternProxyAPI {
+  init(options?: { mock?: boolean }): Promise<void>;
+  start(): void;
+  stop(): void;
+  on<T = unknown>(event: string, callback: (value: T) => void): () => void;
+  off(event: string, callback: (value: unknown) => void): void;
+  getState(): {
+    ready: boolean;
+    sharing: boolean;
+    connections: unknown[];
+    throughput: number;
+    lifetimeConnections: number;
+    chunks: unknown[];
+  };
+  initialized: boolean;
+}
+
+declare global {
+  interface Window {
+    LanternProxy?: LanternProxyAPI;
+  }
+}
+
 function loadStoredStats(): ProxySessionStats {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as ProxySessionStats;
-      // Recover crashed session: if lastSessionStart is set, the previous session
-      // didn't shut down cleanly. Estimate elapsed time and fold it in.
       if (parsed.lastSessionStart) {
         const crashed = Math.max(0, Math.floor((Date.now() - parsed.lastSessionStart) / 1000));
         parsed.totalSessionSeconds += crashed;
@@ -36,16 +66,31 @@ export function useProxy() {
   const [scriptError, setScriptError] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState<ProxySessionStats>(loadStoredStats);
-  // currentSessionSeconds lives in a ref + dedicated state to avoid re-rendering
-  // the entire ProxyWidget tree (including the embed) every second
   const [currentSeconds, setCurrentSeconds] = useState(0);
+  const [liveData, setLiveData] = useState<ProxyLiveData>({
+    connections: 0,
+    throughputBps: 0,
+    lifetimeConnections: 0,
+    ready: false,
+    sharing: false,
+  });
   const timerRef = useRef<ReturnType<typeof setInterval>>();
   const sessionStartRef = useRef<number | null>(null);
   const statsRef = useRef(stats);
   statsRef.current = stats;
+  const unsubsRef = useRef<Array<() => void>>([]);
+  const proxyInitializedRef = useRef(false);
 
-  // Load the embed script once
+  // Inject the headless embed element + load script
   const loadScript = useCallback(() => {
+    // Inject a hidden headless embed element if not present
+    if (!document.querySelector('browsers-unbounded[data-headless="true"]')) {
+      const el = document.createElement("browsers-unbounded");
+      el.setAttribute("data-headless", "true");
+      el.style.display = "none";
+      document.body.appendChild(el);
+    }
+
     if (document.querySelector(`script[src="${EMBED_SCRIPT_URL}"]`)) {
       setScriptLoaded(true);
       return;
@@ -58,10 +103,37 @@ export function useProxy() {
     document.body.appendChild(script);
   }, []);
 
-  // Track session duration
+  // Initialize the headless proxy API once script is loaded
+  const initProxy = useCallback(async () => {
+    if (proxyInitializedRef.current) return;
+    const proxy = window.LanternProxy;
+    if (!proxy) return;
+
+    try {
+      await proxy.init();
+      proxyInitializedRef.current = true;
+
+      // Subscribe to live data events
+      const unsubs: Array<() => void> = [];
+      unsubs.push(proxy.on<boolean>("ready", (v) => setLiveData((d) => ({ ...d, ready: v }))));
+      unsubs.push(proxy.on<boolean>("sharing", (v) => setLiveData((d) => ({ ...d, sharing: v }))));
+      unsubs.push(proxy.on<unknown[]>("connections", (v) => setLiveData((d) => ({ ...d, connections: v.length }))));
+      unsubs.push(proxy.on<number>("throughput", (v) => setLiveData((d) => ({ ...d, throughputBps: v }))));
+      unsubs.push(proxy.on<number>("lifetimeConnections", (v) => setLiveData((d) => ({ ...d, lifetimeConnections: v }))));
+      unsubsRef.current = unsubs;
+    } catch {
+      setScriptError(true);
+    }
+  }, []);
+
+  // Start proxying via headless API
   const startSession = useCallback(() => {
-    // Guard against double invocation (e.g. React strict mode)
     if (timerRef.current) return;
+
+    const proxy = window.LanternProxy;
+    if (proxy?.initialized) {
+      proxy.start();
+    }
 
     const now = Date.now();
     sessionStartRef.current = now;
@@ -77,8 +149,6 @@ export function useProxy() {
       return updated;
     });
 
-    // Only update the lightweight currentSeconds counter each tick —
-    // no localStorage writes, no full-tree re-renders
     timerRef.current = setInterval(() => {
       if (!sessionStartRef.current) return;
       setCurrentSeconds(Math.floor((Date.now() - sessionStartRef.current) / 1000));
@@ -86,6 +156,11 @@ export function useProxy() {
   }, []);
 
   const stopSession = useCallback(() => {
+    const proxy = window.LanternProxy;
+    if (proxy?.initialized) {
+      proxy.stop();
+    }
+
     setIsRunning(false);
     setCurrentSeconds(0);
     if (timerRef.current) {
@@ -123,7 +198,6 @@ export function useProxy() {
     window.addEventListener("beforeunload", handleUnload);
     return () => {
       window.removeEventListener("beforeunload", handleUnload);
-      // Finalize session on unmount (e.g. tab switch in dashboard)
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = undefined;
@@ -138,6 +212,9 @@ export function useProxy() {
         });
         sessionStartRef.current = null;
       }
+      // Unsubscribe from proxy events
+      unsubsRef.current.forEach((u) => u());
+      unsubsRef.current = [];
     };
   }, []);
 
@@ -147,7 +224,9 @@ export function useProxy() {
     isRunning,
     stats,
     currentSeconds,
+    liveData,
     loadScript,
+    initProxy,
     startSession,
     stopSession,
   };

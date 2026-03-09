@@ -382,39 +382,46 @@
   color: var(--accent-info);
 }
 
-/* ── Panel Tabs ── */
-.panel-tabs {
+/* ── Proxy Bar (compact, always visible when off) ── */
+.proxy-bar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1rem;
   background: var(--bg-card);
-  border-bottom: 1px solid #ffffff06;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  gap: 0.75rem;
+}
+
+.proxy-bar:hover {
+  background: var(--bg-card-hover);
+}
+
+.proxy-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.proxy-bar-icon {
+  font-size: 0.6rem;
+  color: var(--accent-primary);
   flex-shrink: 0;
 }
 
-.panel-tab {
-  flex: 1;
-  padding: 0.55rem 0.75rem;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
+.proxy-bar-label {
   font-family: var(--font-mono);
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-.panel-tab:hover {
+  font-size: 0.58rem;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.panel-tab.active {
-  color: var(--accent-primary);
-  border-bottom-color: var(--accent-primary);
-}
-
-/* ── Proxy Widget ── */
+/* ── Proxy Widget (expanded, when running) ── */
 .proxy-widget {
   background: var(--bg-card);
   padding: 1rem 1.25rem;
@@ -510,18 +517,33 @@
   color: var(--text-muted);
 }
 
-/* Embed container */
-.proxy-embed-container {
+/* Live indicator */
+.proxy-live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  background: var(--accent-primary-dim);
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  min-height: 120px;
-  background: #0c0e14;
-  border: 1px solid #ffffff08;
+  border: 1px solid #00e5c820;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--accent-primary);
 }
 
-.proxy-embed-container browsers-unbounded {
-  display: block;
-  width: 100%;
+.proxy-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 6px var(--accent-primary-glow);
+  animation: pulse-glow 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.proxy-live-conns {
+  margin-left: auto;
+  color: var(--text-muted);
 }
 
 /* Error state */
@@ -533,49 +555,6 @@
   background: var(--accent-danger-dim);
   border-radius: var(--radius-sm);
   border: 1px solid #ff406020;
-}
-
-/* Lifetime stats (when widget is off) */
-.proxy-lifetime {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.5rem 0.65rem;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-sm);
-}
-
-.proxy-lifetime-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.proxy-lifetime-label {
-  font-family: var(--font-mono);
-  font-size: 0.55rem;
-  color: var(--text-muted);
-}
-
-.proxy-lifetime-value {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-/* CTA when widget is off and no sessions */
-.proxy-cta {
-  padding: 0.65rem;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-sm);
-  border: 1px solid #ffffff06;
-}
-
-.proxy-cta p {
-  font-size: 0.7rem;
-  line-height: 1.5;
-  color: var(--text-secondary);
 }
 
 /* ── Responsive ── */
