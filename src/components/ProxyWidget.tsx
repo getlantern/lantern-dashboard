@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useCallback, useState } from "react";
-import { useProxy, type ProxySessionStats, type ProxyLiveData } from "../hooks/useProxy";
+import type { ProxySessionStats, ProxyLiveData } from "../hooks/useProxy";
 
-function formatDuration(totalSeconds: number): string {
+export function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
@@ -10,7 +10,7 @@ function formatDuration(totalSeconds: number): string {
   return `${s}s`;
 }
 
-function formatThroughput(bps: number): string {
+export function formatThroughput(bps: number): string {
   if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} MB/s`;
   if (bps >= 1_000) return `${(bps / 1_000).toFixed(1)} KB/s`;
   return `${bps} B/s`;
@@ -63,8 +63,23 @@ const SessionStats = memo(function SessionStats({
   );
 });
 
-export default function ProxyWidget() {
-  const { scriptLoaded, scriptError, isRunning, stats, currentSeconds, liveData, loadScript, initProxy, startSession, stopSession } = useProxy();
+export interface ProxyWidgetProps {
+  scriptLoaded: boolean;
+  scriptError: boolean;
+  isRunning: boolean;
+  stats: ProxySessionStats;
+  currentSeconds: number;
+  liveData: ProxyLiveData;
+  loadScript: () => void;
+  initProxy: () => Promise<void>;
+  startSession: () => void;
+  stopSession: () => void;
+}
+
+export default function ProxyWidget({
+  scriptLoaded, scriptError, isRunning, stats, currentSeconds, liveData,
+  loadScript, initProxy, startSession, stopSession,
+}: ProxyWidgetProps) {
   const [widgetEnabled, setWidgetEnabled] = useState(false);
   const hasInitializedRef = useRef(false);
 

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveData } from "../hooks/useLiveData";
+import { useProxy } from "../hooks/useProxy";
 import WorldMap, { type MapSelection } from "./WorldMap";
 import StatsRow from "./StatsRow";
 import ImpactCard from "./ImpactCard";
@@ -27,9 +28,8 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
   const { globalStats, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
+  const proxy = useProxy();
   const [mapSelection, setMapSelection] = useState<MapSelection>({ country: null, asn: null, asnName: null, countryASNs: [] });
-  const [viewMode, setViewMode] = useState<"global" | "impact">("global");
-
   const handleSelectionChange = useCallback((sel: MapSelection) => {
     setMapSelection(sel);
   }, []);
@@ -200,35 +200,13 @@ export default function Dashboard() {
               </>
             )}
           </div>
-          <StatsRow stats={displayStats} filterLabel={filterLabel} />
+          <StatsRow stats={displayStats} filterLabel={filterLabel} proxyLive={proxy.isRunning ? proxy.liveData : null} />
         </div>
 
         <div className="right-panel">
-          <div className="panel-tabs">
-            <button
-              className={`panel-tab ${viewMode === "global" ? "active" : ""}`}
-              onClick={() => setViewMode("global")}
-            >
-              Global Network
-            </button>
-            <button
-              className={`panel-tab ${viewMode === "impact" ? "active" : ""}`}
-              onClick={() => setViewMode("impact")}
-            >
-              My Impact
-            </button>
-          </div>
-          {viewMode === "global" ? (
-            <>
-              <ImpactCard stats={volunteerStats} />
-              <ProtocolFeed />
-            </>
-          ) : (
-            <>
-              <ProxyWidget />
-              <ImpactCard stats={volunteerStats} />
-            </>
-          )}
+          <ProxyWidget {...proxy} />
+          <ImpactCard stats={volunteerStats} />
+          <ProtocolFeed />
         </div>
       </div>
     </div>

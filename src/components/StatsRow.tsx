@@ -1,9 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import type { GlobalStats } from "../data/mock";
+import type { ProxyLiveData } from "../hooks/useProxy";
+import { formatThroughput } from "./ProxyWidget";
 
 interface StatsRowProps {
   stats: GlobalStats;
   filterLabel?: string | null;
+  proxyLive?: ProxyLiveData | null;
 }
 
 function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: number }) {
@@ -37,7 +40,7 @@ function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: num
   );
 }
 
-export default function StatsRow({ stats, filterLabel }: StatsRowProps) {
+export default function StatsRow({ stats, filterLabel, proxyLive }: StatsRowProps) {
   return (
     <div className="stats-overlay">
       {filterLabel && (
@@ -92,6 +95,28 @@ export default function StatsRow({ stats, filterLabel }: StatsRowProps) {
           {stats.totalSessionsToday.toLocaleString()} sessions
         </span>
       </div>
+
+      {proxyLive && proxyLive.sharing && (
+        <div className="stat-card" style={{ borderLeft: "2px solid var(--accent-primary)" }}>
+          <span className="stat-label" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <span style={{
+              width: 5, height: 5, borderRadius: "50%",
+              background: "var(--accent-primary)",
+              boxShadow: "0 0 6px var(--accent-primary-glow)",
+              animation: "pulse-glow 2s ease-in-out infinite",
+              display: "inline-block",
+            }} />
+            Your Proxy
+          </span>
+          <span className="stat-value accent mono">
+            {proxyLive.connections}
+            <span style={{ fontSize: "0.5em", opacity: 0.7 }}> conns</span>
+          </span>
+          <span className="stat-detail">
+            {formatThroughput(proxyLive.throughputBps)} &middot; {proxyLive.lifetimeConnections} served
+          </span>
+        </div>
+      )}
     </div>
   );
 }
