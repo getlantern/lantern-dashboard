@@ -51,7 +51,7 @@ export interface GlobalStats {
 
 export const mockVolunteerStats: VolunteerStats = {
   sessionsProxied: 2847,
-  countriesHelped: ["IR", "CN", "RU", "MM", "BY", "TM", "VN"],
+  countriesHelped: ["IR", "CN", "RU", "MM", "BY", "TM", "VN", "AE"],
   bandwidthSharedGB: 142.7,
   uptimeHours: 1893,
   peersHelpedToday: 47,
@@ -105,6 +105,7 @@ export const mockNodes: ConnectionNode[] = [
   { id: "u8", lat: 21.0285, lng: 105.8542, country: "VN", city: "Hanoi", type: "user", protocol: "hydra-quic", active: true },
   { id: "u9", lat: 32.4279, lng: 53.688, country: "IR", city: "Isfahan", type: "user", protocol: "mirage-tls", active: true },
   { id: "u10", lat: 29.6169, lng: 106.5516, country: "CN", city: "Chongqing", type: "user", protocol: "echo-dtls", active: true },
+  { id: "u11", lat: 25.2048, lng: 55.2708, country: "AE", city: "Dubai", type: "user", protocol: "drift-h3", active: true },
 ];
 
 export const mockRoutes: ActiveRoute[] = [
@@ -122,7 +123,7 @@ export const mockRoutes: ActiveRoute[] = [
 
 export function generateProtocolEvent(): ProtocolEvent {
   const types: ProtocolEvent["type"][] = ["generated", "deployed", "blocked", "evaded"];
-  const countries = ["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU"];
+  const countries = ["IR", "CN", "RU", "MM", "BY", "TM", "VN", "CU", "AE"];
   const details: Record<ProtocolEvent["type"], string[]> = {
     generated: [
       "New QUIC-based transport compiled to WASM",
