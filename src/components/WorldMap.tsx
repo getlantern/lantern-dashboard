@@ -765,17 +765,19 @@ export function asnDisplayName(asn: string): string {
 // ── ISP Panel — shown when a country is selected ──
 
 function rateColor(rate: number, invert = false): string {
-  const r = invert ? 1 - rate : rate;
+  const raw = invert ? 1 - rate : rate;
+  if (!Number.isFinite(raw)) return "#667080";
+  const r = Math.min(1, Math.max(0, raw));
   if (r > 0.8) return "#a0c8a0";
   if (r > 0.5) return "#d8c090";
-  if (r > 0) return "#e0a080";
-  return "#667080";
+  return "#e0a080";
 }
 
 function MiniBar({ value, color }: { value: number; color: string }) {
+  const clamped = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
   return (
     <div style={{ flex: 1, height: "3px", background: "#ffffff08", borderRadius: "2px", overflow: "hidden" }}>
-      <div style={{ height: "100%", width: `${Math.min(1, value) * 100}%`, background: color, opacity: 0.5, borderRadius: "2px" }} />
+      <div style={{ height: "100%", width: `${clamped * 100}%`, background: color, opacity: 0.5, borderRadius: "2px" }} />
     </div>
   );
 }
@@ -902,7 +904,8 @@ const ISPPanel = memo(function ISPPanel({
                 {isSelected && asn.topArms.length > 0 && (
                   <div style={{ marginTop: "6px", borderTop: `1px solid ${color}15`, paddingTop: "5px" }}>
                     {asn.topArms.slice(0, 20).map((arm) => {
-                      const sr = arm.successRate ?? 0;
+                      const hasTests = arm.totalTests != null && arm.totalTests > 0;
+                      const sr = arm.successRate ?? (hasTests && arm.successCount != null ? arm.successCount / arm.totalTests! : NaN);
                       const srClr = rateColor(sr);
                       const prob = arm.selectionProbability ?? 0;
                       return (
@@ -914,7 +917,7 @@ const ISPPanel = memo(function ISPPanel({
                             </span>
                             {arm.blocked && <span style={{ color: "#e06060", fontSize: "0.42rem" }}>BLOCKED</span>}
                           </div>
-                          {arm.totalTests != null && arm.totalTests > 0 && (
+                          {hasTests && Number.isFinite(sr) && (
                             <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
                               <MiniBar value={sr} color={srClr} />
                               <span style={{ color: srClr, minWidth: "28px", textAlign: "right" }}>
@@ -923,7 +926,7 @@ const ISPPanel = memo(function ISPPanel({
                             </div>
                           )}
                           <div style={{ display: "flex", gap: "0.5rem", marginTop: "2px", fontSize: "0.42rem", color: "#667080" }}>
-                            {arm.totalTests != null && arm.totalTests > 0 && (
+                            {hasTests && arm.successCount != null && (
                               <span>{arm.successCount}/{arm.totalTests} tests</span>
                             )}
                             {prob > 0 && <span>P={Math.round(prob * 100)}%</span>}
