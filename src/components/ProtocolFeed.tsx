@@ -1,18 +1,43 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { generateProtocolEvent, type ProtocolEvent } from "../data/mock";
+import { EventType, type DashboardActivityEvent } from "../api/client";
 
-const TYPE_ICONS: Record<ProtocolEvent["type"], string> = {
+const MOCK_TYPE_ICONS: Record<ProtocolEvent["type"], string> = {
   generated: "🧬",
   deployed: "🚀",
   blocked: "🚫",
   evaded: "⚡",
 };
 
-const TYPE_LABELS: Record<ProtocolEvent["type"], string> = {
+const MOCK_TYPE_LABELS: Record<ProtocolEvent["type"], string> = {
   generated: "Protocol Generated",
   deployed: "Protocol Deployed",
   blocked: "Block Detected",
   evaded: "Block Evaded",
+};
+
+const LIVE_TYPE_ICONS: Record<string, string> = {
+  [EventType.ROUTE_BLOCKED]: "🚫",
+  [EventType.ROUTE_UNBLOCKED]: "⚡",
+  [EventType.ROUTE_DEPRECATED]: "💀",
+  [EventType.ROUTE_PROVISIONED]: "🚀",
+  [EventType.CALLBACK]: "📡",
+};
+
+const LIVE_TYPE_LABELS: Record<string, string> = {
+  [EventType.ROUTE_BLOCKED]: "Block Detected",
+  [EventType.ROUTE_UNBLOCKED]: "Block Evaded",
+  [EventType.ROUTE_DEPRECATED]: "Route Deprecated",
+  [EventType.ROUTE_PROVISIONED]: "Route Deployed",
+  [EventType.CALLBACK]: "Probe Callback",
+};
+
+const LIVE_CSS_CLASS: Record<string, string> = {
+  [EventType.ROUTE_BLOCKED]: "blocked",
+  [EventType.ROUTE_UNBLOCKED]: "evaded",
+  [EventType.ROUTE_DEPRECATED]: "blocked",
+  [EventType.ROUTE_PROVISIONED]: "deployed",
+  [EventType.CALLBACK]: "generated",
 };
 
 function timeAgo(timestamp: number): string {
@@ -23,9 +48,15 @@ function timeAgo(timestamp: number): string {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
-export default function ProtocolFeed() {
-  const [events, setEvents] = useState<ProtocolEvent[]>(() => {
-    // Seed with some initial events
+interface ProtocolFeedProps {
+  liveEvents?: DashboardActivityEvent[];
+  demoMode?: boolean;
+}
+
+export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps) {
+  const useLive = !demoMode && liveEvents !== undefined;
+
+  const [mockEvents, setMockEvents] = useState<ProtocolEvent[]>(() => {
     const initial: ProtocolEvent[] = [];
     for (let i = 0; i < 8; i++) {
       const e = generateProtocolEvent();
@@ -37,48 +68,82 @@ export default function ProtocolFeed() {
 
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Add new events periodically
   useEffect(() => {
+    if (!demoMode) return;
     const interval = setInterval(() => {
-      setEvents((prev) => {
+      setMockEvents((prev) => {
         const next = [generateProtocolEvent(), ...prev];
-        return next.slice(0, 50); // keep last 50
+        return next.slice(0, 50);
       });
     }, 4000 + Math.random() * 6000);
     return () => clearInterval(interval);
-  }, []);
+  }, [demoMode]);
 
-  // Re-render for time-ago updates
   const [, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 10000);
     return () => clearInterval(interval);
   }, []);
 
+  const filteredLive = useMemo(
+    () => useLive && liveEvents ? liveEvents : [],
+    [useLive, liveEvents],
+  );
+
+  const eventCount = useLive ? filteredLive.length : mockEvents.length;
+
   return (
     <div className="feed-section">
       <div className="feed-header">
         <h3>Protocol Activity</h3>
-        <span className="feed-count mono">{events.length} events</span>
+        <span className="feed-count mono">{eventCount} events</span>
       </div>
       <div className="feed-list" ref={listRef}>
-        {events.map((event) => (
-          <div key={event.id} className="feed-item">
-            <div className={`feed-icon ${event.type}`}>
-              {TYPE_ICONS[event.type]}
-            </div>
-            <div className="feed-content">
-              <div className="feed-title">
-                {TYPE_LABELS[event.type]}: {event.detail}
+        {useLive
+          ? filteredLive.map((event, i) => (
+              <div key={`${event.timestamp}-${i}`} className="feed-item"
+                style={event.eventType === EventType.CALLBACK ? { opacity: 0.7 } : undefined}>
+                <div className={`feed-icon ${
+                  event.eventType === EventType.CALLBACK
+                    ? (event.reward && event.reward > 0.1 ? "evaded" : "blocked")
+                    : (LIVE_CSS_CLASS[event.eventType] || "generated")
+                }`}>
+                  {event.eventType === EventType.CALLBACK
+                    ? (event.reward && event.reward > 0.1 ? "✓" : "✗")
+                    : (LIVE_TYPE_ICONS[event.eventType] || "📡")}
+                </div>
+                <div className="feed-content">
+                  <div className="feed-title">
+                    {event.eventType === EventType.CALLBACK
+                      ? `${event.reward && event.reward > 0.1 ? "Route OK" : "Probe Failed"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}`
+                      : `${LIVE_TYPE_LABELS[event.eventType] || event.eventType}${event.detail ? `: ${event.detail}` : ""}`}
+                  </div>
+                  <div className="feed-meta">
+                    {event.trackName && <span className="feed-protocol">{event.trackName}</span>}
+                    {event.regionName && <span>{event.regionName}</span>}
+                    {event.country && <span>{event.country}</span>}
+                    <span>{timeAgo(event.timestamp)}</span>
+                  </div>
+                </div>
               </div>
-              <div className="feed-meta">
-                <span className="feed-protocol">{event.protocol}</span>
-                <span>{event.country}</span>
-                <span>{timeAgo(event.timestamp)}</span>
+            ))
+          : mockEvents.map((event) => (
+              <div key={event.id} className="feed-item">
+                <div className={`feed-icon ${event.type}`}>
+                  {MOCK_TYPE_ICONS[event.type]}
+                </div>
+                <div className="feed-content">
+                  <div className="feed-title">
+                    {MOCK_TYPE_LABELS[event.type]}: {event.detail}
+                  </div>
+                  <div className="feed-meta">
+                    <span className="feed-protocol">{event.protocol}</span>
+                    <span>{event.country}</span>
+                    <span>{timeAgo(event.timestamp)}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            ))}
       </div>
     </div>
   );

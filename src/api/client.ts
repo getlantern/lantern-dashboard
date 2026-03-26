@@ -73,6 +73,35 @@ export interface DashboardASN {
   topArms: DashboardArmEntry[];
 }
 
+export interface DashboardTrackInfo {
+  trackId: number;
+  trackName: string;
+  protocolName: string;
+  activeRoutes: number;
+}
+
+export interface DashboardProviderInfo {
+  name: string;
+  activeRoutes: number;
+}
+
+export interface DashboardDataCenter {
+  regionId: number;
+  regionName: string;
+  city: string;
+  country: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+  tracks: DashboardTrackInfo[];
+  providers: DashboardProviderInfo[];
+  totalRoutes: number;
+}
+
+export interface DashboardInfraResponse {
+  dataCenters: DashboardDataCenter[];
+}
+
 // ── API calls ──
 
 export function fetchGlobalStats(): Promise<DashboardGlobalStats> {
@@ -89,4 +118,57 @@ export function fetchASNHistory(asn: string): Promise<DashboardASN[]> {
 
 export function fetchBlockedRoutes(): Promise<string[]> {
   return apiFetch("/blocked-routes");
+}
+
+export function fetchInfrastructure(): Promise<DashboardInfraResponse> {
+  return apiFetch("/infrastructure");
+}
+
+export const EventType = {
+  ROUTE_BLOCKED: "route_blocked",
+  ROUTE_UNBLOCKED: "route_unblocked",
+  ROUTE_DEPRECATED: "route_deprecated",
+  ROUTE_PROVISIONED: "route_provisioned",
+  CALLBACK: "callback",
+} as const;
+
+export interface DashboardActivityEvent {
+  eventType: string;
+  trackName?: string;
+  regionName?: string;
+  country?: string;
+  asn?: string;
+  routeId?: string;
+  detail?: string;
+  reward?: number;
+  timestamp: number;
+}
+
+export interface DashboardActivityResponse {
+  events: DashboardActivityEvent[];
+}
+
+export function fetchActivity(): Promise<DashboardActivityResponse> {
+  return apiFetch("/activity");
+}
+
+export interface DashboardTrafficFlow {
+  country: string;
+  regionId: number;
+  regionName: string;
+  weightedPulls: number;
+}
+
+export interface DashboardTrafficFlowsResponse {
+  flows: DashboardTrafficFlow[];
+}
+
+export function fetchTrafficFlows(): Promise<DashboardTrafficFlowsResponse> {
+  return apiFetch("/traffic-flows");
+}
+
+export function getStreamURL(): string {
+  const url = new URL(`${API_URL}/v1/dashboard/stream`);
+  if (authToken) url.searchParams.set("token", authToken);
+  return url.toString();
 }

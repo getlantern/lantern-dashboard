@@ -6,7 +6,7 @@ import {
   Marker,
 } from "react-simple-maps";
 import { mockNodes, type ConnectionNode } from "../data/mock";
-import { fetchASNs, type DashboardCountry, type DashboardASN } from "../api/client";
+import { fetchASNs, type DashboardCountry, type DashboardASN, type DashboardDataCenter, type DashboardTrafficFlow } from "../api/client";
 import type { GeoResult } from "../hooks/useGeoLookup";
 
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
@@ -110,12 +110,23 @@ const CITIES: Record<string, City[]> = {
 
 // Country center coords (used for country markers / fallback)
 const COORDS: Record<string, [number, number]> = {
+  // Censored regions
   IR: [53.69, 32.43], CN: [104.20, 35.86], RU: [40.32, 55.75],
   MM: [96.08, 19.76], BY: [27.95, 53.71], TM: [59.56, 38.97],
   VN: [108.28, 14.06], CU: [-77.78, 21.52], PK: [69.35, 30.38],
   TH: [100.99, 15.87], UZ: [64.59, 41.38], SA: [45.08, 23.89], AE: [53.85, 23.42],
   IN: [78.96, 20.59], BD: [90.36, 23.68], EG: [30.80, 26.82],
   TR: [35.24, 38.96], VE: [-66.59, 6.42], KZ: [66.92, 48.02],
+  // Non-censored user countries
+  US: [-95.71, 37.09], GB: [-3.44, 55.38], FR: [2.21, 46.23],
+  DE: [10.45, 51.17], JP: [138.25, 36.20], KR: [127.77, 35.91],
+  AU: [133.78, -25.27], CA: [-106.35, 56.13], SE: [18.64, 60.13],
+  CH: [8.23, 46.82], NL: [5.29, 52.13], SG: [103.82, 1.35],
+  BR: [-51.93, -14.24], MX: [-102.55, 23.63], ID: [113.92, -0.79],
+  NG: [8.68, 9.08], KE: [37.91, -0.02], ZA: [22.94, -30.56],
+  UA: [31.17, 48.38], PL: [19.15, 51.92], RO: [24.97, 45.94],
+  IQ: [43.68, 33.22], AF: [67.71, 33.94], MY: [101.98, 4.21],
+  PH: [121.77, 12.88], ET: [40.49, 9.15], TZ: [34.89, -6.37],
 };
 
 // ISO 3166-1 numeric → alpha-2 for countries we care about
@@ -168,12 +179,50 @@ export interface MapSelection {
   countryASNs: DashboardASN[];
 }
 
+interface ProxyNode {
+  id: string;
+  lng: number;
+  lat: number;
+  dc: DashboardDataCenter | null;
+  providerName?: string;
+  providerRoutes?: number;
+  color: string;
+}
+
 interface WorldMapProps {
   liveCountries?: DashboardCountry[];
+  dataCenters?: DashboardDataCenter[];
+  trafficFlows?: DashboardTrafficFlow[];
   onSelectionChange?: (selection: MapSelection) => void;
   myProxyView?: boolean;
   myGeo?: GeoResult | null;
   peerGeos?: GeoResult[];
+}
+
+// Provider colors — each cloud provider gets a distinct hue
+// Keys are matched via includes() so "linode-first" still matches "linode"
+const PROVIDER_COLOR_ENTRIES: [string, string][] = [
+  ["oci", "#e06060"],         // red
+  ["linode", "#00b050"],      // green
+  ["alicloud", "#f0a030"],    // amber
+  ["brightdata", "#a080e0"],  // violet
+  ["oxylabs", "#60c0e0"],     // sky
+  ["iproyal", "#e0a0c0"],     // pink
+  ["soax", "#c0e060"],        // lime
+  ["packetstream", "#80d0a0"], // mint
+];
+const PROVIDER_COLOR_FALLBACKS = ["#00e5c8", "#f0a030", "#a080e0", "#e06080", "#60c0e0", "#c0e060"];
+
+// Stable color per provider name — uses substring match and deterministic hash fallback
+function providerColor(name: string): string {
+  const lower = name.toLowerCase();
+  for (const [key, color] of PROVIDER_COLOR_ENTRIES) {
+    if (lower.includes(key)) return color;
+  }
+  // Deterministic fallback based on name hash
+  let hash = 0;
+  for (let i = 0; i < lower.length; i++) hash = ((hash << 5) - hash + lower.charCodeAt(i)) | 0;
+  return PROVIDER_COLOR_FALLBACKS[Math.abs(hash) % PROVIDER_COLOR_FALLBACKS.length];
 }
 
 // Each censored region gets a distinct warm hue
@@ -231,101 +280,144 @@ function scatterNodes(country: string, count: number, color: string): ScatteredN
 }
 
 
-function nearestProxy(lng: number, lat: number) {
-  let best = PROXY_NODES[0];
+function nearestProxy(lng: number, lat: number, nodes: ProxyNode[]) {
+  let best = nodes[0];
   let bestDist = Infinity;
-  for (const p of PROXY_NODES) {
+  for (const p of nodes) {
     const d = (p.lng - lng) ** 2 + (p.lat - lat) ** 2;
     if (d < bestDist) { bestDist = d; best = p; }
   }
   return best;
 }
 
-function buildMockArcs(): { arcs: TrafficArc[]; scattered: ScatteredNode[] } {
+function buildCountryArcs(
+  country: string,
+  traffic: number,
+  target: ProxyNode,
+  arcColor: string,
+  idPrefix: string,
+): TrafficArc[] {
   const arcs: TrafficArc[] = [];
-  const allScattered: ScatteredNode[] = [];
-
-  // Build arcs from cities in each censored country
-  const censoredCountries = Array.from(CENSORED);
-  let arcIndex = 0;
-  for (const country of censoredCountries) {
-    const cities = CITIES[country];
-    if (!cities) continue;
-    const color = regionColor(country);
-
-    // Scatter nodes around cities
-    const scatterCount = Math.min(15, Math.max(4, cities.length * 3));
-    allScattered.push(...scatterNodes(country, scatterCount, color));
-
-    // Each city gets arcs proportional to its weight
+  const cities = CITIES[country];
+  if (cities && cities.length > 0) {
+    const totalWeight = cities.reduce((s, c) => s + c.weight, 0);
     for (const city of cities) {
-      const proxy = nearestProxy(city.lng, city.lat);
-      const traffic = 0.2 + city.weight * 0.6;
-      const count = city.weight > 0.6 ? 2 : 1;
+      const cityTraffic = traffic * (city.weight / totalWeight) * cities.length;
+      if (cityTraffic < 0.05 && idPrefix === "flow") continue;
+      const count = cityTraffic > 0.6 ? 2 : 1;
       for (let k = 0; k < count; k++) {
         arcs.push({
-          id: `mock-${country}-${city.name}-${proxy.id}-${k}`,
+          id: `${idPrefix}-${country}-${city.name}-${target.id}-${k}`,
           from: [city.lng, city.lat],
-          to: [proxy.lng, proxy.lat],
-          traffic,
-          color,
+          to: [target.lng, target.lat],
+          traffic: Math.min(1, cityTraffic),
+          color: arcColor,
           curveIndex: k,
           country,
         });
-        arcIndex++;
       }
     }
+  } else {
+    const coords = COORDS[country];
+    if (coords) {
+      arcs.push({
+        id: `${idPrefix}-${country}-${target.id}-0`,
+        from: coords,
+        to: [target.lng, target.lat],
+        traffic,
+        color: arcColor,
+        curveIndex: 0,
+        country,
+      });
+    }
+  }
+  return arcs;
+}
+
+function buildMockArcs(proxyNodes: ProxyNode[]): { arcs: TrafficArc[]; scattered: ScatteredNode[] } {
+  const arcs: TrafficArc[] = [];
+  const allScattered: ScatteredNode[] = [];
+
+  for (const country of Array.from(CENSORED)) {
+    const cities = CITIES[country];
+    if (!cities) continue;
+    const color = regionColor(country);
+    allScattered.push(...scatterNodes(country, Math.min(15, Math.max(4, cities.length * 3)), color));
+
+    const proxy = nearestProxy(cities[0].lng, cities[0].lat, proxyNodes);
+    arcs.push(...buildCountryArcs(country, 0.5, proxy, color, "mock"));
   }
   return { arcs, scattered: allScattered };
 }
 
-function buildLiveArcs(countries: DashboardCountry[]): { arcs: TrafficArc[]; scattered: ScatteredNode[] } {
+function buildLiveArcs(countries: DashboardCountry[], proxyNodes: ProxyNode[]): { arcs: TrafficArc[]; scattered: ScatteredNode[] } {
   const maxASN = Math.max(1, ...countries.map((c) => c.asnCount));
   const arcs: TrafficArc[] = [];
   const allScattered: ScatteredNode[] = [];
 
   for (const cd of countries) {
-    const cities = CITIES[cd.country];
     const color = regionColor(cd.country);
     const traffic = cd.asnCount / maxASN;
-
-    // Scatter nodes around cities
     const scatterCount = Math.min(20, Math.max(3, Math.round(Math.sqrt(cd.asnCount) * 2)));
     allScattered.push(...scatterNodes(cd.country, scatterCount, color));
 
-    if (cities && cities.length > 0) {
-      // Distribute arcs across cities weighted by population
-      const totalWeight = cities.reduce((s, c) => s + c.weight, 0);
-      for (const city of cities) {
-        const cityTraffic = traffic * (city.weight / totalWeight) * cities.length;
-        const proxy = nearestProxy(city.lng, city.lat);
-        const count = cityTraffic > 0.6 ? 2 : 1;
-        for (let k = 0; k < count; k++) {
-          arcs.push({
-            id: `${cd.country}-${city.name}-${proxy.id}-${k}`,
-            from: [city.lng, city.lat],
-            to: [proxy.lng, proxy.lat],
-            traffic: Math.min(1, cityTraffic),
-            color,
-            curveIndex: k,
-            country: cd.country,
-          });
-        }
-      }
-    } else {
-      // Fallback to country center
-      const coords = COORDS[cd.country];
-      if (!coords) continue;
-      const proxy = nearestProxy(coords[0], coords[1]);
-      arcs.push({
-        id: `${cd.country}-${proxy.id}-0`,
-        from: coords,
-        to: [proxy.lng, proxy.lat],
-        traffic,
-        color,
-        curveIndex: 0,
-        country: cd.country,
-      });
+    const cities = CITIES[cd.country];
+    const refCity = cities?.[0];
+    const coords = refCity ? [refCity.lng, refCity.lat] as [number, number] : COORDS[cd.country];
+    if (!coords) continue;
+    const proxy = nearestProxy(coords[0], coords[1], proxyNodes);
+    arcs.push(...buildCountryArcs(cd.country, traffic, proxy, color, "live"));
+  }
+  return { arcs, scattered: allScattered };
+}
+
+// Build arcs from real bandit traffic flow data — shows actual DC-to-country relationships
+function buildFlowArcs(
+  flows: DashboardTrafficFlow[],
+  proxyNodes: ProxyNode[],
+  countries: DashboardCountry[],
+): { arcs: TrafficArc[]; scattered: ScatteredNode[] } {
+  const arcs: TrafficArc[] = [];
+  const allScattered: ScatteredNode[] = [];
+  const maxPulls = Math.max(1, ...flows.map((f) => f.weightedPulls));
+
+  // Index one proxy node per region for arc targeting (use DC center position)
+  const nodeByRegion = new Map<number, ProxyNode>();
+  for (const n of proxyNodes) {
+    if (n.dc && !nodeByRegion.has(n.dc.regionId)) {
+      nodeByRegion.set(n.dc.regionId, n);
+    }
+  }
+  // Arcs go to the nearest provider node within the target region
+
+  // Group flows by country
+  const flowsByCountry = new Map<string, DashboardTrafficFlow[]>();
+  for (const f of flows) {
+    const list = flowsByCountry.get(f.country) || [];
+    list.push(f);
+    flowsByCountry.set(f.country, list);
+  }
+
+  // Build scatter nodes for each country that has flows
+  const scatteredCountries = new Set<string>();
+  for (const [country, countryFlows] of flowsByCountry) {
+    const color = regionColor(country);
+    const cities = CITIES[country];
+
+    if (!scatteredCountries.has(country)) {
+      scatteredCountries.add(country);
+      const cd = countries.find((c) => c.country === country);
+      const scatterCount = cd
+        ? Math.min(20, Math.max(3, Math.round(Math.sqrt(cd.asnCount) * 2)))
+        : 8;
+      allScattered.push(...scatterNodes(country, scatterCount, color));
+    }
+
+    for (const flow of countryFlows) {
+      const proxyNode = nodeByRegion.get(flow.regionId);
+      if (!proxyNode) continue;
+      const traffic = flow.weightedPulls / maxPulls;
+      arcs.push(...buildCountryArcs(country, traffic, proxyNode, proxyNode.color, "flow"));
     }
   }
   return { arcs, scattered: allScattered };
@@ -513,11 +605,73 @@ function ArcLayer({
 
 // ── Markers ──
 
-const ProxyMarker = memo(function ProxyMarker({ node, dimmed }: { node: typeof PROXY_NODES[0]; dimmed: boolean }) {
+const DCMarker = memo(function DCMarker({ node, dimmed }: { node: ProxyNode; dimmed: boolean }) {
+  const [hovered, setHovered] = useState(false);
+  const dc = node.dc;
+  const hasData = dc !== null;
+  const routes = node.providerRoutes ?? (hasData ? dc.totalRoutes : 0);
+  const baseSize = hasData ? Math.max(2.5, Math.min(6, 1.5 + Math.sqrt(routes) * 0.6)) : 1.5;
+  const color = node.color;
+  const label = node.providerName
+    ? `${node.providerName}`
+    : hasData ? dc.city || dc.regionName : node.id;
+
   return (
     <Marker coordinates={[node.lng, node.lat]}>
-      <circle r={2} fill="#d5c8a0" opacity={dimmed ? 0.05 : 0.14} />
-      <circle r={1} fill="#d5c8a0" opacity={dimmed ? 0.18 : 0.5} style={{ filter: "drop-shadow(0 0 3px #d5c8a0)" }} />
+      <g
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{ cursor: hasData ? "pointer" : "default" }}
+      >
+        {hasData && !dimmed && (
+          <circle r={baseSize + 3} fill="none" stroke={color} strokeWidth={0.3} opacity={0.15}>
+            <animate attributeName="r" from={String(baseSize)} to={String(baseSize + 5)} dur="3s" repeatCount="indefinite" />
+            <animate attributeName="opacity" from="0.2" to="0" dur="3s" repeatCount="indefinite" />
+          </circle>
+        )}
+        <circle r={baseSize + 1.5} fill={color} opacity={dimmed ? 0.03 : 0.08} />
+        <circle r={baseSize} fill={color} opacity={dimmed ? 0.15 : 0.55}
+          style={{ filter: dimmed ? "none" : `drop-shadow(0 0 4px ${color})` }} />
+        <text y={-baseSize - 2.5} textAnchor="middle"
+          style={{ fontFamily: "var(--font-mono)", fontSize: "3.2px", fill: color, opacity: dimmed ? 0.15 : 0.55 }}>
+          {label}
+        </text>
+        <circle r={baseSize + 5} fill="transparent" />
+      </g>
+      {hovered && hasData && !dimmed && (
+        <foreignObject x={baseSize + 4} y={-35} width={150} height={100} style={{ overflow: "visible", pointerEvents: "none" }}>
+          <div style={{
+            background: "rgba(10, 12, 18, 0.94)",
+            border: `1px solid ${color}30`,
+            borderRadius: "6px",
+            padding: "8px 10px",
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            color: "#c8ccd4",
+            lineHeight: 1.5,
+            backdropFilter: "blur(8px)",
+            boxShadow: `0 4px 20px rgba(0,0,0,0.5), 0 0 15px ${color}10`,
+          }}>
+            <div style={{ fontWeight: 700, color, fontSize: "11px", marginBottom: 2 }}>
+              {node.providerName ? `${node.providerName} — ${dc.city}` : `${dc.regionName} — ${dc.city}`}
+            </div>
+            <div style={{ color: "#8890a0", marginBottom: 5, fontSize: "9px" }}>
+              {routes} servers · {dc.regionName} · {dc.country}
+            </div>
+            {dc.tracks.length > 0 && (
+              <div>
+                <div style={{ fontSize: "8px", color: "#6a7080", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Protocols</div>
+                {dc.tracks.map((t) => (
+                  <div key={t.trackId} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <span style={{ color: "#a0a8b4" }}>{t.protocolName || t.trackName}</span>
+                    <span style={{ color: "#6a7080" }}>{t.activeRoutes}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </foreignObject>
+      )}
     </Marker>
   );
 });
@@ -787,13 +941,49 @@ const PeerMarker = memo(function PeerMarker({ geo, index }: { geo: GeoResult; in
   );
 });
 
-function WorldMap({ liveCountries, onSelectionChange, myProxyView, myGeo, peerGeos }: WorldMapProps) {
+function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange, myProxyView, myGeo, peerGeos }: WorldMapProps) {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [projectionFn, setProjectionFn] = useState<((c: [number, number]) => [number, number] | null) | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [selectedASN, setSelectedASN] = useState<string | null>(null);
   const [countryASNs, setCountryASNs] = useState<DashboardASN[]>([]);
   const [asnLoading, setAsnLoading] = useState(false);
+
+  // Compute proxy nodes from real DC data, falling back to hardcoded
+  // Split each DC into one node per provider, offset slightly so they don't stack
+  const effectiveProxyNodes: ProxyNode[] = useMemo(() => {
+    if (dataCenters && dataCenters.length > 0) {
+      const nodes: ProxyNode[] = [];
+      for (const dc of dataCenters) {
+        if (dc.providers && dc.providers.length > 0) {
+          const count = dc.providers.length;
+          dc.providers.forEach((prov, i) => {
+            const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+            const spread = count > 1 ? 1.8 : 0;
+            nodes.push({
+              id: `${dc.regionName}-${prov.name}`,
+              lng: dc.longitude + Math.cos(angle) * spread,
+              lat: dc.latitude + Math.sin(angle) * spread * 0.7,
+              dc,
+              providerName: prov.name,
+              providerRoutes: prov.activeRoutes,
+              color: providerColor(prov.name),
+            });
+          });
+        } else {
+          nodes.push({
+            id: dc.regionName,
+            lng: dc.longitude,
+            lat: dc.latitude,
+            dc,
+            color: "#00e5c8",
+          });
+        }
+      }
+      return nodes;
+    }
+    return PROXY_NODES.map((n) => ({ ...n, dc: null, color: "#00e5c8" }));
+  }, [dataCenters]);
 
   // Notify parent of selection changes
   useEffect(() => {
@@ -812,10 +1002,16 @@ function WorldMap({ liveCountries, onSelectionChange, myProxyView, myGeo, peerGe
     [hasLiveData, liveCountries],
   );
 
-  const { arcs: allArcs, scattered: allScattered } = useMemo(
-    () => (hasLiveData ? buildLiveArcs(liveCountries) : buildMockArcs()),
-    [hasLiveData, liveCountries],
-  );
+  const hasFlowData = trafficFlows && trafficFlows.length > 0;
+  const { arcs: allArcs, scattered: allScattered } = useMemo(() => {
+    if (hasFlowData && hasLiveData) {
+      return buildFlowArcs(trafficFlows, effectiveProxyNodes, liveCountries);
+    }
+    if (hasLiveData) {
+      return buildLiveArcs(liveCountries, effectiveProxyNodes);
+    }
+    return buildMockArcs(effectiveProxyNodes);
+  }, [hasLiveData, hasFlowData, liveCountries, trafficFlows, effectiveProxyNodes]);
 
   // Fetch ASN data when a country is selected
   useEffect(() => {
@@ -880,13 +1076,13 @@ function WorldMap({ liveCountries, onSelectionChange, myProxyView, myGeo, peerGe
     if (!selectedCountry) return null;
     const ids = new Set<string>();
     for (const arc of arcs) {
-      for (const p of PROXY_NODES) {
+      for (const p of effectiveProxyNodes) {
         if (arc.to[0] === p.lng && arc.to[1] === p.lat) ids.add(p.id);
         if (arc.from[0] === p.lng && arc.from[1] === p.lat) ids.add(p.id);
       }
     }
     return ids;
-  }, [arcs, selectedCountry]);
+  }, [arcs, selectedCountry, effectiveProxyNodes]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}>
@@ -982,9 +1178,9 @@ function WorldMap({ liveCountries, onSelectionChange, myProxyView, myGeo, peerGe
         {/* Draw-on arcs */}
         {projectionFn && <ArcLayer arcs={arcs} proj={projectionFn} />}
 
-        {/* Proxy markers (global view) */}
-        {!myProxyView && PROXY_NODES.map((n) => (
-          <ProxyMarker
+        {/* Data center markers (global view) */}
+        {!myProxyView && effectiveProxyNodes.map((n) => (
+          <DCMarker
             key={n.id}
             node={n}
             dimmed={!!activeProxyIds && !activeProxyIds.has(n.id)}
