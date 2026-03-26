@@ -764,7 +764,23 @@ export function asnDisplayName(asn: string): string {
 
 // ── ISP Panel — shown when a country is selected ──
 
-function ISPPanel({
+function rateColor(rate: number, invert = false): string {
+  const r = invert ? 1 - rate : rate;
+  if (r > 0.8) return "#a0c8a0";
+  if (r > 0.5) return "#d8c090";
+  if (r > 0) return "#e0a080";
+  return "#667080";
+}
+
+function MiniBar({ value, color }: { value: number; color: string }) {
+  return (
+    <div style={{ flex: 1, height: "3px", background: "#ffffff08", borderRadius: "2px", overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${Math.min(1, value) * 100}%`, background: color, opacity: 0.5, borderRadius: "2px" }} />
+    </div>
+  );
+}
+
+const ISPPanel = memo(function ISPPanel({
   country,
   asns,
   loading,
@@ -873,24 +889,21 @@ function ISPPanel({
                     {asn.asn}
                   </span>
                 </div>
-                {/* Traffic bar */}
-                <div style={{ marginTop: "3px", height: "3px", background: "#ffffff08", borderRadius: "2px", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${pullBar * 100}%`, background: color, opacity: 0.5, borderRadius: "2px" }} />
+                <div style={{ marginTop: "3px" }}>
+                  <MiniBar value={pullBar} color={color} />
                 </div>
-                {/* Stats row */}
                 <div style={{ display: "flex", gap: "0.6rem", marginTop: "3px", fontSize: "0.48rem", color: "#667080" }}>
                   <span>{asn.numArms} arms</span>
-                  <span style={{ color: blockRate > 0.3 ? "#e0a080" : blockRate > 0.1 ? "#d8c090" : "#a0c8a0" }}>
+                  <span style={{ color: rateColor(blockRate, true) }}>
                     {asn.numBlocked} blocked
                   </span>
                   <span>{asn.totalPulls.toLocaleString()} pulls</span>
                 </div>
-                {/* Arm detail when selected */}
                 {isSelected && asn.topArms.length > 0 && (
                   <div style={{ marginTop: "6px", borderTop: `1px solid ${color}15`, paddingTop: "5px" }}>
-                    {asn.topArms.map((arm) => {
+                    {asn.topArms.slice(0, 20).map((arm) => {
                       const sr = arm.successRate ?? 0;
-                      const srColor = sr > 0.8 ? "#a0c8a0" : sr > 0.5 ? "#d8c090" : sr > 0 ? "#e0a080" : "#667080";
+                      const srClr = rateColor(sr);
                       const prob = arm.selectionProbability ?? 0;
                       return (
                         <div key={arm.armId} style={{ marginBottom: "5px", fontSize: "0.48rem" }}>
@@ -901,18 +914,14 @@ function ISPPanel({
                             </span>
                             {arm.blocked && <span style={{ color: "#e06060", fontSize: "0.42rem" }}>BLOCKED</span>}
                           </div>
-                          {/* Success rate bar */}
                           {arm.totalTests != null && arm.totalTests > 0 && (
                             <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
-                              <div style={{ flex: 1, height: "3px", background: "#ffffff08", borderRadius: "2px", overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${sr * 100}%`, background: srColor, borderRadius: "2px" }} />
-                              </div>
-                              <span style={{ color: srColor, minWidth: "28px", textAlign: "right" }}>
+                              <MiniBar value={sr} color={srClr} />
+                              <span style={{ color: srClr, minWidth: "28px", textAlign: "right" }}>
                                 {Math.round(sr * 100)}%
                               </span>
                             </div>
                           )}
-                          {/* Metrics row */}
                           <div style={{ display: "flex", gap: "0.5rem", marginTop: "2px", fontSize: "0.42rem", color: "#667080" }}>
                             {arm.totalTests != null && arm.totalTests > 0 && (
                               <span>{arm.successCount}/{arm.totalTests} tests</span>
@@ -939,7 +948,7 @@ function ISPPanel({
       )}
     </div>
   );
-}
+});
 
 // ── Main ──
 
