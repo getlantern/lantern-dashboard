@@ -64,14 +64,10 @@ export function useLiveData() {
       const totalASNs = globalData.countries.reduce((sum, c) => sum + c.asnCount, 0);
 
       setGlobalStats({
-        activeVolunteers: 0,
+        ...emptyStats,
         activeUsers: totalASNs * 50,
         countriesReached: globalData.countries.length,
-        protocolsGenerated: 0,
-        protocolsActive: 0,
         blocksEvadedToday: globalData.blockedCount,
-        totalSessionsToday: 0,
-        bandwidthTodayTB: 0,
         countries: globalData.countries,
       });
 

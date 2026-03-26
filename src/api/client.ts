@@ -144,13 +144,7 @@ export interface DashboardActivityEvent {
   timestamp: number;
 }
 
-export interface DashboardActivityResponse {
-  events: DashboardActivityEvent[];
-}
 
-export function fetchActivity(): Promise<DashboardActivityResponse> {
-  return apiFetch("/activity");
-}
 
 export interface DashboardTrafficFlow {
   country: string;

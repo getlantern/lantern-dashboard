@@ -296,6 +296,7 @@ function buildCountryArcs(
   target: ProxyNode,
   arcColor: string,
   idPrefix: string,
+  skipLowTraffic = false,
 ): TrafficArc[] {
   const arcs: TrafficArc[] = [];
   const cities = CITIES[country];
@@ -303,7 +304,7 @@ function buildCountryArcs(
     const totalWeight = cities.reduce((s, c) => s + c.weight, 0);
     for (const city of cities) {
       const cityTraffic = traffic * (city.weight / totalWeight) * cities.length;
-      if (cityTraffic < 0.05 && idPrefix === "flow") continue;
+      if (cityTraffic < 0.05 && skipLowTraffic) continue;
       const count = cityTraffic > 0.6 ? 2 : 1;
       for (let k = 0; k < count; k++) {
         arcs.push({
@@ -398,26 +399,22 @@ function buildFlowArcs(
     flowsByCountry.set(f.country, list);
   }
 
-  // Build scatter nodes for each country that has flows
-  const scatteredCountries = new Set<string>();
+  // Index countries for O(1) lookup
+  const countryMap = new Map(countries.map((c) => [c.country, c]));
+
   for (const [country, countryFlows] of flowsByCountry) {
     const color = regionColor(country);
-    const cities = CITIES[country];
-
-    if (!scatteredCountries.has(country)) {
-      scatteredCountries.add(country);
-      const cd = countries.find((c) => c.country === country);
-      const scatterCount = cd
-        ? Math.min(20, Math.max(3, Math.round(Math.sqrt(cd.asnCount) * 2)))
-        : 8;
-      allScattered.push(...scatterNodes(country, scatterCount, color));
-    }
+    const cd = countryMap.get(country);
+    const scatterCount = cd
+      ? Math.min(20, Math.max(3, Math.round(Math.sqrt(cd.asnCount) * 2)))
+      : 8;
+    allScattered.push(...scatterNodes(country, scatterCount, color));
 
     for (const flow of countryFlows) {
       const proxyNode = nodeByRegion.get(flow.regionId);
       if (!proxyNode) continue;
       const traffic = flow.weightedPulls / maxPulls;
-      arcs.push(...buildCountryArcs(country, traffic, proxyNode, proxyNode.color, "flow"));
+      arcs.push(...buildCountryArcs(country, traffic, proxyNode, proxyNode.color, "flow", true));
     }
   }
   return { arcs, scattered: allScattered };
@@ -613,7 +610,7 @@ const DCMarker = memo(function DCMarker({ node, dimmed }: { node: ProxyNode; dim
   const baseSize = hasData ? Math.max(2.5, Math.min(6, 1.5 + Math.sqrt(routes) * 0.6)) : 1.5;
   const color = node.color;
   const label = node.providerName
-    ? `${node.providerName}`
+    ? node.providerName
     : hasData ? dc.city || dc.regionName : node.id;
 
   return (

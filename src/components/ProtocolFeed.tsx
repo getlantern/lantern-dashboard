@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { generateProtocolEvent, type ProtocolEvent } from "../data/mock";
 import { EventType, type DashboardActivityEvent } from "../api/client";
 
@@ -39,6 +39,8 @@ const LIVE_CSS_CLASS: Record<string, string> = {
   [EventType.ROUTE_PROVISIONED]: "deployed",
   [EventType.CALLBACK]: "generated",
 };
+
+const CALLBACK_SUCCESS_THRESHOLD = 0.1;
 
 function timeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -85,12 +87,8 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
     return () => clearInterval(interval);
   }, []);
 
-  const filteredLive = useMemo(
-    () => useLive && liveEvents ? liveEvents : [],
-    [useLive, liveEvents],
-  );
-
-  const eventCount = useLive ? filteredLive.length : mockEvents.length;
+  const liveList = useLive ? liveEvents! : [];
+  const eventCount = useLive ? liveList.length : mockEvents.length;
 
   return (
     <div className="feed-section">
@@ -100,22 +98,25 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
       </div>
       <div className="feed-list" ref={listRef}>
         {useLive
-          ? filteredLive.map((event, i) => (
+          ? liveList.map((event, i) => {
+              const isCallback = event.eventType === EventType.CALLBACK;
+              const callbackOk = isCallback && (event.reward ?? 0) > CALLBACK_SUCCESS_THRESHOLD;
+              return (
               <div key={`${event.timestamp}-${i}`} className="feed-item"
-                style={event.eventType === EventType.CALLBACK ? { opacity: 0.7 } : undefined}>
+                style={isCallback ? { opacity: 0.7 } : undefined}>
                 <div className={`feed-icon ${
-                  event.eventType === EventType.CALLBACK
-                    ? (event.reward && event.reward > 0.1 ? "evaded" : "blocked")
+                  isCallback
+                    ? (callbackOk ? "evaded" : "blocked")
                     : (LIVE_CSS_CLASS[event.eventType] || "generated")
                 }`}>
-                  {event.eventType === EventType.CALLBACK
-                    ? (event.reward && event.reward > 0.1 ? "✓" : "✗")
+                  {isCallback
+                    ? (callbackOk ? "✓" : "✗")
                     : (LIVE_TYPE_ICONS[event.eventType] || "📡")}
                 </div>
                 <div className="feed-content">
                   <div className="feed-title">
-                    {event.eventType === EventType.CALLBACK
-                      ? `${event.reward && event.reward > 0.1 ? "Route OK" : "Probe Failed"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}`
+                    {isCallback
+                      ? `${callbackOk ? "Route OK" : "Probe Failed"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}`
                       : `${LIVE_TYPE_LABELS[event.eventType] || event.eventType}${event.detail ? `: ${event.detail}` : ""}`}
                   </div>
                   <div className="feed-meta">
@@ -126,7 +127,8 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           : mockEvents.map((event) => (
               <div key={event.id} className="feed-item">
                 <div className={`feed-icon ${event.type}`}>
