@@ -60,6 +60,15 @@ export interface DashboardArmEntry {
   armId: string;
   weight: number;
   blocked: boolean;
+  regionName?: string;
+  trackName?: string;
+  regionId?: number;
+  trackId?: number;
+  routeCount?: number;
+  selectionProbability?: number;
+  successCount?: number;
+  totalTests?: number;
+  successRate?: number;
 }
 
 export interface DashboardASN {

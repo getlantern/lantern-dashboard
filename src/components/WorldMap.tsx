@@ -789,7 +789,7 @@ function ISPPanel({
         bottom: "5.5rem",
         right: "0.75rem",
         zIndex: 20,
-        width: "220px",
+        width: "260px",
         background: "rgba(12, 14, 20, 0.92)",
         backdropFilter: "blur(12px)",
         border: `1px solid ${color}30`,
@@ -833,7 +833,7 @@ function ISPPanel({
       </div>
 
       {/* ISP list */}
-      <div style={{ maxHeight: "200px", overflowY: "auto", padding: "0.3rem 0" }}>
+      <div style={{ maxHeight: "320px", overflowY: "auto", padding: "0.3rem 0" }}>
         {loading ? (
           <div style={{ padding: "1rem", textAlign: "center", fontSize: "0.55rem", color: "#667080" }}>
             Loading ISPs...
@@ -885,6 +885,46 @@ function ISPPanel({
                   </span>
                   <span>{asn.totalPulls.toLocaleString()} pulls</span>
                 </div>
+                {/* Arm detail when selected */}
+                {isSelected && asn.topArms.length > 0 && (
+                  <div style={{ marginTop: "6px", borderTop: `1px solid ${color}15`, paddingTop: "5px" }}>
+                    {asn.topArms.map((arm) => {
+                      const sr = arm.successRate ?? 0;
+                      const srColor = sr > 0.8 ? "#a0c8a0" : sr > 0.5 ? "#d8c090" : sr > 0 ? "#e0a080" : "#667080";
+                      const prob = arm.selectionProbability ?? 0;
+                      return (
+                        <div key={arm.armId} style={{ marginBottom: "5px", fontSize: "0.48rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ color: arm.blocked ? "#e0a080" : "#c8ccd4", fontWeight: 500 }}>
+                              {arm.trackName || arm.armId}
+                              {arm.regionName ? ` · ${arm.regionName}` : ""}
+                            </span>
+                            {arm.blocked && <span style={{ color: "#e06060", fontSize: "0.42rem" }}>BLOCKED</span>}
+                          </div>
+                          {/* Success rate bar */}
+                          {arm.totalTests != null && arm.totalTests > 0 && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
+                              <div style={{ flex: 1, height: "3px", background: "#ffffff08", borderRadius: "2px", overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: `${sr * 100}%`, background: srColor, borderRadius: "2px" }} />
+                              </div>
+                              <span style={{ color: srColor, minWidth: "28px", textAlign: "right" }}>
+                                {Math.round(sr * 100)}%
+                              </span>
+                            </div>
+                          )}
+                          {/* Metrics row */}
+                          <div style={{ display: "flex", gap: "0.5rem", marginTop: "2px", fontSize: "0.42rem", color: "#667080" }}>
+                            {arm.totalTests != null && arm.totalTests > 0 && (
+                              <span>{arm.successCount}/{arm.totalTests} tests</span>
+                            )}
+                            {prob > 0 && <span>P={Math.round(prob * 100)}%</span>}
+                            {arm.routeCount != null && arm.routeCount > 0 && <span>{arm.routeCount} routes</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })
