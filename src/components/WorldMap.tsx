@@ -653,7 +653,7 @@ const DCMarker = memo(function DCMarker({ node, dimmed }: { node: ProxyNode; dim
               {node.providerName ? `${node.providerName} — ${dc.city}` : `${dc.regionName} — ${dc.city}`}
             </div>
             <div style={{ color: "#8890a0", marginBottom: 5, fontSize: "9px" }}>
-              {routes} servers · {dc.regionName} · {dc.country}
+              {routes} routes · {dc.regionName} · {dc.country}
             </div>
             {dc.tracks.length > 0 && (
               <div>
@@ -956,7 +956,7 @@ function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange,
           const count = dc.providers.length;
           dc.providers.forEach((prov, i) => {
             const angle = (2 * Math.PI * i) / count - Math.PI / 2;
-            const spread = count > 1 ? 1.8 : 0;
+            const spread = count > 1 ? 0.5 : 0;
             nodes.push({
               id: `${dc.regionName}-${prov.name}`,
               lng: dc.longitude + Math.cos(angle) * spread,

@@ -115,7 +115,7 @@ export default function Dashboard() {
               userSelect: "none",
             }}
           >
-            {demoMode ? "DEMO" : isLive ? "STAGING" : "CONNECTING..."}
+            {demoMode ? "DEMO" : isLive ? "LIVE DATA" : "CONNECTING..."}
           </div>
           {blockedRoutes.length > 0 && (
             <div

@@ -31,7 +31,7 @@ const emptyStats: LiveGlobalStats = {
 };
 
 export function useLiveData() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, token } = useAuth();
   const [globalStats, setGlobalStats] = useState<LiveGlobalStats>(emptyStats);
   const [dataCenters, setDataCenters] = useState<DashboardDataCenter[]>([]);
   const [activityEvents, setActivityEvents] = useState<DashboardActivityEvent[]>([]);
@@ -63,13 +63,13 @@ export function useLiveData() {
       const blockedData = blocked.value;
       const totalASNs = globalData.countries.reduce((sum, c) => sum + c.asnCount, 0);
 
-      setGlobalStats({
-        ...emptyStats,
-        activeUsers: totalASNs * 50,
+      setGlobalStats((prev) => ({
+        ...prev,
+        activeUsers: totalASNs > 0 ? totalASNs * 50 : prev.activeUsers,
         countriesReached: globalData.countries.length,
-        blocksEvadedToday: globalData.blockedCount,
+        blocksEvadedToday: globalData.blockedCount > 0 ? globalData.blockedCount : prev.blocksEvadedToday,
         countries: globalData.countries,
-      });
+      }));
 
       setBlockedRoutes(blockedData);
       setIsLive(true);
@@ -129,7 +129,7 @@ export function useLiveData() {
     };
 
     return () => es.close();
-  }, [isAuthenticated, demoMode]);
+  }, [isAuthenticated, demoMode, token]);
 
   // Simulate stat jitter only in demo mode
   useEffect(() => {
