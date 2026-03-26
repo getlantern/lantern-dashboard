@@ -28,7 +28,7 @@ function LanternLogo() {
 
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
-  const { globalStats, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
+  const { globalStats, dataCenters, activityEvents, trafficFlows, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
   const proxy = useProxy();
   const [myProxyView, setMyProxyView] = useState(false);
   const connectionAddrs = useMemo(
@@ -179,6 +179,8 @@ export default function Dashboard() {
           </div>
           <WorldMap
             liveCountries={globalStats.countries.length > 0 ? globalStats.countries : undefined}
+            dataCenters={dataCenters}
+            trafficFlows={trafficFlows}
             onSelectionChange={handleSelectionChange}
             myProxyView={myProxyView}
             myGeo={myGeo}
@@ -260,7 +262,7 @@ export default function Dashboard() {
         <div className="right-panel">
           <ProxyWidget {...proxy} />
           <ImpactCard stats={volunteerStats} />
-          <ProtocolFeed />
+          <ProtocolFeed liveEvents={activityEvents} demoMode={demoMode} />
         </div>
       </div>
     </div>
