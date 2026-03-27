@@ -1046,10 +1046,12 @@ function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange,
   const hasLiveData = liveCountries && liveCountries.length > 0;
 
   // Pre-compute set for O(1) lookups in geography render loop
-  const liveCountrySet = useMemo(
-    () => hasLiveData ? new Set(liveCountries.map((c) => c.country)) : new Set<string>(),
-    [hasLiveData, liveCountries],
-  );
+  const liveCountrySet = useMemo(() => {
+    const s = new Set<string>();
+    if (hasLiveData) for (const c of liveCountries) s.add(c.country);
+    if (trafficFlows) for (const f of trafficFlows) s.add(f.country);
+    return s;
+  }, [hasLiveData, liveCountries, trafficFlows]);
 
   const hasFlowData = trafficFlows && trafficFlows.length > 0;
   const { arcs: allArcs, scattered: allScattered } = useMemo(() => {
@@ -1205,8 +1207,8 @@ function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange,
                   strokeWidth={isSelected ? 0.8 : 0.4}
                   onClick={() => handleGeoClick(iso)}
                   style={{
-                    default: { outline: "none", cursor: isCensored || hasData ? "pointer" : "default" },
-                    hover: { outline: "none", fill: isSelected ? fill : hasData ? "#443860" : isCensored ? "#3e3250" : "#2e3648", cursor: isCensored || hasData ? "pointer" : "default" },
+                    default: { outline: "none", cursor: hasData || isCensored ? "pointer" : "default" },
+                    hover: { outline: "none", fill: isSelected ? fill : hasData ? "#443860" : isCensored ? "#3e3250" : "#2e3648", cursor: hasData || isCensored ? "pointer" : "default" },
                     pressed: { outline: "none" },
                   }}
                 />
