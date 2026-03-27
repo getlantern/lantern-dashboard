@@ -857,8 +857,9 @@ const ISPPanel = memo(function ISPPanel({
             Loading ISPs...
           </div>
         ) : asns.length === 0 ? (
-          <div style={{ padding: "1rem", textAlign: "center", fontSize: "0.55rem", color: "#667080" }}>
-            No ISP data
+          <div style={{ padding: "1rem", textAlign: "center", fontSize: "0.5rem", color: "#667080", lineHeight: 1.5 }}>
+            No bandit data for this country yet.<br />
+            ISP stats appear once clients connect through the bandit system.
           </div>
         ) : (
           asns.map((asn) => {
