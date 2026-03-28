@@ -363,6 +363,17 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
     return countries.reduce((s, c) => s + c.avgEntropy * c.asnCount, 0) / totalWeight;
   }, [countries]);
 
+  // Pre-fetch ASN data for all countries on mount for accurate counts
+  useEffect(() => {
+    for (const c of countries) {
+      if (!asnCache.has(c.country)) {
+        fetchASNs(c.country)
+          .then((data) => setAsnCache((prev) => new Map(prev).set(c.country, data)))
+          .catch(() => {});
+      }
+    }
+  }, [countries]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleCountry = useCallback(async (countryCode: string) => {
     setExpandedCountries((prev) => {
       const next = new Set(prev);
