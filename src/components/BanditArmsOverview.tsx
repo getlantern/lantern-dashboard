@@ -8,6 +8,7 @@ import { fetchASNs } from "../api/client";
 
 interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
+  isLive?: boolean;
 }
 
 // Lazy-loaded ASN → org name database (121K entries, ~1.5MB gzipped)
@@ -366,7 +367,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: Das
   );
 }
 
-function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
+function BanditArmsOverview({ countries, isLive }: BanditArmsOverviewProps) {
   const asnDB = useASNNames();
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
@@ -450,7 +451,7 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
   if (countries.length === 0) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
-        No bandit data available
+        {isLive ? "No bandit data available" : "Connecting to API..."}
       </div>
     );
   }

@@ -213,7 +213,7 @@ export default function Dashboard() {
             error={vpsData.error}
           />
         ) : activeTab === "arms" ? (
-          <BanditArmsOverview countries={globalStats.countries} />
+          <BanditArmsOverview countries={globalStats.countries} isLive={isLive} />
         ) : (
         <div className="map-section">
           <div className="map-header">
