@@ -278,19 +278,19 @@ function ArmRow({ arm }: { arm: DashboardArmEntry }) {
       )}
 
       {arm.selectionProbability != null && (
-        <span title="Selection probability — the chance the EXP3.S bandit picks this arm for the next request. Higher = the algorithm considers this arm more likely to succeed." style={{ ...chipStyle, fontSize: "0.48rem", cursor: "help" }}>
-          P={Math.round(arm.selectionProbability * 100)}%
+        <span title="Selection probability — the chance the bandit picks this arm for the next request" style={{ ...chipStyle, fontSize: "0.48rem", cursor: "help" }}>
+          select {Math.round(arm.selectionProbability * 100)}%
         </span>
       )}
 
       {arm.routeCount != null && (
-        <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+        <span title="Number of active VPS/proxy routes available in this arm" style={{ ...chipStyle, fontSize: "0.48rem", cursor: "help" }}>
           {arm.routeCount} route{arm.routeCount !== 1 ? "s" : ""}
         </span>
       )}
 
       {arm.blocked && (
-        <span style={blockedBadge}>blocked</span>
+        <span title="This arm is blocked — the censor is detecting and disrupting connections using this protocol+region combination. The bandit will shift traffic to other arms." style={{ ...blockedBadge, cursor: "help" }}>blocked</span>
       )}
     </div>
   );
@@ -315,7 +315,9 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: Das
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <span style={chipStyle}>{asn.numArms} arms</span>
-          <span style={{ ...chipStyle, color: blockedColor }}>{asn.numBlocked} blocked</span>
+          <span title="Arms blocked by censors vs total arms available. Blocked arms are protocol+region pairs that the censor is actively disrupting." style={{ ...chipStyle, color: blockedColor, cursor: "help" }}>
+            {asn.numBlocked}/{asn.numArms} blocked
+          </span>
           <span style={chipStyle}>{asn.totalPulls.toLocaleString()} pulls</span>
         </span>
       </div>
