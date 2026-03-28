@@ -296,9 +296,11 @@ function ArmRow({ arm }: { arm: DashboardArmEntry }) {
       )}
 
       {hasTests && (
-        <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
-          {arm.totalTests} tests
-        </span>
+        <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} probe callbacks succeeded. The bandit marks an arm as "blocked" when the success rate drops below 10%.`}>
+          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+            {arm.successCount ?? 0}/{arm.totalTests} ok
+          </span>
+        </Tip>
       )}
 
       {arm.selectionProbability != null && (
@@ -318,7 +320,7 @@ function ArmRow({ arm }: { arm: DashboardArmEntry }) {
       )}
 
       {arm.blocked && (
-        <Tip text="This arm is blocked — connections through this protocol+region pair are failing. Could be active censorship, network issues, or server problems. The bandit will shift traffic to other arms.">
+        <Tip text="Success rate dropped below 10% — the bandit has marked this arm as blocked and will shift traffic to other arms. Could be censorship, network issues, or server problems.">
           <span style={blockedBadge}>blocked</span>
         </Tip>
       )}
