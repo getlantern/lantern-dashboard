@@ -113,9 +113,11 @@ const ASN_NAMES: Record<string, string> = {
 
 function asnDisplayName(asn: string, db: Record<string, string> | null): string {
   if (ASN_NAMES[asn]) return ASN_NAMES[asn];
-  if (db?.[asn]) return db[asn];
+  if (db && db[asn]) return db[asn];
+  // Also try without "AS" prefix in case the DB keys differ
   const num = asn.replace(/^AS/i, "");
-  return `ASN ${num}`;
+  if (db && db[num]) return db[num];
+  return db ? `ASN ${num}` : `${asn} (loading...)`;
 }
 
 function blockRateColor(rate: number): string {
@@ -162,6 +164,14 @@ const cardValue: CSSProperties = {
   fontSize: "1.6rem",
   fontWeight: 600,
   lineHeight: 1.15,
+};
+
+const cardHint: CSSProperties = {
+  fontFamily: "var(--font-sans)",
+  fontSize: "0.6rem",
+  color: "#667080",
+  marginTop: "0.25rem",
+  lineHeight: 1.3,
 };
 
 const countryHeaderStyle: CSSProperties = {
@@ -393,22 +403,26 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
         <div style={card}>
           <div style={cardLabel}>Countries</div>
           <div style={{ ...cardValue, color: "#00e5c8" }}>{countries.length}</div>
+          <div style={cardHint}>with active bandit routing</div>
         </div>
         <div style={card}>
           <div style={cardLabel}>Total ASNs</div>
           <div style={{ ...cardValue, color: "#c0c8d4" }}>{totalASNs}</div>
+          <div style={cardHint}>ISPs / network operators being served</div>
         </div>
         <div style={card}>
           <div style={cardLabel}>Avg Block Rate</div>
           <div style={{ ...cardValue, color: blockRateColor(weightedBlockRate) }}>
             {(weightedBlockRate * 100).toFixed(1)}%
           </div>
+          <div style={cardHint}>fraction of arms blocked by censors</div>
         </div>
         <div style={card}>
           <div style={cardLabel}>Avg Entropy</div>
           <div style={{ ...cardValue, color: "#a0b0c8" }}>
             {weightedEntropy.toFixed(3)}
           </div>
+          <div style={cardHint}>weight distribution spread — higher = more exploration, lower = converged on best arms</div>
         </div>
       </div>
 
