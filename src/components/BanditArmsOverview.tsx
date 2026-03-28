@@ -423,29 +423,29 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
-        <div style={card}>
+        <div style={card} title="Countries where the EXP3.S multi-armed bandit is actively routing traffic through tested proxy arms.">
           <div style={cardLabel}>Countries</div>
           <div style={{ ...cardValue, color: "#00e5c8" }}>{countries.length}</div>
           <div style={cardHint}>with active bandit routing</div>
         </div>
-        <div style={card}>
+        <div style={card} title="Total number of Autonomous Systems (ISPs/network operators) with active bandit state. Each ASN has its own EXP3.S weight vector.">
           <div style={cardLabel}>Total ASNs</div>
           <div style={{ ...cardValue, color: "#c0c8d4" }}>{totalASNs}</div>
           <div style={cardHint}>ISPs / network operators being served</div>
         </div>
-        <div style={card}>
+        <div style={card} title="Average fraction of arms (region+protocol pairs) that are currently blocked by censors across all ISPs. Lower is better.">
           <div style={cardLabel}>Avg Block Rate</div>
           <div style={{ ...cardValue, color: blockRateColor(weightedBlockRate) }}>
-            {(weightedBlockRate * 100).toFixed(1)}%
+            {weightedBlockRate < 0.01 ? (weightedBlockRate * 100).toFixed(2) : (weightedBlockRate * 100).toFixed(1)}%
           </div>
-          <div style={cardHint}>fraction of arms blocked by censors</div>
+          <div style={cardHint}>of arms blocked by censors</div>
         </div>
-        <div style={card}>
+        <div style={card} title={"Shannon entropy of the EXP3.S weight distribution. Range: 0 (all traffic on one arm) to log₂(N) where N=number of arms. Higher entropy means the bandit is still exploring; lower means it has converged on the best-performing arms."}>
           <div style={cardLabel}>Avg Entropy</div>
           <div style={{ ...cardValue, color: "#a0b0c8" }}>
             {weightedEntropy.toFixed(3)}
           </div>
-          <div style={cardHint}>weight distribution spread — higher = more exploration, lower = converged on best arms</div>
+          <div style={cardHint}>0 = fully converged · ~{Math.log2(Math.max(2, totalASNs)).toFixed(1)} = uniform exploration</div>
         </div>
       </div>
 
@@ -472,15 +472,18 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
                 </span>
                 <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
+                <div title="Fraction of arms blocked by censors for this country" style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px", cursor: "help" }}>
                   <MiniBar value={c.avgBlockRate} color={brColor} />
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: brColor, minWidth: "30px", textAlign: "right" }}>
-                    {(c.avgBlockRate * 100).toFixed(1)}%
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
+                    {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
                   </span>
                 </div>
 
-                <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.5rem", color: "#8890a0" }}>
-                  H={c.avgEntropy.toFixed(3)}
+                <span
+                  title="Shannon entropy of weight distribution. 0 = converged on one arm. Higher = more exploration."
+                  style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#8890a0", cursor: "help" }}
+                >
+                  entropy {c.avgEntropy.toFixed(3)}
                 </span>
               </div>
 
