@@ -433,7 +433,7 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "#00e5c8" }}>
                   {countryName(c.country)}
                 </span>
-                <span style={chipStyle}>{c.asnCount} ASN{c.asnCount !== 1 ? "s" : ""}</span>
+                <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
                   <MiniBar value={c.avgBlockRate} color={brColor} />
