@@ -25,8 +25,33 @@ const COUNTRY_NAMES: Record<string, string> = {
   TZ: "Tanzania",
 };
 
+const COUNTRY_NAMES_EXTRA: Record<string, string> = {
+  LK: "Sri Lanka", MM: "Myanmar", BD: "Bangladesh", NP: "Nepal",
+  KH: "Cambodia", LA: "Laos", TJ: "Tajikistan", KG: "Kyrgyzstan",
+  AZ: "Azerbaijan", GE: "Georgia", AM: "Armenia", SD: "Sudan",
+  SS: "South Sudan", ER: "Eritrea", DJ: "Djibouti", SO: "Somalia",
+  YE: "Yemen", SY: "Syria", LY: "Libya", TD: "Chad", CM: "Cameroon",
+  CD: "DR Congo", CG: "Congo", ZW: "Zimbabwe", MZ: "Mozambique",
+  HN: "Honduras", NI: "Nicaragua", HT: "Haiti", BO: "Bolivia",
+  EC: "Ecuador", PE: "Peru", CO: "Colombia", CL: "Chile", AR: "Argentina",
+  UY: "Uruguay", PY: "Paraguay", GH: "Ghana", CI: "Ivory Coast",
+  SN: "Senegal", ML: "Mali", BF: "Burkina Faso", NE: "Niger",
+  MG: "Madagascar", RW: "Rwanda", UG: "Uganda", AO: "Angola",
+  RS: "Serbia", HR: "Croatia", BA: "Bosnia", ME: "Montenegro",
+  MK: "North Macedonia", AL: "Albania", XK: "Kosovo", MD: "Moldova",
+  LT: "Lithuania", LV: "Latvia", EE: "Estonia", BG: "Bulgaria",
+  HU: "Hungary", CZ: "Czechia", SK: "Slovakia", SI: "Slovenia",
+  AT: "Austria", BE: "Belgium", DK: "Denmark", FI: "Finland",
+  NO: "Norway", IE: "Ireland", PT: "Portugal", ES: "Spain", IT: "Italy",
+  GR: "Greece", CY: "Cyprus", MT: "Malta", IS: "Iceland", LU: "Luxembourg",
+  TW: "Taiwan", HK: "Hong Kong", MO: "Macau", MN: "Mongolia",
+  NZ: "New Zealand", FJ: "Fiji", PG: "Papua New Guinea",
+  IL: "Israel", JO: "Jordan", LB: "Lebanon", KW: "Kuwait",
+  BH: "Bahrain", OM: "Oman", QA: "Qatar", PS: "Palestine",
+};
+
 function countryName(code: string): string {
-  return COUNTRY_NAMES[code] ?? code;
+  return COUNTRY_NAMES[code] ?? COUNTRY_NAMES_EXTRA[code] ?? code;
 }
 
 const ASN_NAMES: Record<string, string> = {
@@ -70,7 +95,10 @@ const ASN_NAMES: Record<string, string> = {
 };
 
 function asnDisplayName(asn: string): string {
-  return ASN_NAMES[asn] ?? asn;
+  if (ASN_NAMES[asn]) return ASN_NAMES[asn];
+  // Format unknown ASNs more readably: "AS44244" → "ASN 44244"
+  const num = asn.replace(/^AS/i, "");
+  return `ASN ${num}`;
 }
 
 function blockRateColor(rate: number): string {
