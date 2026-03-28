@@ -170,6 +170,42 @@ export function fetchTrafficFlows(): Promise<DashboardTrafficFlowsResponse> {
   return apiFetch("/traffic-flows");
 }
 
+export interface DashboardVPSRoute {
+  id: string;
+  address?: string;
+  port?: number;
+  created: string;
+  deprecated?: string;
+  status: string;
+  vpsProvider: string;
+  vpsRegion: string;
+  vpsInstanceId?: string;
+  assignmentCount: number;
+  peakAssignmentCount: number;
+  trackName: string;
+  protocolName: string;
+  locationName?: string;
+  providerName: string;
+  regionName: string;
+  city?: string;
+  countryCode?: string;
+}
+
+export interface DashboardVPSSummary {
+  total: number;
+  byStatus: Record<string, number>;
+  byProvider: Record<string, number>;
+}
+
+export interface DashboardVPSRoutesResponse {
+  routes: DashboardVPSRoute[];
+  summary: DashboardVPSSummary;
+}
+
+export function fetchVPSRoutes(): Promise<DashboardVPSRoutesResponse> {
+  return apiFetch("/vps-routes");
+}
+
 export function getStreamURL(): string {
   const url = new URL(`${API_URL}/v1/dashboard/stream`);
   if (authToken) url.searchParams.set("token", authToken);

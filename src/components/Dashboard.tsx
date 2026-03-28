@@ -3,11 +3,13 @@ import { useAuth } from "../hooks/useAuth";
 import { useLiveData } from "../hooks/useLiveData";
 import { useProxy } from "../hooks/useProxy";
 import { useGeoLookup } from "../hooks/useGeoLookup";
+import { useVPSData } from "../hooks/useVPSData";
 import WorldMap, { type MapSelection } from "./WorldMap";
 import StatsRow from "./StatsRow";
 import ImpactCard from "./ImpactCard";
 import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
+import VPSOverview from "./VPSOverview";
 import type { GlobalStats } from "../data/mock";
 
 function LanternLogo() {
@@ -29,6 +31,8 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
+  const [activeTab, setActiveTab] = useState<'map' | 'vps'>('map');
+  const vpsData = useVPSData(activeTab === 'vps');
   const proxy = useProxy();
   const [myProxyView, setMyProxyView] = useState(false);
   const connectionAddrs = useMemo(
@@ -100,7 +104,30 @@ export default function Dashboard() {
             <div className="header-subtitle">Impact Dashboard</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
+          {(["map", "vps"] as const).map((tab) => (
+            <div
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "0.55rem",
+                padding: "0.15rem 0.55rem",
+                borderRadius: "var(--radius-sm)",
+                background: activeTab === tab ? "var(--accent-primary-dim)" : "#ffffff08",
+                color: activeTab === tab ? "var(--accent-primary)" : "var(--text-muted)",
+                border: `1px solid ${activeTab === tab ? "#00e5c830" : "#ffffff10"}`,
+                cursor: "pointer",
+                userSelect: "none" as const,
+                textTransform: "uppercase" as const,
+                letterSpacing: "0.05em",
+              }}
+            >
+              {tab === "map" ? "Map" : "VPS Fleet"}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto" }}>
           <div
             onClick={toggleDemoMode}
             style={{
@@ -168,6 +195,14 @@ export default function Dashboard() {
       </header>
 
       <div className="main-layout">
+        {activeTab === "vps" ? (
+          <VPSOverview
+            routes={vpsData.routes}
+            summary={vpsData.summary}
+            isLoading={vpsData.isLoading}
+            error={vpsData.error}
+          />
+        ) : (
         <div className="map-section">
           <div className="map-header">
             <h2>Global Network</h2>
@@ -258,6 +293,7 @@ export default function Dashboard() {
           </div>
           <StatsRow stats={displayStats} filterLabel={filterLabel} proxyLive={proxy.isRunning ? proxy.liveData : null} />
         </div>
+        )}
 
         <div className="right-panel">
           <ProxyWidget {...proxy} />
