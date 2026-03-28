@@ -112,11 +112,16 @@ const ASN_NAMES: Record<string, string> = {
 };
 
 function asnDisplayName(asn: string, db: Record<string, string> | null): string {
+  // The inline map uses "AS44244" keys
   if (ASN_NAMES[asn]) return ASN_NAMES[asn];
-  if (db && db[asn]) return db[asn];
-  // Also try without "AS" prefix in case the DB keys differ
+  const withPrefix = asn.startsWith("AS") ? asn : `AS${asn}`;
+  if (ASN_NAMES[withPrefix]) return ASN_NAMES[withPrefix];
+  // The JSON DB uses "AS209" keys, but API may return just "209"
+  if (db) {
+    if (db[asn]) return db[asn];
+    if (db[withPrefix]) return db[withPrefix];
+  }
   const num = asn.replace(/^AS/i, "");
-  if (db && db[num]) return db[num];
   return db ? `ASN ${num}` : `${asn} (loading...)`;
 }
 
