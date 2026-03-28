@@ -10,17 +10,63 @@ interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
 }
 
+const COUNTRY_NAMES: Record<string, string> = {
+  IR: "Iran", CN: "China", RU: "Russia", MM: "Myanmar", BY: "Belarus",
+  TM: "Turkmenistan", VN: "Vietnam", CU: "Cuba", SA: "Saudi Arabia",
+  PK: "Pakistan", UZ: "Uzbekistan", TH: "Thailand", AE: "UAE",
+  IN: "India", BD: "Bangladesh", EG: "Egypt", TR: "Turkey",
+  VE: "Venezuela", KZ: "Kazakhstan", US: "United States", GB: "United Kingdom",
+  FR: "France", DE: "Germany", JP: "Japan", KR: "South Korea",
+  AU: "Australia", CA: "Canada", SE: "Sweden", CH: "Switzerland",
+  NL: "Netherlands", SG: "Singapore", BR: "Brazil", MX: "Mexico",
+  ID: "Indonesia", NG: "Nigeria", KE: "Kenya", ZA: "South Africa",
+  UA: "Ukraine", PL: "Poland", RO: "Romania", IQ: "Iraq",
+  AF: "Afghanistan", MY: "Malaysia", PH: "Philippines", ET: "Ethiopia",
+  TZ: "Tanzania",
+};
+
+function countryName(code: string): string {
+  return COUNTRY_NAMES[code] ?? code;
+}
+
 const ASN_NAMES: Record<string, string> = {
-  AS44244: "Irancell",
-  AS197207: "MCI",
-  AS58224: "TCI",
-  AS12880: "Afranet",
-  AS4134: "China Telecom",
-  AS4837: "China Unicom",
-  AS9808: "China Mobile",
-  AS12389: "Rostelecom",
-  AS25513: "PJSC MTS",
-  AS8359: "MTS OJSC",
+  // Iran
+  AS44244: "Irancell", AS197207: "MCI", AS58224: "TCI", AS12880: "Afranet",
+  AS48434: "MCCI", AS49100: "Pars Online", AS56402: "Pardis",
+  AS43754: "Asiatech", AS25184: "Afranet ADSL",
+  // China
+  AS4134: "China Telecom", AS4837: "China Unicom", AS9808: "China Mobile",
+  AS56040: "China Mobile GD", AS56046: "China Mobile ZJ",
+  AS17621: "China Unicom Shanghai", AS4812: "China Telecom Shanghai",
+  AS9929: "China Unicom Backbone", AS23724: "China Unicom IDC",
+  // Russia
+  AS12389: "Rostelecom", AS25513: "MTS", AS8359: "MTS OJSC",
+  AS31133: "MegaFon", AS3216: "Vimpelcom", AS20485: "Transtelecom",
+  // Myanmar
+  AS136255: "MPT", AS133385: "Ooredoo", AS136442: "Telenor",
+  // Belarus
+  AS6697: "Beltelecom", AS25106: "MTS Belarus",
+  // Turkmenistan
+  AS51495: "Turkmentelecom",
+  // Vietnam
+  AS45899: "VNPT", AS7552: "Viettel", AS18403: "FPT Telecom",
+  // Cuba
+  AS27725: "ETECSA",
+  // Saudi Arabia
+  AS25019: "STC", AS35753: "Mobily", AS39386: "Zain KSA",
+  // Pakistan
+  AS9541: "Cybernet", AS45773: "PTCL", AS9557: "Nayatel",
+  AS59257: "Zong", AS56167: "Telenor Pakistan",
+  // UAE
+  AS5384: "Etisalat", AS15802: "du",
+  // Turkey
+  AS9121: "Turk Telekom", AS16135: "Turkcell", AS34984: "Superonline",
+  // Other
+  AS7018: "AT&T", AS7922: "Comcast", AS209: "CenturyLink",
+  AS3356: "Lumen", AS15169: "Google", AS13335: "Cloudflare",
+  AS16509: "Amazon", AS8075: "Microsoft", AS32934: "Facebook",
+  AS3320: "Deutsche Telekom", AS5511: "Orange", AS6830: "Liberty Global",
+  AS2856: "BT", AS6461: "Zayo", AS174: "Cogent",
 };
 
 function asnDisplayName(asn: string): string {
@@ -59,7 +105,7 @@ const card: CSSProperties = {
 
 const cardLabel: CSSProperties = {
   fontFamily: "var(--font-sans)",
-  fontSize: "0.6rem",
+  fontSize: "0.7rem",
   textTransform: "uppercase",
   letterSpacing: "0.06em",
   color: "#8890a0",
@@ -88,33 +134,33 @@ const countryHeaderStyle: CSSProperties = {
 const ispRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: "0.5rem",
-  padding: "0.45rem 0.75rem 0.45rem 1.5rem",
+  gap: "0.6rem",
+  padding: "0.55rem 0.75rem 0.55rem 1.5rem",
   cursor: "pointer",
   userSelect: "none",
   borderBottom: "1px solid #ffffff04",
   background: "rgba(255,255,255,0.008)",
   transition: "background 0.15s",
   fontFamily: "var(--font-mono)",
-  fontSize: "0.65rem",
+  fontSize: "0.8rem",
   color: "#c0c8d4",
 };
 
 const armRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: "0.5rem",
-  padding: "0.35rem 0.75rem 0.35rem 2.5rem",
+  gap: "0.6rem",
+  padding: "0.45rem 0.75rem 0.45rem 2.5rem",
   borderBottom: "1px solid #ffffff03",
   fontFamily: "var(--font-mono)",
-  fontSize: "0.6rem",
+  fontSize: "0.75rem",
   color: "#a0a8b8",
 };
 
 const chipStyle: CSSProperties = {
   fontFamily: "var(--font-mono)",
-  fontSize: "0.5rem",
-  padding: "0.1rem 0.4rem",
+  fontSize: "0.6rem",
+  padding: "0.15rem 0.45rem",
   borderRadius: "3px",
   background: "#ffffff08",
   color: "#8890a0",
@@ -206,9 +252,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN }: { asn: DashboardA
       >
         <span style={chevronStyle(expanded)}>&#9662;</span>
         <span style={{ fontWeight: 600, color: "#c0c8d4" }}>{name}</span>
-        {name !== asn.asn && (
-          <span style={{ fontSize: "0.5rem", color: "#667080" }}>{asn.asn}</span>
-        )}
+        <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <span style={chipStyle}>{asn.numArms} arms</span>
           <span style={{ ...chipStyle, color: blockedColor }}>{asn.numBlocked} blocked</span>
@@ -340,14 +384,14 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
                 onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.015)"; }}
               >
                 <span style={chevronStyle(expanded)}>&#9662;</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", fontWeight: 700, color: "#00e5c8" }}>
-                  {c.country}
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "#00e5c8" }}>
+                  {countryName(c.country)}
                 </span>
                 <span style={chipStyle}>{c.asnCount} ASN{c.asnCount !== 1 ? "s" : ""}</span>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
                   <MiniBar value={c.avgBlockRate} color={brColor} />
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.5rem", color: brColor, minWidth: "30px", textAlign: "right" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: brColor, minWidth: "30px", textAlign: "right" }}>
                     {(c.avgBlockRate * 100).toFixed(1)}%
                   </span>
                 </div>
