@@ -342,7 +342,14 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
     [countries],
   );
 
-  const totalASNs = useMemo(() => countries.reduce((s, c) => s + c.asnCount, 0), [countries]);
+  const totalASNs = useMemo(() => {
+    let total = 0;
+    for (const c of countries) {
+      const cached = asnCache.get(c.country);
+      total += cached ? cached.length : c.asnCount;
+    }
+    return total;
+  }, [countries, asnCache]);
 
   const weightedBlockRate = useMemo(() => {
     const totalWeight = countries.reduce((s, c) => s + c.asnCount, 0);
