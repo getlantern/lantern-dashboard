@@ -278,7 +278,7 @@ function ArmRow({ arm }: { arm: DashboardArmEntry }) {
       )}
 
       {arm.selectionProbability != null && (
-        <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+        <span title="Selection probability — the chance the EXP3.S bandit picks this arm for the next request. Higher = the algorithm considers this arm more likely to succeed." style={{ ...chipStyle, fontSize: "0.48rem", cursor: "help" }}>
           P={Math.round(arm.selectionProbability * 100)}%
         </span>
       )}
