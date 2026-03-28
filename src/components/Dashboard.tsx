@@ -31,7 +31,13 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'vps'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'vps'>(() => {
+    return window.location.hash === '#vps' ? 'vps' : 'map';
+  });
+  const switchTab = useCallback((tab: 'map' | 'vps') => {
+    setActiveTab(tab);
+    window.location.hash = tab === 'vps' ? '#vps' : '';
+  }, []);
   const vpsData = useVPSData(activeTab === 'vps');
   const proxy = useProxy();
   const [myProxyView, setMyProxyView] = useState(false);
@@ -108,7 +114,7 @@ export default function Dashboard() {
           {(["map", "vps"] as const).map((tab) => (
             <div
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => switchTab(tab)}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "0.55rem",
