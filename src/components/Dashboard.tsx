@@ -10,6 +10,7 @@ import ImpactCard from "./ImpactCard";
 import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
 import VPSOverview from "./VPSOverview";
+import BanditArmsOverview from "./BanditArmsOverview";
 import type { GlobalStats } from "../data/mock";
 
 function LanternLogo() {
@@ -31,12 +32,15 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'vps'>(() => {
-    return window.location.hash === '#vps' ? 'vps' : 'map';
+  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms'>(() => {
+    const hash = window.location.hash;
+    if (hash === '#vps') return 'vps';
+    if (hash === '#arms') return 'arms';
+    return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'vps') => {
+  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms') => {
     setActiveTab(tab);
-    window.location.hash = tab === 'vps' ? '#vps' : '';
+    window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
   const vpsData = useVPSData(activeTab === 'vps');
   const proxy = useProxy();
@@ -111,7 +115,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "vps"] as const).map((tab) => (
+          {(["map", "vps", "arms"] as const).map((tab) => (
             <div
               key={tab}
               onClick={() => switchTab(tab)}
@@ -129,7 +133,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {tab === "map" ? "Map" : "VPS Fleet"}
+              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : "Bandit Arms"}
             </div>
           ))}
         </div>
@@ -208,6 +212,8 @@ export default function Dashboard() {
             isLoading={vpsData.isLoading}
             error={vpsData.error}
           />
+        ) : activeTab === "arms" ? (
+          <BanditArmsOverview countries={globalStats.countries} />
         ) : (
         <div className="map-section">
           <div className="map-header">
