@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, memo, type CSSProperties } from "react";
 import type {
   DashboardCountry,
   DashboardASN,
@@ -8,6 +8,23 @@ import { fetchASNs } from "../api/client";
 
 interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
+}
+
+// Lazy-loaded ASN → org name database (121K entries, ~1.5MB gzipped)
+let asnNamesDB: Record<string, string> | null = null;
+let asnNamesLoading = false;
+
+function useASNNames() {
+  const [loaded, setLoaded] = useState(asnNamesDB !== null);
+  useEffect(() => {
+    if (asnNamesDB || asnNamesLoading) return;
+    asnNamesLoading = true;
+    fetch("/asn-names.json")
+      .then((r) => r.json())
+      .then((data) => { asnNamesDB = data; setLoaded(true); })
+      .catch(() => { asnNamesLoading = false; });
+  }, []);
+  return loaded ? asnNamesDB : null;
 }
 
 const COUNTRY_NAMES: Record<string, string> = {
@@ -94,9 +111,9 @@ const ASN_NAMES: Record<string, string> = {
   AS2856: "BT", AS6461: "Zayo", AS174: "Cogent",
 };
 
-function asnDisplayName(asn: string): string {
+function asnDisplayName(asn: string, db: Record<string, string> | null): string {
   if (ASN_NAMES[asn]) return ASN_NAMES[asn];
-  // Format unknown ASNs more readably: "AS44244" → "ASN 44244"
+  if (db?.[asn]) return db[asn];
   const num = asn.replace(/^AS/i, "");
   return `ASN ${num}`;
 }
@@ -264,10 +281,10 @@ function ArmRow({ arm }: { arm: DashboardArmEntry }) {
   );
 }
 
-function ISPSection({ asn, country, expandedASNs, toggleASN }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void }) {
+function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null }) {
   const key = `${country}-${asn.asn}`;
   const expanded = expandedASNs.has(key);
-  const name = asnDisplayName(asn.asn);
+  const name = asnDisplayName(asn.asn, asnDB);
   const blockedColor = asn.numBlocked > 0 ? "#e06060" : "#667080";
 
   return (
@@ -299,6 +316,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN }: { asn: DashboardA
 }
 
 function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
+  const asnDB = useASNNames();
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
   const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
@@ -449,6 +467,7 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
                       country={c.country}
                       expandedASNs={expandedASNs}
                       toggleASN={toggleASN}
+                      asnDB={asnDB}
                     />
                   ))}
                 </div>
