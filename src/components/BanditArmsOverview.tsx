@@ -163,10 +163,10 @@ function Tip({ text, children }: { text: string; children: React.ReactNode }) {
         <span style={{
           position: "fixed", left: Math.min(pos.x, window.innerWidth - 160), top: pos.y + 8,
           transform: "translateX(-50%)",
-          background: "rgba(10, 12, 18, 0.95)", border: "1px solid #ffffff15", borderRadius: "4px",
-          padding: "6px 10px", fontSize: "0.65rem", lineHeight: 1.45, color: "#c0c8d4",
-          fontFamily: "var(--font-sans)", whiteSpace: "normal", width: "max-content", maxWidth: "280px",
-          zIndex: 9999, pointerEvents: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+          background: "var(--bg-card)", border: "1px solid var(--accent-primary-dim, #00e5c830)", borderRadius: "var(--radius-md, 6px)",
+          padding: "8px 12px", fontSize: "0.8rem", lineHeight: 1.5, color: "var(--text-secondary, #c0c8d4)",
+          fontFamily: "var(--font-sans)", whiteSpace: "normal", width: "max-content", maxWidth: "320px",
+          zIndex: 9999, pointerEvents: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.5), 0 0 12px rgba(0,229,200,0.05)",
         }}>
           {text}
         </span>
