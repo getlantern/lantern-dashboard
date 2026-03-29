@@ -328,10 +328,26 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
         </Tip>
       )}
 
-      {arm.routeCount != null && (
-        <Tip text="Number of active VPS/proxy routes available in this arm.">
+      {arm.activeVps != null && arm.activeVps > 0 && (
+        <Tip text="Number of active VPS instances running in this arm (region+protocol combination). Each VPS can serve multiple clients.">
           <span style={chipStyle}>
-            {arm.routeCount} route{arm.routeCount !== 1 ? "s" : ""} <InfoIcon />
+            {arm.activeVps} VPS <InfoIcon />
+          </span>
+        </Tip>
+      )}
+
+      {arm.totalAssignments != null && arm.totalAssignments > 0 && (
+        <Tip text="Total number of client assignments across all VPS routes in this arm. Each client gets one or more routes from this arm.">
+          <span style={chipStyle}>
+            {arm.totalAssignments} user{arm.totalAssignments !== 1 ? "s" : ""} <InfoIcon />
+          </span>
+        </Tip>
+      )}
+
+      {arm.routesPerClient != null && arm.routesPerClient > 0 && (
+        <Tip text="How many routes from this arm each client receives. More routes per client means better redundancy if one route gets blocked.">
+          <span style={chipStyle}>
+            {arm.routesPerClient}/client <InfoIcon />
           </span>
         </Tip>
       )}

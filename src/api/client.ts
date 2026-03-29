@@ -69,6 +69,9 @@ export interface DashboardArmEntry {
   successCount?: number;
   totalTests?: number;
   successRate?: number;
+  activeVps?: number;
+  totalAssignments?: number;
+  routesPerClient?: number;
 }
 
 export interface DashboardASN {
