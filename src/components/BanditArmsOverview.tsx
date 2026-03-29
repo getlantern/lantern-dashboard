@@ -3,11 +3,13 @@ import type {
   DashboardCountry,
   DashboardASN,
   DashboardArmEntry,
+  DashboardDataCenter,
 } from "../api/client";
 import { fetchASNs } from "../api/client";
 
 interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
+  dataCenters?: DashboardDataCenter[];
   isLive?: boolean;
 }
 
@@ -275,11 +277,14 @@ const chevronStyle = (expanded: boolean): CSSProperties => ({
   flexShrink: 0,
 });
 
-function ArmRow({ arm }: { arm: DashboardArmEntry }) {
+function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: Map<string, string> }) {
   const sr = arm.successRate ?? (arm.totalTests && arm.totalTests > 0 ? (arm.successCount ?? 0) / arm.totalTests : undefined);
   const hasTests = arm.totalTests != null && arm.totalTests > 0;
   const srColor = sr != null ? successRateColor(sr) : "#667080";
-  const label = [arm.trackName, arm.regionName].filter(Boolean).join(" · ") || arm.armId;
+  const regionLabel = arm.regionName
+    ? (regionToCity?.get(arm.regionName) || arm.regionName)
+    : undefined;
+  const label = [arm.trackName, regionLabel].filter(Boolean).join(" · ") || arm.armId;
 
   return (
     <div style={armRowStyle}>
@@ -359,7 +364,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: Das
       {expanded && asn.topArms && asn.topArms.length > 0 && (
         <div>
           {asn.topArms.map((arm) => (
-            <ArmRow key={arm.armId} arm={arm} />
+            <ArmRow key={arm.armId} arm={arm} regionToCity={regionToCity} />
           ))}
         </div>
       )}
@@ -367,7 +372,16 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: Das
   );
 }
 
-function BanditArmsOverview({ countries, isLive }: BanditArmsOverviewProps) {
+function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
+  const regionToCity = useMemo(() => {
+    const map = new Map<string, string>();
+    if (dataCenters) {
+      for (const dc of dataCenters) {
+        if (dc.city) map.set(dc.regionName, dc.city);
+      }
+    }
+    return map;
+  }, [dataCenters]);
   const asnDB = useASNNames();
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
