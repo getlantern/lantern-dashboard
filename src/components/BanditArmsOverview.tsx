@@ -144,17 +144,21 @@ function Tip({ text, children }: { text: string; children: React.ReactNode }) {
   const [show, setShow] = useState(false);
   return (
     <span
-      style={{ position: "relative", cursor: "help" }}
+      style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
     >
       {children}
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.35, cursor: "pointer" }}>
+        <circle cx="8" cy="8" r="7" stroke="#8890a0" strokeWidth="1.5" />
+        <text x="8" y="11.5" textAnchor="middle" fill="#8890a0" fontSize="10" fontFamily="var(--font-sans)" fontWeight="600">i</text>
+      </svg>
       {show && (
         <span style={{
           position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
           background: "rgba(10, 12, 18, 0.95)", border: "1px solid #ffffff15", borderRadius: "4px",
-          padding: "5px 8px", fontSize: "0.6rem", lineHeight: 1.4, color: "#c0c8d4",
-          fontFamily: "var(--font-sans)", whiteSpace: "normal", width: "max-content", maxWidth: "240px",
+          padding: "6px 10px", fontSize: "0.65rem", lineHeight: 1.45, color: "#c0c8d4",
+          fontFamily: "var(--font-sans)", whiteSpace: "normal", width: "max-content", maxWidth: "260px",
           zIndex: 50, pointerEvents: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
         }}>
           {text}
