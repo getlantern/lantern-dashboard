@@ -236,18 +236,18 @@ const ispRowStyle: CSSProperties = {
 const armRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: "0.6rem",
-  padding: "0.45rem 0.75rem 0.45rem 2.5rem",
+  gap: "0.75rem",
+  padding: "0.55rem 0.75rem 0.55rem 2.5rem",
   borderBottom: "1px solid #ffffff03",
   fontFamily: "var(--font-mono)",
-  fontSize: "0.75rem",
+  fontSize: "0.85rem",
   color: "#a0a8b8",
 };
 
 const chipStyle: CSSProperties = {
   fontFamily: "var(--font-mono)",
-  fontSize: "0.6rem",
-  padding: "0.15rem 0.45rem",
+  fontSize: "0.7rem",
+  padding: "0.2rem 0.5rem",
   borderRadius: "3px",
   background: "#ffffff08",
   color: "#8890a0",
@@ -256,8 +256,8 @@ const chipStyle: CSSProperties = {
 
 const blockedBadge: CSSProperties = {
   fontFamily: "var(--font-mono)",
-  fontSize: "0.48rem",
-  padding: "0.1rem 0.35rem",
+  fontSize: "0.6rem",
+  padding: "0.15rem 0.4rem",
   borderRadius: "3px",
   background: "#e0606020",
   color: "#e06060",
@@ -295,7 +295,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
       {hasTests && sr != null && (
         <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px", flexShrink: 0 }}>
           <MiniBar value={sr} color={srColor} />
-          <span style={{ color: srColor, fontSize: "0.5rem", minWidth: "28px", textAlign: "right" }}>
+          <span style={{ color: srColor, fontSize: "0.7rem", minWidth: "32px", textAlign: "right" }}>
             {Math.round(sr * 100)}%
           </span>
         </div>
@@ -303,7 +303,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
 
       {hasTests && (
         <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} probe callbacks succeeded. The bandit marks an arm as "blocked" when the success rate drops below 10%.`}>
-          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+          <span style={chipStyle}>
             {arm.successCount ?? 0}/{arm.totalTests} ok
           </span>
         </Tip>
@@ -311,7 +311,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
 
       {arm.selectionProbability != null && (
         <Tip text="Selection probability — the chance the bandit picks this arm for the next request. Higher means the algorithm has learned this arm works well.">
-          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+          <span style={chipStyle}>
             select {Math.round(arm.selectionProbability * 100)}%
           </span>
         </Tip>
@@ -319,7 +319,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
 
       {arm.routeCount != null && (
         <Tip text="Number of active VPS/proxy routes available in this arm.">
-          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+          <span style={chipStyle}>
             {arm.routeCount} route{arm.routeCount !== 1 ? "s" : ""}
           </span>
         </Tip>
@@ -474,30 +474,42 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
-        <div style={card}>
-          <div style={cardLabel}>Countries</div>
-          <div style={{ ...cardValue, color: "#00e5c8" }}>{countries.length}</div>
-          <div style={cardHint}>with active bandit routing</div>
-        </div>
-        <div style={card}>
-          <div style={cardLabel}>Total ASNs</div>
-          <div style={{ ...cardValue, color: "#c0c8d4" }}>{totalASNs}</div>
-          <div style={cardHint}>ISPs / network operators being served</div>
-        </div>
-        <div style={card}>
-          <div style={cardLabel}>Avg Block Rate</div>
-          <div style={{ ...cardValue, color: blockRateColor(weightedBlockRate) }}>
-            {weightedBlockRate < 0.01 ? (weightedBlockRate * 100).toFixed(2) : (weightedBlockRate * 100).toFixed(1)}%
+        <Tip text="Countries where Lantern clients are actively connecting through the bandit-based route selection system.">
+          <div style={card}>
+            <div style={cardLabel}>Countries</div>
+            <div style={{ ...cardValue, color: "#00e5c8" }}>{countries.length}</div>
+            <div style={cardHint}>with active bandit routing</div>
           </div>
-          <div style={cardHint}>of arms blocked by censors</div>
-        </div>
-        <div style={card}>
-          <div style={cardLabel}>Avg Entropy</div>
-          <div style={{ ...cardValue, color: "#a0b0c8" }}>
-            {weightedEntropy.toFixed(3)}
+        </Tip>
+        <Tip text="Autonomous System Numbers — each represents an ISP or network operator. The bandit learns separate route preferences for each ASN because censorship varies by ISP.">
+          <div style={card}>
+            <div style={cardLabel}>Total ASNs</div>
+            <div style={{ ...cardValue, color: "#c0c8d4" }}>{totalASNs}</div>
+            <div style={cardHint}>ISPs / network operators being served</div>
           </div>
-          <div style={cardHint}>0 = fully converged · ~{Math.log2(Math.max(2, totalASNs)).toFixed(1)} = uniform exploration</div>
-        </div>
+        </Tip>
+        <Tip text="Percentage of arms (region+protocol combinations) that the bandit has marked as blocked. An arm is blocked when its probe success rate drops below 10%, indicating censorship or network issues. Lower is better.">
+          <div style={card}>
+            <div style={cardLabel}>Avg Block Rate</div>
+            <div style={{ ...cardValue, color: blockRateColor(weightedBlockRate) }}>
+              {weightedBlockRate < 0.01 ? (weightedBlockRate * 100).toFixed(2) : (weightedBlockRate * 100).toFixed(1)}%
+            </div>
+            <div style={cardHint}>of arms blocked across all ISPs</div>
+          </div>
+        </Tip>
+        <Tip text={`Shannon entropy measures how spread out the bandit's weight distribution is across arms. Low entropy (near 0) means the algorithm has converged on one or two winning arms. High entropy (near ${Math.log2(Math.max(2, totalASNs)).toFixed(1)}) means it's still exploring equally across all options. Moderate values indicate a healthy balance between exploiting known-good arms and exploring alternatives.`}>
+          <div style={card}>
+            <div style={cardLabel}>Avg Entropy</div>
+            <div style={{ ...cardValue, color: "#a0b0c8" }}>
+              {weightedEntropy.toFixed(3)}
+            </div>
+            <div style={cardHint}>
+              {weightedEntropy < 0.5 ? "strongly converged — using best arms" :
+               weightedEntropy < 1.5 ? "moderately focused — good balance" :
+               "high exploration — still learning"}
+            </div>
+          </div>
+        </Tip>
       </div>
 
       {/* Country list */}
@@ -523,16 +535,21 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
                 </span>
                 <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
 
-                <Tip text="Fraction of arms where connections are failing for this country. Lower is better."><div style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px" }}>
-                  <MiniBar value={c.avgBlockRate} color={brColor} />
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
-                    {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
-                  </span>
-                </div></Tip>
+                <Tip text={`${(c.avgBlockRate * 100).toFixed(1)}% of arms (region+protocol combinations) are currently blocked for ISPs in ${countryName(c.country)}. This means censors or network issues are preventing connections on those routes. The bandit automatically shifts traffic to unblocked arms.`}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px" }}>
+                    <MiniBar value={c.avgBlockRate} color={brColor} />
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
+                      {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </Tip>
 
-                <Tip text="Shannon entropy of weight distribution. 0 = converged on best arm. Higher = still exploring. Range: 0 to log₂(num_arms).">
-                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#8890a0" }}>
-                    entropy {c.avgEntropy.toFixed(3)}
+                <Tip text={`Weight entropy: ${c.avgEntropy.toFixed(3)}. ${c.avgEntropy < 0.5 ? "The bandit has strongly converged — it's confident about which arms work best here." : c.avgEntropy < 1.5 ? "Moderate focus — the bandit has preferences but is still exploring alternatives." : "High exploration — the bandit is still learning which arms work best in this country."}`}>
+                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "#8890a0" }}>
+                    H={c.avgEntropy.toFixed(2)}
+                    <span style={{ fontSize: "0.6rem", color: "#556070", marginLeft: "0.3rem" }}>
+                      {c.avgEntropy < 0.5 ? "converged" : c.avgEntropy < 1.5 ? "focused" : "exploring"}
+                    </span>
                   </span>
                 </Tip>
               </div>
