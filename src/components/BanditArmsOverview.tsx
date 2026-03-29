@@ -337,9 +337,9 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
       )}
 
       {arm.totalAssignments != null && arm.totalAssignments > 0 && (
-        <Tip text="Total number of client assignments across all VPS routes in this arm. Each client gets one or more routes from this arm.">
+        <Tip text="Approximate number of unique devices that have successfully connected through routes in this arm in the last 24 hours, tracked via HyperLogLog.">
           <span style={chipStyle}>
-            {arm.totalAssignments} user{arm.totalAssignments !== 1 ? "s" : ""} <InfoIcon />
+            {arm.totalAssignments} device{arm.totalAssignments !== 1 ? "s" : ""} <InfoIcon />
           </span>
         </Tip>
       )}
