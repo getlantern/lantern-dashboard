@@ -334,7 +334,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
   );
 }
 
-function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null }) {
+function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string> }) {
   const key = `${country}-${asn.asn}`;
   const expanded = expandedASNs.has(key);
   const name = asnDisplayName(asn.asn, asnDB);
@@ -558,6 +558,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
                       expandedASNs={expandedASNs}
                       toggleASN={toggleASN}
                       asnDB={asnDB}
+                      regionToCity={regionToCity}
                     />
                   ))}
                 </div>
