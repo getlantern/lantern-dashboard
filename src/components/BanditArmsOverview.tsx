@@ -3,11 +3,14 @@ import type {
   DashboardCountry,
   DashboardASN,
   DashboardArmEntry,
+  DashboardDataCenter,
 } from "../api/client";
 import { fetchASNs } from "../api/client";
 
 interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
+  dataCenters?: DashboardDataCenter[];
+  isLive?: boolean;
 }
 
 // Lazy-loaded ASN → org name database (121K entries, ~1.5MB gzipped)
@@ -137,6 +140,30 @@ function successRateColor(rate: number): string {
   return "#e0a080";
 }
 
+function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", cursor: "help" }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
+          background: "rgba(10, 12, 18, 0.95)", border: "1px solid #ffffff15", borderRadius: "4px",
+          padding: "5px 8px", fontSize: "0.6rem", lineHeight: 1.4, color: "#c0c8d4",
+          fontFamily: "var(--font-sans)", whiteSpace: "normal", width: "max-content", maxWidth: "240px",
+          zIndex: 50, pointerEvents: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+        }}>
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function MiniBar({ value, color }: { value: number; color: string }) {
   const clamped = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
   return (
@@ -250,11 +277,14 @@ const chevronStyle = (expanded: boolean): CSSProperties => ({
   flexShrink: 0,
 });
 
-function ArmRow({ arm }: { arm: DashboardArmEntry }) {
+function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: Map<string, string> }) {
   const sr = arm.successRate ?? (arm.totalTests && arm.totalTests > 0 ? (arm.successCount ?? 0) / arm.totalTests : undefined);
   const hasTests = arm.totalTests != null && arm.totalTests > 0;
   const srColor = sr != null ? successRateColor(sr) : "#667080";
-  const label = [arm.trackName, arm.regionName].filter(Boolean).join(" · ") || arm.armId;
+  const regionLabel = arm.regionName
+    ? (regionToCity?.get(arm.regionName) || arm.regionName)
+    : undefined;
+  const label = [arm.trackName, regionLabel].filter(Boolean).join(" · ") || arm.armId;
 
   return (
     <div style={armRowStyle}>
@@ -272,31 +302,39 @@ function ArmRow({ arm }: { arm: DashboardArmEntry }) {
       )}
 
       {hasTests && (
-        <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
-          {arm.totalTests} tests
-        </span>
+        <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} probe callbacks succeeded. The bandit marks an arm as "blocked" when the success rate drops below 10%.`}>
+          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+            {arm.successCount ?? 0}/{arm.totalTests} ok
+          </span>
+        </Tip>
       )}
 
       {arm.selectionProbability != null && (
-        <span title="Selection probability — the chance the EXP3.S bandit picks this arm for the next request. Higher = the algorithm considers this arm more likely to succeed." style={{ ...chipStyle, fontSize: "0.48rem", cursor: "help" }}>
-          P={Math.round(arm.selectionProbability * 100)}%
-        </span>
+        <Tip text="Selection probability — the chance the bandit picks this arm for the next request. Higher means the algorithm has learned this arm works well.">
+          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+            select {Math.round(arm.selectionProbability * 100)}%
+          </span>
+        </Tip>
       )}
 
       {arm.routeCount != null && (
-        <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
-          {arm.routeCount} route{arm.routeCount !== 1 ? "s" : ""}
-        </span>
+        <Tip text="Number of active VPS/proxy routes available in this arm.">
+          <span style={{ ...chipStyle, fontSize: "0.48rem" }}>
+            {arm.routeCount} route{arm.routeCount !== 1 ? "s" : ""}
+          </span>
+        </Tip>
       )}
 
       {arm.blocked && (
-        <span style={blockedBadge}>blocked</span>
+        <Tip text="Success rate dropped below 10% — the bandit has marked this arm as blocked and will shift traffic to other arms. Could be censorship, network issues, or server problems.">
+          <span style={blockedBadge}>blocked</span>
+        </Tip>
       )}
     </div>
   );
 }
 
-function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null }) {
+function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string> }) {
   const key = `${country}-${asn.asn}`;
   const expanded = expandedASNs.has(key);
   const name = asnDisplayName(asn.asn, asnDB);
@@ -315,14 +353,18 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: Das
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <span style={chipStyle}>{asn.numArms} arms</span>
-          <span style={{ ...chipStyle, color: blockedColor }}>{asn.numBlocked} blocked</span>
+          <Tip text="Arms where connections are failing vs total arms. Could be censorship, network issues, or server problems.">
+            <span style={{ ...chipStyle, color: blockedColor }}>
+              {asn.numBlocked}/{asn.numArms} blocked
+            </span>
+          </Tip>
           <span style={chipStyle}>{asn.totalPulls.toLocaleString()} pulls</span>
         </span>
       </div>
       {expanded && asn.topArms && asn.topArms.length > 0 && (
         <div>
           {asn.topArms.map((arm) => (
-            <ArmRow key={arm.armId} arm={arm} />
+            <ArmRow key={arm.armId} arm={arm} regionToCity={regionToCity} />
           ))}
         </div>
       )}
@@ -330,7 +372,16 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB }: { asn: Das
   );
 }
 
-function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
+function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
+  const regionToCity = useMemo(() => {
+    const map = new Map<string, string>();
+    if (dataCenters) {
+      for (const dc of dataCenters) {
+        if (dc.city) map.set(dc.regionName, dc.city);
+      }
+    }
+    return map;
+  }, [dataCenters]);
   const asnDB = useASNNames();
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
@@ -414,7 +465,7 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
   if (countries.length === 0) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
-        No bandit data available
+        {isLive ? "No bandit data available" : "Connecting to API..."}
       </div>
     );
   }
@@ -423,24 +474,24 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
-        <div style={card} title="Countries where the EXP3.S multi-armed bandit is actively routing traffic through tested proxy arms.">
+        <div style={card}>
           <div style={cardLabel}>Countries</div>
           <div style={{ ...cardValue, color: "#00e5c8" }}>{countries.length}</div>
           <div style={cardHint}>with active bandit routing</div>
         </div>
-        <div style={card} title="Total number of Autonomous Systems (ISPs/network operators) with active bandit state. Each ASN has its own EXP3.S weight vector.">
+        <div style={card}>
           <div style={cardLabel}>Total ASNs</div>
           <div style={{ ...cardValue, color: "#c0c8d4" }}>{totalASNs}</div>
           <div style={cardHint}>ISPs / network operators being served</div>
         </div>
-        <div style={card} title="Average fraction of arms (region+protocol pairs) that are currently blocked by censors across all ISPs. Lower is better.">
+        <div style={card}>
           <div style={cardLabel}>Avg Block Rate</div>
           <div style={{ ...cardValue, color: blockRateColor(weightedBlockRate) }}>
             {weightedBlockRate < 0.01 ? (weightedBlockRate * 100).toFixed(2) : (weightedBlockRate * 100).toFixed(1)}%
           </div>
           <div style={cardHint}>of arms blocked by censors</div>
         </div>
-        <div style={card} title={"Shannon entropy of the EXP3.S weight distribution. Range: 0 (all traffic on one arm) to log₂(N) where N=number of arms. Higher entropy means the bandit is still exploring; lower means it has converged on the best-performing arms."}>
+        <div style={card}>
           <div style={cardLabel}>Avg Entropy</div>
           <div style={{ ...cardValue, color: "#a0b0c8" }}>
             {weightedEntropy.toFixed(3)}
@@ -472,19 +523,18 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
                 </span>
                 <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
 
-                <div title="Fraction of arms blocked by censors for this country" style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px", cursor: "help" }}>
+                <Tip text="Fraction of arms where connections are failing for this country. Lower is better."><div style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px" }}>
                   <MiniBar value={c.avgBlockRate} color={brColor} />
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
                     {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
                   </span>
-                </div>
+                </div></Tip>
 
-                <span
-                  title="Shannon entropy of weight distribution. 0 = converged on one arm. Higher = more exploration."
-                  style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#8890a0", cursor: "help" }}
-                >
-                  entropy {c.avgEntropy.toFixed(3)}
-                </span>
+                <Tip text="Shannon entropy of weight distribution. 0 = converged on best arm. Higher = still exploring. Range: 0 to log₂(num_arms).">
+                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#8890a0" }}>
+                    entropy {c.avgEntropy.toFixed(3)}
+                  </span>
+                </Tip>
               </div>
 
               {/* Expanded ISP list */}
@@ -508,6 +558,7 @@ function BanditArmsOverview({ countries }: BanditArmsOverviewProps) {
                       expandedASNs={expandedASNs}
                       toggleASN={toggleASN}
                       asnDB={asnDB}
+                      regionToCity={regionToCity}
                     />
                   ))}
                 </div>
