@@ -70,7 +70,7 @@ export interface DashboardArmEntry {
   totalTests?: number;
   successRate?: number;
   activeVps?: number;
-  totalAssignments?: number;
+  activeDevices?: number;
   routesPerClient?: number;
 }
 
