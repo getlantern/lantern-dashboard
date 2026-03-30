@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { fetchVPSRoutes, type DashboardVPSRoute, type DashboardVPSSummary } from "../api/client";
+import { fetchInfrastructure, type DashboardVPSRoute, type DashboardVPSSummary } from "../api/client";
 import { useAuth } from "./useAuth";
 
 export function useVPSData(enabled: boolean) {
@@ -16,12 +16,17 @@ export function useVPSData(enabled: boolean) {
     const refresh = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchVPSRoutes();
-        if (!cancelled) {
-          setRoutes(data.routes);
-          setSummary(data.summary);
-          setError(null);
+        const data = await fetchInfrastructure(true);
+        if (cancelled) return;
+        if (!data.vpsRoutes) {
+          setRoutes([]);
+          setSummary(null);
+          setError("VPS route data unavailable");
+          return;
         }
+        setRoutes(data.vpsRoutes.routes);
+        setSummary(data.vpsRoutes.summary);
+        setError(null);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load VPS data");
       } finally {
