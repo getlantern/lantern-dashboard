@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { fetchVPSRoutes, type DashboardVPSRoute, type DashboardVPSSummary } from "../api/client";
+import { fetchInfrastructure, type DashboardVPSRoute, type DashboardVPSSummary } from "../api/client";
 import { useAuth } from "./useAuth";
 
 export function useVPSData(enabled: boolean) {
@@ -16,10 +16,10 @@ export function useVPSData(enabled: boolean) {
     const refresh = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchVPSRoutes();
-        if (!cancelled) {
-          setRoutes(data.routes);
-          setSummary(data.summary);
+        const data = await fetchInfrastructure(true);
+        if (!cancelled && data.vpsRoutes) {
+          setRoutes(data.vpsRoutes.routes);
+          setSummary(data.vpsRoutes.summary);
           setError(null);
         }
       } catch (err) {

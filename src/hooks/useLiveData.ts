@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  fetchGlobalStats,
-  fetchBlockedRoutes,
+  fetchOverview,
   fetchInfrastructure,
-  fetchTrafficFlows,
   getStreamURL,
   type DashboardCountry,
   type DashboardDataCenter,
@@ -45,33 +43,32 @@ export function useLiveData() {
     if (!isAuthenticated || demoMode) return;
 
     try {
-      const [global, blocked, infra, flows] = await Promise.allSettled([
-        fetchGlobalStats(),
-        fetchBlockedRoutes(),
+      // Two calls instead of four: /overview (countries + blocked + flows)
+      // and /infrastructure (data centers).
+      const [overview, infra] = await Promise.allSettled([
+        fetchOverview(),
         fetchInfrastructure(),
-        fetchTrafficFlows(),
       ]);
 
-      if (global.status !== "fulfilled" || blocked.status !== "fulfilled") {
-        throw global.status === "rejected" ? global.reason : blocked.status === "rejected" ? blocked.reason : new Error("API error");
+      if (overview.status !== "fulfilled") {
+        throw overview.reason;
       }
 
       if (infra.status === "fulfilled") setDataCenters(infra.value.dataCenters);
-      if (flows.status === "fulfilled") setTrafficFlows(flows.value.flows);
 
-      const globalData = global.value;
-      const blockedData = blocked.value;
-      const totalASNs = globalData.countries.reduce((sum, c) => sum + c.asnCount, 0);
+      const data = overview.value;
+      const totalASNs = data.countries.reduce((sum, c) => sum + c.asnCount, 0);
 
       setGlobalStats((prev) => ({
         ...prev,
         activeUsers: totalASNs > 0 ? totalASNs * 50 : prev.activeUsers,
-        countriesReached: globalData.countries.length,
-        blocksEvadedToday: globalData.blockedCount > 0 ? globalData.blockedCount : prev.blocksEvadedToday,
-        countries: globalData.countries,
+        countriesReached: data.countries.length,
+        blocksEvadedToday: data.blockedCount > 0 ? data.blockedCount : prev.blocksEvadedToday,
+        countries: data.countries,
       }));
 
-      setBlockedRoutes(blockedData);
+      setBlockedRoutes(data.blockedRoutes);
+      setTrafficFlows(data.trafficFlows);
       setIsLive(true);
       setError(null);
     } catch (err) {

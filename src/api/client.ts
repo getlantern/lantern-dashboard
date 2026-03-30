@@ -114,7 +114,21 @@ export interface DashboardInfraResponse {
   dataCenters: DashboardDataCenter[];
 }
 
+// ── Consolidated overview response ──
+
+export interface DashboardOverviewResponse {
+  countries: DashboardCountry[];
+  blockedCount: number;
+  blockedRoutes: string[];
+  trafficFlows: DashboardTrafficFlow[];
+}
+
 // ── API calls ──
+
+/** Single call for the overview page: countries, blocked routes, and traffic flows. */
+export function fetchOverview(): Promise<DashboardOverviewResponse> {
+  return apiFetch("/overview");
+}
 
 export function fetchGlobalStats(): Promise<DashboardGlobalStats> {
   return apiFetch("/global");
@@ -124,16 +138,10 @@ export function fetchASNs(country: string): Promise<DashboardASN[]> {
   return apiFetch("/asns", { country });
 }
 
-export function fetchASNHistory(asn: string): Promise<DashboardASN[]> {
-  return apiFetch("/asn-history", { asn });
-}
-
-export function fetchBlockedRoutes(): Promise<string[]> {
-  return apiFetch("/blocked-routes");
-}
-
-export function fetchInfrastructure(): Promise<DashboardInfraResponse> {
-  return apiFetch("/infrastructure");
+export function fetchInfrastructure(includeRoutes?: boolean): Promise<DashboardInfraResponse & { vpsRoutes?: DashboardVPSRoutesResponse }> {
+  const params: Record<string, string> = {};
+  if (includeRoutes) params.include_routes = "true";
+  return apiFetch("/infrastructure", params);
 }
 
 export const EventType = {
