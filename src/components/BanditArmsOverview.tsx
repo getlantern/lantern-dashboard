@@ -441,15 +441,18 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     return countries.reduce((s, c) => s + c.avgEntropy * c.asnCount, 0) / totalWeight;
   }, [countries]);
 
-  // Pre-fetch ASN data for all countries on mount for accurate counts
+  // Fetch ASN data for all countries and refresh every 30s
   useEffect(() => {
-    for (const c of countries) {
-      if (!asnCache.has(c.country)) {
+    const refreshAll = () => {
+      for (const c of countries) {
         fetchASNs(c.country)
           .then((data) => setAsnCache((prev) => new Map(prev).set(c.country, data)))
           .catch(() => {});
       }
-    }
+    };
+    refreshAll();
+    const interval = setInterval(refreshAll, 30000);
+    return () => clearInterval(interval);
   }, [countries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCountry = useCallback(async (countryCode: string) => {
@@ -463,13 +466,13 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
       return next;
     });
 
-    if (!asnCache.has(countryCode) && !loadingCountries.has(countryCode)) {
+    if (!loadingCountries.has(countryCode)) {
       setLoadingCountries((prev) => new Set(prev).add(countryCode));
       try {
         const data = await fetchASNs(countryCode);
         setAsnCache((prev) => new Map(prev).set(countryCode, data));
       } catch {
-        setAsnCache((prev) => new Map(prev).set(countryCode, []));
+        // Keep existing cache on error rather than clearing
       } finally {
         setLoadingCountries((prev) => {
           const next = new Set(prev);
@@ -478,7 +481,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
         });
       }
     }
-  }, [asnCache, loadingCountries]);
+  }, [loadingCountries]);
 
   const toggleASN = useCallback((key: string) => {
     setExpandedASNs((prev) => {
