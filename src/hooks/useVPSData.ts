@@ -17,11 +17,16 @@ export function useVPSData(enabled: boolean) {
       setIsLoading(true);
       try {
         const data = await fetchInfrastructure(true);
-        if (!cancelled && data.vpsRoutes) {
-          setRoutes(data.vpsRoutes.routes);
-          setSummary(data.vpsRoutes.summary);
-          setError(null);
+        if (cancelled) return;
+        if (!data.vpsRoutes) {
+          setRoutes([]);
+          setSummary(null);
+          setError("VPS route data unavailable");
+          return;
         }
+        setRoutes(data.vpsRoutes.routes);
+        setSummary(data.vpsRoutes.summary);
+        setError(null);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load VPS data");
       } finally {
