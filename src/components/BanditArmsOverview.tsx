@@ -379,7 +379,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
         <span style={{ fontWeight: 600, color: "#c0c8d4" }}>{name}</span>
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <span style={chipStyle}>{asn.numArms} arms</span>
+          <span style={chipStyle}>{asn.numArms} arms{asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}</span>
           <Tip text="Arms where connections are failing vs total arms. Could be censorship, network issues, or server problems.">
             <span style={{ ...chipStyle, color: blockedColor }}>
               {asn.numBlocked}/{asn.numArms} blocked <InfoIcon />
