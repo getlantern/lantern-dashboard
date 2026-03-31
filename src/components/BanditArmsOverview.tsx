@@ -313,7 +313,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
       )}
 
       {hasTests && (
-        <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} probe callbacks succeeded. The bandit marks an arm as "blocked" when the success rate drops below 10%.`}>
+        <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} first probe observations succeeded (1-hour rolling window). Each observation is either a probe's first callback (success if reward > 0.1) or a reaper expiration (always failure — probe never received any callback within 10 minutes). Repeat callbacks are not counted here. The bandit marks an arm as "blocked" when the success rate drops below 15%.`}>
           <span style={chipStyle}>
             {arm.successCount ?? 0}/{arm.totalTests} ok <InfoIcon />
           </span>
@@ -379,7 +379,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
         <span style={{ fontWeight: 600, color: "#c0c8d4" }}>{name}</span>
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <span style={chipStyle}>{asn.numArms} arms</span>
+          <span style={chipStyle}>{asn.numArms} arms{asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}</span>
           <Tip text="Arms where connections are failing vs total arms. Could be censorship, network issues, or server problems.">
             <span style={{ ...chipStyle, color: blockedColor }}>
               {asn.numBlocked}/{asn.numArms} blocked <InfoIcon />
