@@ -313,7 +313,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
       )}
 
       {hasTests && (
-        <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} probe callbacks succeeded. The bandit marks an arm as "blocked" when the success rate drops below 10%.`}>
+        <Tip text={`${arm.successCount ?? 0} of ${arm.totalTests} first probe observations succeeded (1-hour rolling window). Each observation is either a probe's first callback (success if reward > 0.1) or a reaper expiration (always failure — probe never received any callback within 10 minutes). Repeat callbacks are not counted here. The bandit marks an arm as "blocked" when the success rate drops below 15%.`}>
           <span style={chipStyle}>
             {arm.successCount ?? 0}/{arm.totalTests} ok <InfoIcon />
           </span>
