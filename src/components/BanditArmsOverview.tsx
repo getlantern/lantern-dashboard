@@ -506,38 +506,81 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
       <details style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
         <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: "0.75rem" }}>How the bandit works</summary>
         <div style={{ marginTop: "0.5rem" }}>
-          {/* Flow Diagram */}
-          <div style={{ background: "rgba(0,0,0,0.25)", borderRadius: "6px", padding: "0.75rem", margin: "0.5rem 0", fontFamily: "monospace", fontSize: "0.65rem", lineHeight: 1.8, color: "#a0b0c0", overflowX: "auto", whiteSpace: "pre" }}>
-{`┌─────────────┐     ┌──────────────┐     ┌──────────────────┐     ┌─────────────┐
-│ Client polls │────▶│  API selects │────▶│ Client connects  │────▶│  Callback   │
-│ config (60s) │     │  arms (EXP3) │     │ via proxy routes │     │  hits API   │
-└─────────────┘     └──────┬───────┘     └──────────────────┘     └──────┬──────┘
-                           │                                              │
-                    ┌──────▼───────┐                              ┌──────▼──────┐
-                    │  Per-ASN     │                              │  Reward     │
-                    │  weights     │◀─────────────────────────────│  updates    │
-                    │  in Redis    │   relative latency rank      │  weights    │
-                    └──────────────┘                              └──────┬──────┘
-                                                                        │
-                                                                 ┌──────▼──────┐
-                                                                 │  Blocking   │
-                                                                 │  signals    │
-                                                                 └─────────────┘
+          {/* Feedback Loop Diagram */}
+          <svg viewBox="0 0 720 280" style={{ width: "100%", maxWidth: "720px", margin: "0.5rem 0" }}>
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#00e5c8" /></marker>
+              <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#506070" /></marker>
+            </defs>
+            {/* Boxes */}
+            <rect x="10" y="20" width="140" height="50" rx="8" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+            <text x="80" y="42" textAnchor="middle" fill="#c0c8d4" fontSize="11" fontWeight="600">Client polls</text>
+            <text x="80" y="57" textAnchor="middle" fill="#8090a0" fontSize="9">config (60s–15min)</text>
 
-BLOCKING HIERARCHY (4 levels):
-┌──────────────────┬────────────┬────────────────────────────────────────────┐
-│ Level            │ Threshold  │ Effect                                     │
-├──────────────────┼────────────┼────────────────────────────────────────────┤
-│ Per-ASN+track    │ 20 samples │ Weight penalty (×0.01) for this ISP       │
-│ Per-country+track│ 100 samples│ Weight penalty for entire country          │
-│ Per-route global │ 100 samples│ Route deprecated after 1h grace period    │
-│ Per-route+country│ 50 samples │ Route excluded for that country only      │
-└──────────────────┴────────────┴────────────────────────────────────────────┘
+            <rect x="200" y="20" width="140" height="50" rx="8" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+            <text x="270" y="42" textAnchor="middle" fill="#c0c8d4" fontSize="11" fontWeight="600">API selects arms</text>
+            <text x="270" y="57" textAnchor="middle" fill="#8090a0" fontSize="9">EXP3.S (γ=0.20)</text>
 
-REWARD = percentile rank among all arms' latencies for this ASN
-  Fast network: 300ms=1.0  700ms=0.5  1000ms=0.0
-  Slow network: 2000ms=1.0  2500ms=0.5  3000ms=0.0`}
-          </div>
+            <rect x="390" y="20" width="140" height="50" rx="8" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+            <text x="460" y="42" textAnchor="middle" fill="#c0c8d4" fontSize="11" fontWeight="600">Client connects</text>
+            <text x="460" y="57" textAnchor="middle" fill="#8090a0" fontSize="9">via proxy routes</text>
+
+            <rect x="570" y="20" width="140" height="50" rx="8" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+            <text x="640" y="42" textAnchor="middle" fill="#c0c8d4" fontSize="11" fontWeight="600">Callback</text>
+            <text x="640" y="57" textAnchor="middle" fill="#8090a0" fontSize="9">hits API server</text>
+
+            {/* Forward arrows */}
+            <line x1="150" y1="45" x2="196" y2="45" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow)" />
+            <line x1="340" y1="45" x2="386" y2="45" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow)" />
+            <line x1="530" y1="45" x2="566" y2="45" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow)" />
+
+            {/* Reward box */}
+            <rect x="520" y="110" width="160" height="50" rx="8" fill="rgba(255,180,50,0.08)" stroke="#ffb432" strokeWidth="1.5" />
+            <text x="600" y="132" textAnchor="middle" fill="#ffb432" fontSize="11" fontWeight="600">Compute reward</text>
+            <text x="600" y="147" textAnchor="middle" fill="#8090a0" fontSize="9">relative latency rank</text>
+            <line x1="640" y1="70" x2="640" y2="106" stroke="#ffb432" strokeWidth="1.5" markerEnd="url(#arrow)" />
+
+            {/* Weights box */}
+            <rect x="200" y="110" width="160" height="50" rx="8" fill="rgba(100,180,255,0.08)" stroke="#64b4ff" strokeWidth="1.5" />
+            <text x="280" y="132" textAnchor="middle" fill="#64b4ff" fontSize="11" fontWeight="600">Per-ASN weights</text>
+            <text x="280" y="147" textAnchor="middle" fill="#8090a0" fontSize="9">Redis (α=0.01 decay)</text>
+
+            {/* Reward → Weights */}
+            <line x1="520" y1="135" x2="364" y2="135" stroke="#ffb432" strokeWidth="1.5" markerEnd="url(#arrow)" />
+
+            {/* Weights → Selection */}
+            <line x1="270" y1="110" x2="270" y2="74" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow)" />
+
+            {/* Blocking signals box */}
+            <rect x="520" y="195" width="160" height="50" rx="8" fill="rgba(255,80,80,0.08)" stroke="#ff5050" strokeWidth="1.5" />
+            <text x="600" y="217" textAnchor="middle" fill="#ff5050" fontSize="11" fontWeight="600">Blocking signals</text>
+            <text x="600" y="232" textAnchor="middle" fill="#8090a0" fontSize="9">4 levels of detection</text>
+            <line x1="600" y1="160" x2="600" y2="191" stroke="#ff5050" strokeWidth="1.5" markerEnd="url(#arrow)" />
+
+            {/* Blocking → Weights (penalty) */}
+            <line x1="520" y1="220" x2="280" y2="164" stroke="#ff5050" strokeWidth="1" strokeDasharray="4,3" markerEnd="url(#arrow-dim)" />
+            <text x="390" y="185" textAnchor="middle" fill="#506070" fontSize="8">penalty ×0.01</text>
+
+            {/* Labels */}
+            <text x="440" y="130" textAnchor="middle" fill="#506070" fontSize="8">updates</text>
+          </svg>
+
+          {/* Blocking Hierarchy Table */}
+          <table style={{ width: "100%", borderCollapse: "collapse", margin: "0.4rem 0", fontSize: "0.68rem" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                <th style={{ textAlign: "left", padding: "4px 8px", color: "#c0c8d4" }}>Blocking Level</th>
+                <th style={{ textAlign: "left", padding: "4px 8px", color: "#c0c8d4" }}>Threshold</th>
+                <th style={{ textAlign: "left", padding: "4px 8px", color: "#c0c8d4" }}>Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style={{ padding: "3px 8px" }}>Per-ASN + track</td><td style={{ padding: "3px 8px" }}>20</td><td style={{ padding: "3px 8px" }}>Weight penalty for this ISP</td></tr>
+              <tr><td style={{ padding: "3px 8px" }}>Per-country + track</td><td style={{ padding: "3px 8px" }}>100</td><td style={{ padding: "3px 8px" }}>Weight penalty for entire country</td></tr>
+              <tr><td style={{ padding: "3px 8px", color: "#ff5050" }}>Per-route (global)</td><td style={{ padding: "3px 8px" }}>100</td><td style={{ padding: "3px 8px" }}>Route deprecated after 1h grace</td></tr>
+              <tr><td style={{ padding: "3px 8px", color: "#ffb432" }}>Per-route + country</td><td style={{ padding: "3px 8px" }}>50</td><td style={{ padding: "3px 8px" }}>Route excluded for that country only</td></tr>
+            </tbody>
+          </table>
           <p>The bandit uses the <strong>EXP3.S algorithm</strong> to learn which proxy routes work best for each ISP (ASN). Each <strong>arm</strong> is a region + protocol combination (e.g., "Frankfurt + samizdat"). On each config fetch, the bandit selects arms probabilistically — favoring arms with higher weights but always exploring alternatives (20% random).</p>
           <p style={{ marginTop: "0.4rem" }}>When a proxy connects successfully, the client hits a <strong>callback URL</strong> — that's how the server knows it worked. The <strong>reward</strong> is based on relative latency: an arm's latency is ranked against all other arms for this ASN, so 2000ms is "good" if everything else is 3000ms+. Failed callbacks (no response within 30s) get reward=0.</p>
           <p style={{ marginTop: "0.4rem" }}><strong>Blocking detection</strong> works at four levels: per-ASN (is this protocol blocked on this ISP?), per-country (blocked nationally?), per-route globally (this IP is burned everywhere), and per-route per-country (this IP is burned in Iran but works in the US). Blocked arms get their weights penalized; blocked routes are excluded from selection for affected countries.</p>
