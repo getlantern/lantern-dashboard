@@ -506,6 +506,38 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
       <details style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
         <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: "0.75rem" }}>How the bandit works</summary>
         <div style={{ marginTop: "0.5rem" }}>
+          {/* Flow Diagram */}
+          <div style={{ background: "rgba(0,0,0,0.25)", borderRadius: "6px", padding: "0.75rem", margin: "0.5rem 0", fontFamily: "monospace", fontSize: "0.65rem", lineHeight: 1.8, color: "#a0b0c0", overflowX: "auto", whiteSpace: "pre" }}>
+{`┌─────────────┐     ┌──────────────┐     ┌──────────────────┐     ┌─────────────┐
+│ Client polls │────▶│  API selects │────▶│ Client connects  │────▶│  Callback   │
+│ config (60s) │     │  arms (EXP3) │     │ via proxy routes │     │  hits API   │
+└─────────────┘     └──────┬───────┘     └──────────────────┘     └──────┬──────┘
+                           │                                              │
+                    ┌──────▼───────┐                              ┌──────▼──────┐
+                    │  Per-ASN     │                              │  Reward     │
+                    │  weights     │◀─────────────────────────────│  updates    │
+                    │  in Redis    │   relative latency rank      │  weights    │
+                    └──────────────┘                              └──────┬──────┘
+                                                                        │
+                                                                 ┌──────▼──────┐
+                                                                 │  Blocking   │
+                                                                 │  signals    │
+                                                                 └─────────────┘
+
+BLOCKING HIERARCHY (4 levels):
+┌──────────────────┬────────────┬────────────────────────────────────────────┐
+│ Level            │ Threshold  │ Effect                                     │
+├──────────────────┼────────────┼────────────────────────────────────────────┤
+│ Per-ASN+track    │ 20 samples │ Weight penalty (×0.01) for this ISP       │
+│ Per-country+track│ 100 samples│ Weight penalty for entire country          │
+│ Per-route global │ 100 samples│ Route deprecated after 1h grace period    │
+│ Per-route+country│ 50 samples │ Route excluded for that country only      │
+└──────────────────┴────────────┴────────────────────────────────────────────┘
+
+REWARD = percentile rank among all arms' latencies for this ASN
+  Fast network: 300ms=1.0  700ms=0.5  1000ms=0.0
+  Slow network: 2000ms=1.0  2500ms=0.5  3000ms=0.0`}
+          </div>
           <p>The bandit uses the <strong>EXP3.S algorithm</strong> to learn which proxy routes work best for each ISP (ASN). Each <strong>arm</strong> is a region + protocol combination (e.g., "Frankfurt + samizdat"). On each config fetch, the bandit selects arms probabilistically — favoring arms with higher weights but always exploring alternatives (20% random).</p>
           <p style={{ marginTop: "0.4rem" }}>When a proxy connects successfully, the client hits a <strong>callback URL</strong> — that's how the server knows it worked. The <strong>reward</strong> is based on relative latency: an arm's latency is ranked against all other arms for this ASN, so 2000ms is "good" if everything else is 3000ms+. Failed callbacks (no response within 30s) get reward=0.</p>
           <p style={{ marginTop: "0.4rem" }}><strong>Blocking detection</strong> works at four levels: per-ASN (is this protocol blocked on this ISP?), per-country (blocked nationally?), per-route globally (this IP is burned everywhere), and per-route per-country (this IP is burned in Iran but works in the US). Blocked arms get their weights penalized; blocked routes are excluded from selection for affected countries.</p>
