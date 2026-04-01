@@ -502,6 +502,16 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
+      {/* How It Works */}
+      <details style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
+        <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: "0.75rem" }}>How the bandit works</summary>
+        <div style={{ marginTop: "0.5rem" }}>
+          <p>The bandit uses the <strong>EXP3.S algorithm</strong> to learn which proxy routes work best for each ISP (ASN). Each <strong>arm</strong> is a region + protocol combination (e.g., "Frankfurt + samizdat"). On each config fetch, the bandit selects arms probabilistically — favoring arms with higher weights but always exploring alternatives (20% random).</p>
+          <p style={{ marginTop: "0.4rem" }}>When a proxy connects successfully, the client hits a <strong>callback URL</strong> — that's how the server knows it worked. The <strong>reward</strong> is based on relative latency: an arm's latency is ranked against all other arms for this ASN, so 2000ms is "good" if everything else is 3000ms+. Failed callbacks (no response within 30s) get reward=0.</p>
+          <p style={{ marginTop: "0.4rem" }}><strong>Blocking detection</strong> works at four levels: per-ASN (is this protocol blocked on this ISP?), per-country (blocked nationally?), per-route globally (this IP is burned everywhere), and per-route per-country (this IP is burned in Iran but works in the US). Blocked arms get their weights penalized; blocked routes are excluded from selection for affected countries.</p>
+          <p style={{ marginTop: "0.4rem" }}>Weights decay toward uniform at rate α=0.01, preventing early luck from creating permanent dominance. The poll interval adapts: 60s when learning, up to 15min when converged.</p>
+        </div>
+      </details>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
         <Tip text="Countries where Lantern clients are actively connecting through the bandit-based route selection system.">
