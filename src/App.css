@@ -201,43 +201,89 @@
 /* ── AI Summary Briefing ── */
 .ai-summary {
   background: var(--bg-card);
-  padding: 0.875rem 1rem;
+  padding: 1rem 1.25rem;
   border-left: 3px solid var(--primary);
-  transition: border-left-color 0.6s ease;
+  transition: border-left-color 0.6s ease, max-height 0.3s ease;
   animation: fade-in 0.4s ease-out both;
-  max-height: 320px;
+  max-height: 360px;
   overflow-y: auto;
+  position: relative;
 }
 .ai-summary::-webkit-scrollbar { width: 4px; }
 .ai-summary::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 2px; }
+
+/* ── Expanded / fullscreen overlay ── */
+.ai-summary-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 999;
+  animation: fade-in 0.2s ease-out;
+}
+.ai-summary--expanded {
+  position: fixed;
+  inset: 2rem 4rem;
+  max-height: none;
+  z-index: 1000;
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+  box-shadow: 0 0 60px rgba(0, 229, 200, 0.08);
+}
+.ai-summary--expanded .ai-summary-header {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+.ai-summary--expanded .ai-summary-title {
+  font-size: 0.8rem;
+}
+.ai-summary--expanded .ai-summary-body {
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+.ai-summary--expanded .ai-summary-md h2 {
+  font-size: 1rem;
+}
+.ai-summary--expanded .ai-summary-md h3 {
+  font-size: 0.92rem;
+}
+
 .ai-summary-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  z-index: 1;
+  padding-bottom: 0.3rem;
 }
 .ai-summary-title {
-  font: 600 0.65rem/1 'IBM Plex Mono', monospace;
+  font: 600 0.7rem/1 'IBM Plex Mono', monospace;
   color: var(--text-muted);
   letter-spacing: 0.12em;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 .ai-summary-icon {
   color: var(--primary);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 .ai-summary-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 .ai-summary-timestamp {
   font: 400 0.6rem/1 'IBM Plex Mono', monospace;
   color: var(--text-dim);
 }
-.ai-summary-refresh {
+.ai-summary-refresh,
+.ai-summary-expand {
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--text-muted);
@@ -247,7 +293,8 @@
   cursor: pointer;
   transition: all 0.2s;
 }
-.ai-summary-refresh:hover:not(:disabled) {
+.ai-summary-refresh:hover:not(:disabled),
+.ai-summary-expand:hover {
   border-color: var(--primary);
   color: var(--primary);
 }
@@ -256,26 +303,60 @@
   cursor: not-allowed;
 }
 .ai-summary-body {
-  font: 400 0.72rem/1.55 'Outfit', sans-serif;
+  font: 400 0.78rem/1.6 'Outfit', sans-serif;
   color: var(--text-secondary);
 }
-.ai-summary-text p {
-  margin: 0 0 0.35rem;
-}
-.ai-summary-section {
-  font: 700 0.68rem/1.3 'IBM Plex Mono', monospace;
-  color: var(--text-primary);
-  margin: 0.6rem 0 0.25rem;
+
+/* ── Markdown rendered content ── */
+.ai-summary-md h1, .ai-summary-md h2 {
+  font: 700 0.82rem/1.3 'IBM Plex Mono', monospace;
+  color: var(--primary);
+  margin: 0.8rem 0 0.3rem;
   padding: 0;
 }
-.ai-summary-section:first-child {
+.ai-summary-md h1:first-child, .ai-summary-md h2:first-child {
   margin-top: 0;
 }
-.ai-summary-bullet {
-  padding-left: 0.25rem;
-  margin-bottom: 0.2rem;
-  color: var(--text-secondary);
+.ai-summary-md h3, .ai-summary-md h4 {
+  font: 700 0.76rem/1.3 'IBM Plex Mono', monospace;
+  color: var(--text-primary);
+  margin: 0.7rem 0 0.2rem;
+  padding: 0;
 }
+.ai-summary-md p {
+  margin: 0 0 0.4rem;
+}
+.ai-summary-md strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.ai-summary-md ul, .ai-summary-md ol {
+  margin: 0.2rem 0 0.5rem;
+  padding-left: 1.2rem;
+}
+.ai-summary-md li {
+  margin-bottom: 0.15rem;
+}
+.ai-summary-md li::marker {
+  color: var(--primary);
+}
+.ai-summary-md code {
+  font: 400 0.72rem/1 'IBM Plex Mono', monospace;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  color: var(--primary);
+}
+.ai-summary-md em {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.ai-summary-md hr {
+  border: none;
+  border-top: 1px solid var(--panel-border);
+  margin: 0.6rem 0;
+}
+
 .ai-summary-loading {
   display: flex;
   align-items: center;

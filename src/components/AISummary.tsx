@@ -1,4 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://api.staging.iantem.io";
 
@@ -11,12 +13,16 @@ interface SummaryData {
 
 type SummaryState = "idle" | "loading" | "streaming" | "complete" | "error";
 
+marked.setOptions({ breaks: true, gfm: true });
+
 export default function AISummary({ authToken }: { authToken: string | null }) {
   const [state, setState] = useState<SummaryState>("idle");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const startCooldown = useCallback(() => {
     setCooldown(60);
@@ -44,7 +50,6 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
     if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
     try {
-      // Try cached JSON endpoint first
       const res = await fetch(`${API_URL}/v1/dashboard/ai-summary`, { headers });
 
       if (res.ok) {
@@ -61,16 +66,13 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
       }
 
       if (res.status === 503) {
-        // AI not configured — try debug endpoint for raw data view
         setState("error");
         setError("AI summary not configured on server");
         return;
       }
 
-      // Fall through to streaming
       streamSummary();
     } catch {
-      // Network error — try streaming
       streamSummary();
     }
   }, [authToken, startCooldown]);
@@ -114,28 +116,35 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
     };
   }, [authToken, startCooldown]);
 
-  // Fetch on mount
   useEffect(() => {
     if (authToken) fetchSummary();
   }, [authToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const severityColor = useCallback(() => {
+  // Close expanded view on Escape
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [expanded]);
+
+  const renderedHTML = useMemo(() => {
+    if (!summary?.text) return "";
+    const raw = marked.parse(summary.text) as string;
+    return DOMPurify.sanitize(raw);
+  }, [summary?.text]);
+
+  const severityColor = useMemo(() => {
     if (!summary?.text) return "var(--panel-border)";
     const text = summary.text.toLowerCase();
-    if (
-      text.includes("critical") ||
-      text.includes("severe") ||
-      text.includes("emergency")
-    )
+    if (text.includes("critical") || text.includes("severe") || text.includes("emergency"))
       return "var(--danger)";
-    if (
-      text.includes("elevated") ||
-      text.includes("spike") ||
-      text.includes("actively blocking")
-    )
+    if (text.includes("elevated") || text.includes("spike") || text.includes("actively blocking"))
       return "var(--secondary)";
     return "var(--primary)";
-  }, [summary]);
+  }, [summary?.text]);
 
   const timeAgo = useCallback((dateStr: string) => {
     if (!dateStr) return "";
@@ -146,8 +155,11 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
     return `${mins} min ago`;
   }, []);
 
-  return (
-    <div className="ai-summary" style={{ borderLeftColor: severityColor() }}>
+  const card = (
+    <div
+      className={`ai-summary ${expanded ? "ai-summary--expanded" : ""}`}
+      style={{ borderLeftColor: severityColor }}
+    >
       <div className="ai-summary-header">
         <div className="ai-summary-title">
           <span className="ai-summary-icon">&#x2726;</span>
@@ -167,10 +179,17 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
           >
             {cooldown > 0 ? `${cooldown}s` : "↻"}
           </button>
+          <button
+            className="ai-summary-expand"
+            onClick={() => setExpanded(!expanded)}
+            title={expanded ? "Collapse (Esc)" : "Expand"}
+          >
+            {expanded ? "✕" : "⛶"}
+          </button>
         </div>
       </div>
 
-      <div className="ai-summary-body">
+      <div className="ai-summary-body" ref={bodyRef}>
         {state === "idle" && (
           <div className="ai-summary-placeholder">Waiting for data...</div>
         )}
@@ -184,24 +203,10 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
 
         {(state === "streaming" || state === "complete") && summary?.text && (
           <div className="ai-summary-text">
-            {summary.text.split("\n").map((line, i) => {
-              if (line.startsWith("**") && line.endsWith("**")) {
-                return (
-                  <h4 key={i} className="ai-summary-section">
-                    {line.replace(/\*\*/g, "")}
-                  </h4>
-                );
-              }
-              if (line.startsWith("- ")) {
-                return (
-                  <div key={i} className="ai-summary-bullet">
-                    {line}
-                  </div>
-                );
-              }
-              if (line.trim() === "") return <br key={i} />;
-              return <p key={i}>{line}</p>;
-            })}
+            <div
+              className="ai-summary-md"
+              dangerouslySetInnerHTML={{ __html: renderedHTML }}
+            />
             {state === "streaming" && (
               <span className="ai-summary-cursor">&#x2588;</span>
             )}
@@ -219,4 +224,15 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
       </div>
     </div>
   );
+
+  if (expanded) {
+    return (
+      <>
+        <div className="ai-summary-overlay" onClick={() => setExpanded(false)} />
+        {card}
+      </>
+    );
+  }
+
+  return card;
 }
