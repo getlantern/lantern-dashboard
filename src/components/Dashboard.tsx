@@ -11,6 +11,7 @@ import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
 import VPSOverview from "./VPSOverview";
 import BanditArmsOverview from "./BanditArmsOverview";
+import AISummary from "./AISummary";
 import type { GlobalStats } from "../data/mock";
 
 function LanternLogo() {
@@ -30,7 +31,7 @@ function LanternLogo() {
 }
 
 export default function Dashboard() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, token } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
   const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms'>(() => {
     const hash = window.location.hash;
@@ -308,6 +309,7 @@ export default function Dashboard() {
         )}
 
         <div className="right-panel">
+          <AISummary authToken={token} />
           <ProxyWidget {...proxy} />
           <ImpactCard stats={volunteerStats} />
           <ProtocolFeed liveEvents={activityEvents} demoMode={demoMode} />
