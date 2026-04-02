@@ -310,9 +310,8 @@ export default function Dashboard() {
 
         <div className="right-panel">
           <AISummary authToken={token} />
-          <ProxyWidget {...proxy} />
-          <ImpactCard stats={volunteerStats} />
           <ProtocolFeed liveEvents={activityEvents} demoMode={demoMode} />
+          <ProxyWidget {...proxy} />
         </div>
       </div>
     </div>
