@@ -183,9 +183,15 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
   const deprecatedCount = useMemo(() => routes.filter((r) => r.deprecated).length, [routes]);
   const provisioningCount = useMemo(() => {
     if (summary?.byStatus) {
-      return (summary.byStatus["pending"] || 0) + (summary.byStatus["provisioning"] || 0) + (summary.byStatus["configuring"] || 0);
+      return (summary.byStatus["pending"] || 0) + (summary.byStatus["provisioning"] || 0);
     }
-    return routes.filter((r) => ["pending", "provisioning", "configuring"].includes(r.status)).length;
+    return routes.filter((r) => ["pending", "provisioning"].includes(r.status)).length;
+  }, [summary, routes]);
+  const configuringCount = useMemo(() => {
+    if (summary?.byStatus) {
+      return summary.byStatus["configuring"] || 0;
+    }
+    return routes.filter((r) => r.status === "configuring").length;
   }, [summary, routes]);
   const runningCount = summary?.byStatus?.["running"] ?? routes.filter((r) => r.status === "running" && !r.deprecated).length;
   const totalCount = summary?.total ?? routes.length;
@@ -235,6 +241,11 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
         <div style={card}>
           <div style={cardLabel}>Running</div>
           <div style={{ ...cardValue, color: "#a0c8a0" }}>{runningCount}</div>
+        </div>
+
+        <div style={card}>
+          <div style={cardLabel}>Configuring</div>
+          <div style={{ ...cardValue, color: "#80b0e0" }}>{configuringCount}</div>
         </div>
 
         <div style={card}>
