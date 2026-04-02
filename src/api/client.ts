@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "https://api.iantem.io";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.staging.iantem.io";
 
 let authToken: string | null = null;
 let onAuthExpired: (() => Promise<string | null>) | null = null;
