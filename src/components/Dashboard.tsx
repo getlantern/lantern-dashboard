@@ -32,13 +32,14 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms'>(() => {
+  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms' | 'proxy'>(() => {
     const hash = window.location.hash;
     if (hash === '#vps') return 'vps';
     if (hash === '#arms') return 'arms';
+    if (hash === '#proxy') return 'proxy';
     return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms') => {
+  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms' | 'proxy') => {
     setActiveTab(tab);
     window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
@@ -115,7 +116,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "vps", "arms"] as const).map((tab) => (
+          {(["map", "vps", "arms", "proxy"] as const).map((tab) => (
             <div
               key={tab}
               onClick={() => switchTab(tab)}
@@ -133,7 +134,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : "Bandit Arms"}
+              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : tab === "arms" ? "Bandit Arms" : "Share Proxy"}
             </div>
           ))}
         </div>
@@ -214,6 +215,10 @@ export default function Dashboard() {
           />
         ) : activeTab === "arms" ? (
           <BanditArmsOverview countries={globalStats.countries} dataCenters={dataCenters} isLive={isLive} />
+        ) : activeTab === "proxy" ? (
+          <div style={{ flex: 1, padding: "1rem" }}>
+            <ProxyWidget {...proxy} />
+          </div>
         ) : (
         <div className="map-section">
           <div className="map-header">
@@ -310,7 +315,6 @@ export default function Dashboard() {
         <div className="right-panel">
           <AISummary authToken={token} />
           <ProtocolFeed liveEvents={activityEvents} demoMode={demoMode} />
-          <ProxyWidget {...proxy} />
         </div>
       </div>
     </div>

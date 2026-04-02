@@ -246,7 +246,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
             <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.45rem" }}>
               {Object.entries(summary.byProvider).map(([provider, count]) => (
                 <span key={provider} style={chipStyle}>
-                  {provider} {count}
+                  {provider.toUpperCase()} {count}
                 </span>
               ))}
             </div>
@@ -274,7 +274,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                 <>
                   <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.35rem" }}>
                     {Object.entries(bd.byProvider).sort((a, b) => b[1] - a[1]).map(([p, c]) => (
-                      <span key={p} style={chipStyle}>{p} {c}</span>
+                      <span key={p} style={chipStyle}>{p.toUpperCase()} {c}</span>
                     ))}
                   </div>
                   <div style={{ marginTop: "0.3rem", fontSize: "0.55rem", color: "#667080", fontFamily: "var(--font-mono)" }} title="Average time since the route's DB entry was created. This includes all prior stages, not just time in the current state.">
