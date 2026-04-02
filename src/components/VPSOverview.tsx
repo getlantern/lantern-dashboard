@@ -256,10 +256,19 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
         {(["running", "configuring", "provisioning", "deprecated"] as const).map((status) => {
           const colors: Record<string, string> = { running: "#a0c8a0", configuring: "#80b0e0", provisioning: "#f0a030", deprecated: "#e06060" };
           const counts: Record<string, number> = { running: runningCount, configuring: configuringCount, provisioning: provisioningCount, deprecated: deprecatedCount };
+          const tooltips: Record<string, string> = {
+            running: "VPS is fully provisioned, configured, and serving traffic. Avg age = average time since the route DB entry was created (includes provisioning + configuring time).",
+            configuring: "VM has been created by the cloud provider. The API is pushing sing-box config via SSH. Avg age = time since route creation. Typically takes 2-5 minutes after VM is ready.",
+            provisioning: "Includes 'pending' (waiting for pool worker) and 'provisioning' (VM creation in progress). Avg age = time waiting. If >30 min, check provider quotas or Vault region configs.",
+            deprecated: "Route has been marked for removal. The destroy worker will terminate the VM and clean up the DB entry after a 1-hour grace period.",
+          };
           const bd = statusBreakdown[status];
           return (
-            <div key={status} style={card}>
-              <div style={cardLabel}>{status.charAt(0).toUpperCase() + status.slice(1)}</div>
+            <div key={status} style={{ ...card, position: "relative" }} title={tooltips[status]}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                <div style={cardLabel}>{status.charAt(0).toUpperCase() + status.slice(1)}</div>
+                <span style={{ fontSize: "0.55rem", color: "#556070", cursor: "help" }} title={tooltips[status]}>ⓘ</span>
+              </div>
               <div style={{ ...cardValue, color: colors[status] }}>{counts[status]}</div>
               {bd && bd.count > 0 && (
                 <>
@@ -268,7 +277,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                       <span key={p} style={chipStyle}>{p} {c}</span>
                     ))}
                   </div>
-                  <div style={{ marginTop: "0.3rem", fontSize: "0.55rem", color: "#667080", fontFamily: "var(--font-mono)" }}>
+                  <div style={{ marginTop: "0.3rem", fontSize: "0.55rem", color: "#667080", fontFamily: "var(--font-mono)" }} title="Average time since the route's DB entry was created. This includes all prior stages, not just time in the current state.">
                     avg age: {formatAge(bd.totalAge / bd.count)}
                   </div>
                 </>
