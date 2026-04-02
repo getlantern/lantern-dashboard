@@ -6,7 +6,6 @@ import { useGeoLookup } from "../hooks/useGeoLookup";
 import { useVPSData } from "../hooks/useVPSData";
 import WorldMap, { type MapSelection } from "./WorldMap";
 import StatsRow from "./StatsRow";
-import ImpactCard from "./ImpactCard";
 import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
 import VPSOverview from "./VPSOverview";
@@ -32,7 +31,7 @@ function LanternLogo() {
 
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
-  const { globalStats, dataCenters, activityEvents, trafficFlows, volunteerStats, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
+  const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
   const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms'>(() => {
     const hash = window.location.hash;
     if (hash === '#vps') return 'vps';
