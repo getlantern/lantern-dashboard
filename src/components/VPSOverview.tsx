@@ -181,19 +181,34 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
   }, [routes]);
 
   const deprecatedCount = useMemo(() => routes.filter((r) => r.deprecated).length, [routes]);
-  const provisioningCount = useMemo(() => {
-    if (summary?.byStatus) {
-      return (summary.byStatus["pending"] || 0) + (summary.byStatus["provisioning"] || 0);
+
+  // Compute per-status breakdowns: count by provider + average age
+  const statusBreakdown = useMemo(() => {
+    const now = Date.now();
+    const groups: Record<string, { byProvider: Record<string, number>; totalAge: number; count: number }> = {};
+    for (const r of routes) {
+      const status = r.deprecated ? "deprecated" : (["pending", "provisioning"].includes(r.status) ? "provisioning" : r.status);
+      if (!groups[status]) groups[status] = { byProvider: {}, totalAge: 0, count: 0 };
+      const g = groups[status];
+      const provider = r.vpsProvider || r.providerName || "unknown";
+      g.byProvider[provider] = (g.byProvider[provider] || 0) + 1;
+      g.totalAge += now - new Date(r.created).getTime();
+      g.count++;
     }
-    return routes.filter((r) => ["pending", "provisioning"].includes(r.status)).length;
-  }, [summary, routes]);
-  const configuringCount = useMemo(() => {
-    if (summary?.byStatus) {
-      return summary.byStatus["configuring"] || 0;
-    }
-    return routes.filter((r) => r.status === "configuring").length;
-  }, [summary, routes]);
-  const runningCount = summary?.byStatus?.["running"] ?? routes.filter((r) => r.status === "running" && !r.deprecated).length;
+    return groups;
+  }, [routes]);
+
+  const formatAge = (ms: number) => {
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+    return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
+  };
+
+  const provisioningCount = statusBreakdown["provisioning"]?.count ?? 0;
+  const configuringCount = statusBreakdown["configuring"]?.count ?? 0;
+  const runningCount = statusBreakdown["running"]?.count ?? 0;
   const totalCount = summary?.total ?? routes.length;
 
   if (isLoading) {
@@ -238,25 +253,29 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
           )}
         </div>
 
-        <div style={card}>
-          <div style={cardLabel}>Running</div>
-          <div style={{ ...cardValue, color: "#a0c8a0" }}>{runningCount}</div>
-        </div>
-
-        <div style={card}>
-          <div style={cardLabel}>Configuring</div>
-          <div style={{ ...cardValue, color: "#80b0e0" }}>{configuringCount}</div>
-        </div>
-
-        <div style={card}>
-          <div style={cardLabel}>Provisioning</div>
-          <div style={{ ...cardValue, color: "#f0a030" }}>{provisioningCount}</div>
-        </div>
-
-        <div style={card}>
-          <div style={cardLabel}>Deprecated</div>
-          <div style={{ ...cardValue, color: "#e06060" }}>{deprecatedCount}</div>
-        </div>
+        {(["running", "configuring", "provisioning", "deprecated"] as const).map((status) => {
+          const colors: Record<string, string> = { running: "#a0c8a0", configuring: "#80b0e0", provisioning: "#f0a030", deprecated: "#e06060" };
+          const counts: Record<string, number> = { running: runningCount, configuring: configuringCount, provisioning: provisioningCount, deprecated: deprecatedCount };
+          const bd = statusBreakdown[status];
+          return (
+            <div key={status} style={card}>
+              <div style={cardLabel}>{status.charAt(0).toUpperCase() + status.slice(1)}</div>
+              <div style={{ ...cardValue, color: colors[status] }}>{counts[status]}</div>
+              {bd && bd.count > 0 && (
+                <>
+                  <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.35rem" }}>
+                    {Object.entries(bd.byProvider).sort((a, b) => b[1] - a[1]).map(([p, c]) => (
+                      <span key={p} style={chipStyle}>{p} {c}</span>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "0.3rem", fontSize: "0.55rem", color: "#667080", fontFamily: "var(--font-mono)" }}>
+                    avg age: {formatAge(bd.totalAge / bd.count)}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Grouped Table */}
