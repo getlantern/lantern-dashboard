@@ -50,6 +50,17 @@ function timeAgo(timestamp: number): string {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
+// Convert "123456ms" in text to human-readable "2m3s"
+function humanizeMs(text: string): string {
+  return text.replace(/(\d+)ms\b/g, (_, ms) => {
+    const total = parseInt(ms, 10);
+    if (total < 1000) return `${total}ms`;
+    const s = Math.floor(total / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}m${s % 60}s`;
+  });
+}
+
 interface ProtocolFeedProps {
   liveEvents?: DashboardActivityEvent[];
   demoMode?: boolean;
@@ -117,7 +128,7 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
                   <div className="feed-title">
                     {isCallback
                       ? `${callbackOk ? "Route OK" : "Probe Failed"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}`
-                      : `${LIVE_TYPE_LABELS[event.eventType] || event.eventType}${event.detail ? `: ${event.detail}` : ""}`}
+                      : `${LIVE_TYPE_LABELS[event.eventType] || event.eventType}${event.detail ? `: ${humanizeMs(event.detail)}` : ""}`}
                   </div>
                   <div className="feed-meta">
                     {event.trackName && <span className="feed-protocol">{event.trackName}</span>}
