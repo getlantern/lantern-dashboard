@@ -112,7 +112,7 @@ export default function Dashboard() {
           <LanternLogo />
           <div>
             <div className="header-title">Lantern</div>
-            <div className="header-subtitle">Impact Dashboard</div>
+            <div className="header-subtitle">Bandit Dashboard</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
