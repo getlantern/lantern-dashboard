@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, memo, type CSSProperties } from "react";
-import { fetchTracks, type DashboardTrackDetail } from "../api/client";
+import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
+import { fetchTracks, fetchSigNozMetrics, type DashboardTrackDetail, type TrackMetrics } from "../api/client";
 
 const TIER_COLORS: Record<string, string> = {
   FREE: "#a0c8a0",
@@ -17,6 +17,19 @@ const STATUS_COLORS: Record<string, string> = {
   pending: "#667080",
   destroyed: "#e06060",
 };
+
+function formatBps(bps: number): string {
+  if (bps >= 1e9) return `${(bps / 1e9).toFixed(1)} Gbps`;
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} Mbps`;
+  if (bps >= 1e3) return `${(bps / 1e3).toFixed(0)} Kbps`;
+  return `${Math.round(bps)} bps`;
+}
+
+function formatCount(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(Math.round(n));
+}
 
 const card: CSSProperties = {
   background: "var(--bg-card)",
@@ -140,6 +153,9 @@ function TracksOverview() {
   const [filterTier, setFilterTier] = useState<FilterTier>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [metrics, setMetrics] = useState<TrackMetrics | null>(null);
+  const [metricsTimeRange, setMetricsTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("6h");
+  const metricsLoadingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,6 +178,79 @@ function TracksOverview() {
     const interval = setInterval(load, 60_000);
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
+
+  // Fetch SigNoz metrics grouped by track
+  useEffect(() => {
+    if (metricsLoadingRef.current) return;
+    metricsLoadingRef.current = true;
+
+    const rangeMs: Record<string, number> = { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+    const endMs = Date.now();
+    const startMs = endMs - (rangeMs[metricsTimeRange] || 21600000);
+
+    const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterExpr: string, groupByKey: string) => ({
+      start: startMs,
+      end: endMs,
+      compositeQuery: {
+        queryType: "builder",
+        panelType: "table",
+        builderQueries: {
+          A: {
+            dataSource: "metrics",
+            queryName: "A",
+            aggregateAttribute: { key: metricName, dataType: "float64", type: "Sum", isColumn: true },
+            timeAggregation: timeAgg,
+            spaceAggregation: spaceAgg,
+            filters: { items: [], op: "AND" },
+            expression: "A",
+            disabled: false,
+            groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false }],
+            legend: `{{${groupByKey}}}`,
+            reduceTo: "avg",
+            ...(filterExpr ? { having: { expression: filterExpr } } : {}),
+          },
+        },
+      },
+    });
+
+    const queries = [
+      { key: "throughputBps" as const, query: buildQuery("proxy.io", "rate", "sum", "network.io.direction = 'transmit'", "proxy.track") },
+      { key: "connections" as const, query: buildQuery("proxy.connections", "increase", "sum", "", "proxy.track") },
+      { key: "callbacks" as const, query: buildQuery("bandit.callbacks", "increase", "sum", "", "proxy.track") },
+      { key: "selections" as const, query: buildQuery("bandit.selections", "increase", "sum", "", "proxy.track") },
+    ];
+
+    const result: TrackMetrics = { throughputBps: {}, connections: {}, callbacks: {}, selections: {} };
+
+    Promise.allSettled(queries.map(async ({ key, query }) => {
+      try {
+        const resp = await fetchSigNozMetrics(query);
+        // Parse SigNoz response: data.result[] has metric/values
+        const series = resp?.data?.result || resp?.data?.results?.[0]?.series || [];
+        for (const s of series) {
+          const trackName = s.metric?.["proxy.track"] || s.labelsArray?.find((l: any) => l.proxy?.track)?.proxy?.track || s.labels?.["proxy.track"] || "";
+          if (!trackName) continue;
+          // Get the latest or average value
+          const values = s.values || [];
+          if (values.length > 0) {
+            const sum = values.reduce((acc: number, v: any) => acc + (parseFloat(v.value || v[1]) || 0), 0);
+            result[key][trackName] = key === "throughputBps" ? (sum / values.length) * 8 : sum;
+          }
+        }
+      } catch {
+        // Silently skip failed metric queries
+      }
+    })).then(() => {
+      setMetrics(result);
+      metricsLoadingRef.current = false;
+    });
+
+    const interval = setInterval(() => {
+      metricsLoadingRef.current = false;
+      // Trigger re-run by updating a dep — but we use ref to avoid loops
+    }, 120_000);
+    return () => clearInterval(interval);
+  }, [metricsTimeRange]);
 
   const toggleExpand = useCallback((id: number) => {
     setExpanded((prev) => {
@@ -347,12 +436,29 @@ function TracksOverview() {
         <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#667080" }}>
           {filtered.length} of {tracks.length} tracks
         </span>
+        <div style={{ display: "flex", gap: "0.2rem", marginLeft: "0.5rem" }}>
+          {(["1h", "6h", "24h", "7d"] as const).map((r) => (
+            <div
+              key={r}
+              onClick={() => setMetricsTimeRange(r)}
+              style={{
+                ...chipStyle,
+                cursor: "pointer",
+                background: metricsTimeRange === r ? "#ffb43220" : "#ffffff08",
+                color: metricsTimeRange === r ? "#ffb432" : "#8890a0",
+                border: `1px solid ${metricsTimeRange === r ? "#ffb43230" : "transparent"}`,
+              }}
+            >
+              {r}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Sort Headers */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "20px 1fr 0.4fr 0.6fr 0.5fr 100px 0.4fr",
+        gridTemplateColumns: "20px 1fr 0.35fr 0.5fr 0.4fr 90px 0.35fr 0.5fr 0.45fr",
         gap: "0.5rem",
         padding: "0.4rem 0.85rem",
         fontSize: "0.5rem",
@@ -366,7 +472,7 @@ function TracksOverview() {
         userSelect: "none",
       }}>
         <span />
-        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"]] as [SortField, string][]).map(([field, label], i) => (
+        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["name", "Throughput"], ["name", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
           <span
             key={`${field}-${i}`}
             onClick={() => handleSort(field)}
@@ -400,7 +506,7 @@ function TracksOverview() {
                 style={{
                   ...trackRowStyle,
                   display: "grid",
-                  gridTemplateColumns: "20px 1fr 0.4fr 0.6fr 0.5fr 100px 0.4fr",
+                  gridTemplateColumns: "20px 1fr 0.35fr 0.5fr 0.4fr 90px 0.35fr 0.5fr 0.45fr",
                   opacity: track.disabled ? 0.5 : 1,
                 }}
                 onClick={() => toggleExpand(track.id)}
@@ -455,6 +561,20 @@ function TracksOverview() {
                 {/* Running count */}
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: track.vpsRunning > 0 ? "#a0c8a0" : "#4a5568" }}>
                   {track.vpsRunning > 0 ? track.vpsRunning : "--"}
+                </span>
+
+                {/* Throughput */}
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#f0a030" }}>
+                  {metrics?.throughputBps[track.name] != null
+                    ? formatBps(metrics.throughputBps[track.name])
+                    : metrics ? "--" : "..."}
+                </span>
+
+                {/* Callbacks */}
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#a0c8a0" }}>
+                  {metrics?.callbacks[track.name] != null
+                    ? formatCount(metrics.callbacks[track.name])
+                    : metrics ? "--" : "..."}
                 </span>
               </div>
 
@@ -521,6 +641,36 @@ function TracksOverview() {
                     <div>
                       <div style={detailLabel}>Docker Image</div>
                       <div>{track.dockerImage}</div>
+                    </div>
+                  )}
+
+                  {/* SigNoz metrics */}
+                  {metrics && (
+                    <div style={{ gridColumn: "1 / -1", display: "flex", gap: "1.5rem", marginTop: "0.3rem", paddingTop: "0.4rem", borderTop: "1px solid #ffffff06" }}>
+                      <div>
+                        <div style={detailLabel}>Throughput ({metricsTimeRange})</div>
+                        <div style={{ color: "#f0a030", fontWeight: 600 }}>
+                          {metrics.throughputBps[track.name] != null ? formatBps(metrics.throughputBps[track.name]) : "--"}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={detailLabel}>Connections ({metricsTimeRange})</div>
+                        <div style={{ color: "#64b4ff" }}>
+                          {metrics.connections[track.name] != null ? formatCount(metrics.connections[track.name]) : "--"}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={detailLabel}>Bandit Selections ({metricsTimeRange})</div>
+                        <div style={{ color: "#00e5c8" }}>
+                          {metrics.selections[track.name] != null ? formatCount(metrics.selections[track.name]) : "--"}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={detailLabel}>Callbacks ({metricsTimeRange})</div>
+                        <div style={{ color: "#a0c8a0" }}>
+                          {metrics.callbacks[track.name] != null ? formatCount(metrics.callbacks[track.name]) : "--"}
+                        </div>
+                      </div>
                     </div>
                   )}
 

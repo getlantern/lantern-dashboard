@@ -260,6 +260,75 @@ export function fetchTracks(): Promise<DashboardTracksResponse> {
   return apiFetch("/tracks");
 }
 
+// ── SigNoz metrics proxy ──
+
+// Posts a SigNoz v5 builder query to the API's /proxy/metrics endpoint.
+// Returns the raw SigNoz response (caller must parse the result structure).
+export async function fetchSigNozMetrics(body: object): Promise<any> {
+  const url = `${API_URL}/proxy/metrics`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`SigNoz query failed: ${res.status}`);
+  return res.json();
+}
+
+// Build a SigNoz v5 builder query for a metric grouped by proxy.track.
+export function buildTrackMetricQuery(opts: {
+  metricName: string;
+  timeAggregation: string;
+  spaceAggregation: string;
+  filterExpression?: string;
+  startMs: number;
+  endMs: number;
+}): object {
+  return {
+    start: opts.startMs,
+    end: opts.endMs,
+    compositeQuery: {
+      queryType: "builder",
+      panelType: "graph",
+      builderQueries: {
+        A: {
+          dataSource: "metrics",
+          queryName: "A",
+          aggregateAttribute: {
+            key: opts.metricName,
+            dataType: "float64",
+            type: "Sum",
+            isColumn: true,
+          },
+          timeAggregation: opts.timeAggregation,
+          spaceAggregation: opts.spaceAggregation,
+          filters: {
+            items: [],
+            op: "AND",
+          },
+          expression: "A",
+          disabled: false,
+          groupBy: [{
+            key: "proxy.track",
+            dataType: "string",
+            type: "tag",
+            isColumn: false,
+          }],
+          legend: "{{proxy.track}}",
+          reduceTo: "avg",
+          ...(opts.filterExpression ? { having: { expression: opts.filterExpression } } : {}),
+        },
+      },
+    },
+  };
+}
+
+// Per-track aggregated metrics from SigNoz.
+export interface TrackMetrics {
+  throughputBps: Record<string, number>;    // track name → bytes/sec * 8
+  connections: Record<string, number>;       // track name → connection count
+  callbacks: Record<string, number>;         // track name → callback count
+  selections: Record<string, number>;        // track name → selection count
+}
+
 export function getStreamURL(): string {
   const url = new URL(`${API_URL}/v1/dashboard/stream`);
   if (authToken) url.searchParams.set("token", authToken);
