@@ -12,7 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
   configuring: "#80b0e0",
   provisioning: "#f0a030",
   pending: "#667080",
-  destroyed: "#667080",
+  destroyed: "#e06060",
 };
 
 const card: CSSProperties = {
@@ -99,13 +99,14 @@ type FilterTier = "all" | "Free" | "Pro" | "New";
 type FilterStatus = "all" | "withRoutes" | "empty";
 
 function VPSBar({ track }: { track: DashboardTrackDetail }) {
-  const total = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsPending;
+  const total = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsPending + track.vpsDestroyed;
   if (total === 0) return null;
   const segments = [
     { count: track.vpsRunning, color: STATUS_COLORS.running, label: "running" },
     { count: track.vpsConfiguring, color: STATUS_COLORS.configuring, label: "configuring" },
     { count: track.vpsProvisioning, color: STATUS_COLORS.provisioning, label: "provisioning" },
     { count: track.vpsPending, color: STATUS_COLORS.pending, label: "pending" },
+    { count: track.vpsDestroyed, color: STATUS_COLORS.destroyed, label: "destroyed" },
   ].filter((s) => s.count > 0);
 
   return (
@@ -144,6 +145,7 @@ function TracksOverview() {
         const data = await fetchTracks();
         if (!cancelled) {
           setTracks(data.tracks || []);
+          setError(null);
           setIsLoading(false);
         }
       } catch (e) {
@@ -386,7 +388,7 @@ function TracksOverview() {
           const isExpanded = expanded.has(track.id);
           const tierColor = TIER_COLORS[track.tier] || "#8890a0";
           const isBandit = track.vpsPoolSize > 0;
-          const totalVPS = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsPending;
+          const totalVPS = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsPending + track.vpsDestroyed;
 
           return (
             <div key={track.id}>
@@ -520,13 +522,14 @@ function TracksOverview() {
                   )}
 
                   {/* VPS status breakdown */}
-                  {(track.vpsRunning > 0 || track.vpsProvisioning > 0 || track.vpsConfiguring > 0 || track.vpsPending > 0) && (
+                  {totalVPS > 0 && (
                     <div style={{ gridColumn: "1 / -1", display: "flex", gap: "0.5rem", marginTop: "0.3rem", paddingTop: "0.4rem", borderTop: "1px solid #ffffff06" }}>
                       {([
                         ["running", track.vpsRunning, STATUS_COLORS.running],
                         ["configuring", track.vpsConfiguring, STATUS_COLORS.configuring],
                         ["provisioning", track.vpsProvisioning, STATUS_COLORS.provisioning],
                         ["pending", track.vpsPending, STATUS_COLORS.pending],
+                        ["destroyed", track.vpsDestroyed, STATUS_COLORS.destroyed],
                       ] as [string, number, string][]).filter(([, c]) => c > 0).map(([label, count, color]) => (
                         <span key={label} style={{ ...badgeBase, background: `${color}18`, color, border: `1px solid ${color}30` }}>
                           {count} {label}
