@@ -245,9 +245,9 @@ export interface DashboardTrackDetail {
   clientFloor: number;
   clientCeil: number;
   vpsRunning: number;
+  vpsPending: number;
   vpsProvisioning: number;
   vpsConfiguring: number;
-  vpsFailed: number;
   vpsDestroyed: number;
   k8sCompatible: boolean;
 }

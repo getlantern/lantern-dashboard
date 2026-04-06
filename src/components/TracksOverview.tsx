@@ -11,7 +11,7 @@ const STATUS_COLORS: Record<string, string> = {
   running: "#a0c8a0",
   configuring: "#80b0e0",
   provisioning: "#f0a030",
-  failed: "#e06060",
+  pending: "#667080",
   destroyed: "#667080",
 };
 
@@ -99,13 +99,13 @@ type FilterTier = "all" | "Free" | "Pro" | "New";
 type FilterStatus = "all" | "withRoutes" | "empty";
 
 function VPSBar({ track }: { track: DashboardTrackDetail }) {
-  const total = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsFailed;
+  const total = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsPending;
   if (total === 0) return null;
   const segments = [
     { count: track.vpsRunning, color: STATUS_COLORS.running, label: "running" },
     { count: track.vpsConfiguring, color: STATUS_COLORS.configuring, label: "configuring" },
     { count: track.vpsProvisioning, color: STATUS_COLORS.provisioning, label: "provisioning" },
-    { count: track.vpsFailed, color: STATUS_COLORS.failed, label: "failed" },
+    { count: track.vpsPending, color: STATUS_COLORS.pending, label: "pending" },
   ].filter((s) => s.count > 0);
 
   return (
@@ -215,12 +215,12 @@ function TracksOverview() {
     const withRoutes = enabled.filter((t) => t.vpsRunning > 0);
     const totalRunning = tracks.reduce((s, t) => s + t.vpsRunning, 0);
     const totalProvisioning = tracks.reduce((s, t) => s + t.vpsProvisioning, 0);
-    const totalFailed = tracks.reduce((s, t) => s + t.vpsFailed, 0);
+    const totalPending = tracks.reduce((s, t) => s + t.vpsPending, 0);
     const tiers: Record<string, number> = {};
     for (const t of enabled) tiers[t.tier] = (tiers[t.tier] || 0) + 1;
     const protocols: Record<string, number> = {};
     for (const t of enabled) protocols[t.protocol] = (protocols[t.protocol] || 0) + 1;
-    return { total: tracks.length, enabled: enabled.length, withRoutes: withRoutes.length, totalRunning, totalProvisioning, totalFailed, tiers, protocols };
+    return { total: tracks.length, enabled: enabled.length, withRoutes: withRoutes.length, totalRunning, totalProvisioning, totalPending, tiers, protocols };
   }, [tracks]);
 
   if (isLoading) {
@@ -269,10 +269,10 @@ function TracksOverview() {
             </div>
           )}
         </div>
-        {stats.totalFailed > 0 && (
+        {stats.totalPending > 0 && (
           <div style={card}>
-            <div style={cardLabel}>VPS Failed</div>
-            <div style={{ ...cardValue, color: "#e06060" }}>{stats.totalFailed}</div>
+            <div style={cardLabel}>VPS Pending</div>
+            <div style={{ ...cardValue, color: "#667080" }}>{stats.totalPending}</div>
           </div>
         )}
         <div style={card}>
@@ -386,7 +386,7 @@ function TracksOverview() {
           const isExpanded = expanded.has(track.id);
           const tierColor = TIER_COLORS[track.tier] || "#8890a0";
           const isBandit = track.vpsPoolSize > 0;
-          const totalVPS = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsFailed;
+          const totalVPS = track.vpsRunning + track.vpsProvisioning + track.vpsConfiguring + track.vpsPending;
 
           return (
             <div key={track.id}>
@@ -520,13 +520,13 @@ function TracksOverview() {
                   )}
 
                   {/* VPS status breakdown */}
-                  {(track.vpsRunning > 0 || track.vpsProvisioning > 0 || track.vpsConfiguring > 0 || track.vpsFailed > 0) && (
+                  {(track.vpsRunning > 0 || track.vpsProvisioning > 0 || track.vpsConfiguring > 0 || track.vpsPending > 0) && (
                     <div style={{ gridColumn: "1 / -1", display: "flex", gap: "0.5rem", marginTop: "0.3rem", paddingTop: "0.4rem", borderTop: "1px solid #ffffff06" }}>
                       {([
                         ["running", track.vpsRunning, STATUS_COLORS.running],
                         ["configuring", track.vpsConfiguring, STATUS_COLORS.configuring],
                         ["provisioning", track.vpsProvisioning, STATUS_COLORS.provisioning],
-                        ["failed", track.vpsFailed, STATUS_COLORS.failed],
+                        ["pending", track.vpsPending, STATUS_COLORS.pending],
                       ] as [string, number, string][]).filter(([, c]) => c > 0).map(([label, count, color]) => (
                         <span key={label} style={{ ...badgeBase, background: `${color}18`, color, border: `1px solid ${color}30` }}>
                           {count} {label}
