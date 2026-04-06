@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useCallback, memo, type CSSProperties } f
 import { fetchTracks, type DashboardTrackDetail } from "../api/client";
 
 const TIER_COLORS: Record<string, string> = {
+  FREE: "#a0c8a0",
+  PRO: "#64b4ff",
+  NEW: "#f0a030",
   Free: "#a0c8a0",
   Pro: "#64b4ff",
   New: "#f0a030",
@@ -182,7 +185,7 @@ function TracksOverview() {
 
   const filtered = useMemo(() => {
     let result = tracks;
-    if (filterTier !== "all") result = result.filter((t) => t.tier === filterTier);
+    if (filterTier !== "all") result = result.filter((t) => t.tier.toUpperCase() === filterTier.toUpperCase());
     if (filterStatus === "withRoutes") result = result.filter((t) => t.vpsRunning > 0);
     else if (filterStatus === "empty") result = result.filter((t) => t.vpsRunning === 0);
     if (searchQuery) {
