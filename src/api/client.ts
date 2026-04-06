@@ -217,6 +217,49 @@ export function fetchVPSRoutes(): Promise<DashboardVPSRoutesResponse> {
   return apiFetch("/vps-routes");
 }
 
+// ── Track details for Tracks tab ──
+
+export interface DashboardTrackDetail {
+  id: number;
+  name: string;
+  description?: string;
+  tier: string;
+  protocol: string;
+  protocolOpts?: string;
+  dockerImage?: string;
+  providers: string[];
+  platforms: string[];
+  targetRegions: string[];
+  locations: string[];
+  routesPerClient: number;
+  clientVersion?: string;
+  vpsPoolSize: number;
+  vpsMaxClientsPerRoute: number;
+  disabled: boolean;
+  testing: boolean;
+  routeAgeHours: number;
+  targetCountries?: string;
+  excludedCountries?: string;
+  targetASNs?: string;
+  excludedASNs?: string;
+  clientFloor: number;
+  clientCeil: number;
+  vpsRunning: number;
+  vpsPending: number;
+  vpsProvisioning: number;
+  vpsConfiguring: number;
+  vpsDestroyed: number;
+  k8sCompatible: boolean;
+}
+
+export interface DashboardTracksResponse {
+  tracks: DashboardTrackDetail[];
+}
+
+export function fetchTracks(): Promise<DashboardTracksResponse> {
+  return apiFetch("/tracks");
+}
+
 export function getStreamURL(): string {
   const url = new URL(`${API_URL}/v1/dashboard/stream`);
   if (authToken) url.searchParams.set("token", authToken);

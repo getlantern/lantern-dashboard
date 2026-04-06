@@ -594,6 +594,8 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
               <defs>
                 <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#50c878" /></marker>
                 <marker id="arrow-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#00e5c8" /></marker>
+                <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64b4ff" /></marker>
+                <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ffb432" /></marker>
               </defs>
 
               {/* Step 1: Callback */}
@@ -619,13 +621,13 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
               {/* Arrows */}
               <line x1="160" y1="45" x2="196" y2="45" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow-cyan)" />
               <line x1="350" y1="45" x2="386" y2="45" stroke="#50c878" strokeWidth="1.5" markerEnd="url(#arrow-green)" />
-              <line x1="550" y1="45" x2="586" y2="45" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow)" />
+              <line x1="550" y1="45" x2="586" y2="45" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow-blue)" />
 
               {/* Decision diamond */}
               <rect x="390" y="100" width="160" height="50" rx="8" fill="rgba(255,180,50,0.06)" stroke="#ffb432" strokeWidth="1" strokeDasharray="4,3" />
               <text x="470" y="120" textAnchor="middle" fill="#ffb432" fontSize="10" fontWeight="600">utilization {'>'} 70%?</text>
               <text x="470" y="135" textAnchor="middle" fill="#8090a0" fontSize="9">devices / (routes × max_clients)</text>
-              <line x1="470" y1="70" x2="470" y2="96" stroke="#ffb432" strokeWidth="1" strokeDasharray="4,3" markerEnd="url(#arrow)" />
+              <line x1="470" y1="70" x2="470" y2="96" stroke="#ffb432" strokeWidth="1" strokeDasharray="4,3" markerEnd="url(#arrow-orange)" />
 
               {/* Scale-up path */}
               <text x="570" y="118" fill="#50c878" fontSize="9" fontWeight="600">yes → scale up</text>

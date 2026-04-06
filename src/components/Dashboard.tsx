@@ -10,6 +10,7 @@ import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
 import VPSOverview from "./VPSOverview";
 import BanditArmsOverview from "./BanditArmsOverview";
+import TracksOverview from "./TracksOverview";
 import AISummary from "./AISummary";
 import type { GlobalStats } from "../data/mock";
 
@@ -32,14 +33,15 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms' | 'proxy'>(() => {
+  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms' | 'tracks' | 'proxy'>(() => {
     const hash = window.location.hash;
     if (hash === '#vps') return 'vps';
     if (hash === '#arms') return 'arms';
+    if (hash === '#tracks') return 'tracks';
     if (hash === '#proxy') return 'proxy';
     return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms' | 'proxy') => {
+  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms' | 'tracks' | 'proxy') => {
     setActiveTab(tab);
     window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
@@ -116,7 +118,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "vps", "arms", "proxy"] as const).map((tab) => (
+          {(["map", "vps", "arms", "tracks", "proxy"] as const).map((tab) => (
             <div
               key={tab}
               onClick={() => switchTab(tab)}
@@ -134,7 +136,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : tab === "arms" ? "Bandit Arms" : "Share Proxy"}
+              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : tab === "arms" ? "Bandit Arms" : tab === "tracks" ? "Tracks" : "Share Proxy"}
             </div>
           ))}
         </div>
@@ -215,6 +217,8 @@ export default function Dashboard() {
           />
         ) : activeTab === "arms" ? (
           <BanditArmsOverview countries={globalStats.countries} dataCenters={dataCenters} isLive={isLive} />
+        ) : activeTab === "tracks" ? (
+          <TracksOverview />
         ) : activeTab === "proxy" ? (
           <div style={{ flex: 1, padding: "1rem" }}>
             <ProxyWidget {...proxy} />
