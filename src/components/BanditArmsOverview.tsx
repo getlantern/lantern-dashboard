@@ -585,6 +585,75 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
           <p style={{ marginTop: "0.4rem" }}>When a proxy connects successfully, the client hits a <strong>callback URL</strong> — that's how the server knows it worked. The <strong>reward</strong> is based on relative latency: an arm's latency is ranked against all other arms for this ASN, so 2000ms is "good" if everything else is 3000ms+. Failed callbacks (no response within 30s) get reward=0.</p>
           <p style={{ marginTop: "0.4rem" }}><strong>Blocking detection</strong> works at four levels: per-ASN (is this protocol blocked on this ISP?), per-country (blocked nationally?), per-route globally (this IP is burned everywhere), and per-route per-country (this IP is burned in Iran but works in the US). Blocked arms get their weights penalized; blocked routes are excluded from selection for affected countries.</p>
           <p style={{ marginTop: "0.4rem" }}>Weights decay toward uniform at rate α=0.01, preventing early luck from creating permanent dominance. The poll interval adapts: 60s when learning, up to 15min when converged.</p>
+
+          {/* Auto-Scaling Section */}
+          <div style={{ marginTop: "0.75rem", paddingTop: "0.6rem", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <p style={{ fontWeight: 600, color: "#c0c8d4", fontSize: "0.75rem", marginBottom: "0.35rem" }}>Auto-scaling: how capacity grows with demand</p>
+
+            <svg viewBox="0 0 720 200" style={{ width: "100%", maxWidth: "720px", margin: "0.5rem 0" }}>
+              <defs>
+                <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#50c878" /></marker>
+                <marker id="arrow-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#00e5c8" /></marker>
+              </defs>
+
+              {/* Step 1: Callback */}
+              <rect x="10" y="20" width="150" height="50" rx="8" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+              <text x="85" y="40" textAnchor="middle" fill="#c0c8d4" fontSize="11" fontWeight="600">Client callback</text>
+              <text x="85" y="55" textAnchor="middle" fill="#8090a0" fontSize="9">on successful connect</text>
+
+              {/* Step 2: HLL */}
+              <rect x="200" y="20" width="150" height="50" rx="8" fill="rgba(80,200,120,0.1)" stroke="#50c878" strokeWidth="1.5" />
+              <text x="275" y="40" textAnchor="middle" fill="#50c878" fontSize="11" fontWeight="600">Redis HLL PFADD</text>
+              <text x="275" y="55" textAnchor="middle" fill="#8090a0" fontSize="9">per-route device count</text>
+
+              {/* Step 3: Pool Worker */}
+              <rect x="390" y="20" width="160" height="50" rx="8" fill="rgba(100,180,255,0.1)" stroke="#64b4ff" strokeWidth="1.5" />
+              <text x="470" y="40" textAnchor="middle" fill="#64b4ff" fontSize="11" fontWeight="600">Pool worker (30min)</text>
+              <text x="470" y="55" textAnchor="middle" fill="#8090a0" fontSize="9">PFCOUNT per location</text>
+
+              {/* Step 4: Provision */}
+              <rect x="590" y="20" width="120" height="50" rx="8" fill="rgba(255,180,50,0.1)" stroke="#ffb432" strokeWidth="1.5" />
+              <text x="650" y="40" textAnchor="middle" fill="#ffb432" fontSize="11" fontWeight="600">Provision VPS</text>
+              <text x="650" y="55" textAnchor="middle" fill="#8090a0" fontSize="9">new routes created</text>
+
+              {/* Arrows */}
+              <line x1="160" y1="45" x2="196" y2="45" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow-cyan)" />
+              <line x1="350" y1="45" x2="386" y2="45" stroke="#50c878" strokeWidth="1.5" markerEnd="url(#arrow-green)" />
+              <line x1="550" y1="45" x2="586" y2="45" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow)" />
+
+              {/* Decision diamond */}
+              <rect x="390" y="100" width="160" height="50" rx="8" fill="rgba(255,180,50,0.06)" stroke="#ffb432" strokeWidth="1" strokeDasharray="4,3" />
+              <text x="470" y="120" textAnchor="middle" fill="#ffb432" fontSize="10" fontWeight="600">utilization {'>'} 70%?</text>
+              <text x="470" y="135" textAnchor="middle" fill="#8090a0" fontSize="9">devices / (routes × max_clients)</text>
+              <line x1="470" y1="70" x2="470" y2="96" stroke="#ffb432" strokeWidth="1" strokeDasharray="4,3" markerEnd="url(#arrow)" />
+
+              {/* Scale-up path */}
+              <text x="570" y="118" fill="#50c878" fontSize="9" fontWeight="600">yes → scale up</text>
+              <text x="570" y="133" fill="#8090a0" fontSize="8">target = devices / 50% capacity</text>
+
+              {/* No-op path */}
+              <text x="310" y="118" fill="#667080" fontSize="9">no → maintain pool</text>
+
+              {/* EXP3.S load balancing note */}
+              <rect x="10" y="100" width="230" height="50" rx="8" fill="rgba(100,180,255,0.06)" stroke="#64b4ff" strokeWidth="1" strokeDasharray="4,3" />
+              <text x="125" y="120" textAnchor="middle" fill="#64b4ff" fontSize="10" fontWeight="600">EXP3.S load balancing</text>
+              <text x="125" y="135" textAnchor="middle" fill="#8090a0" fontSize="8.5">overloaded routes → poor reward → less traffic</text>
+
+              {/* HLL detail */}
+              <rect x="10" y="165" width="700" height="28" rx="6" fill="rgba(255,255,255,0.02)" />
+              <text x="20" y="183" fill="#8090a0" fontSize="8.5">HyperLogLog: probabilistic data structure that counts unique device IDs per route with ~1% error. Each key has a 24-hour TTL, so counts reflect recent activity only.</text>
+            </svg>
+
+            <p>The system automatically scales VPS capacity using two complementary mechanisms:</p>
+
+            <p style={{ marginTop: "0.35rem" }}><strong>1. HLL-based pool scaling</strong> — Every successful client callback records the device ID in a Redis <strong>HyperLogLog</strong> (PFADD) per route. Every 30 minutes, the pool worker merges HLL counts (PFCOUNT) per location to get unique active devices. If utilization exceeds <strong>70%</strong> — calculated as <code style={{ background: "rgba(255,255,255,0.06)", padding: "1px 4px", borderRadius: "3px", fontSize: "0.65rem" }}>active_devices / (running_routes × max_clients_per_route)</code> — new VPS instances are provisioned to bring utilization down to ~50%. HLL keys expire after 24 hours, so the count naturally reflects the active device window.</p>
+
+            <p style={{ marginTop: "0.35rem" }}><strong>2. EXP3.S natural load balancing</strong> — There is no hard capacity cap on individual routes. Instead, when a route becomes overloaded, its latency increases, which produces <strong>worse rewards</strong> in the EXP3.S algorithm. The bandit then shifts traffic to faster routes within seconds. This adaptive loop means brief utilization spikes between pool worker cycles are handled gracefully — the bandit stops sending traffic to stressed routes before they drop connections.</p>
+
+            <p style={{ marginTop: "0.35rem" }}><strong>Base pool size</strong> is configured per track (the <code style={{ background: "rgba(255,255,255,0.06)", padding: "1px 4px", borderRadius: "3px", fontSize: "0.65rem" }}>vps_pool_size</code> setting). The pool worker maintains at least this many VPS instances per location, provisioning replacements when routes are deprecated or fail. Scale-up from device pressure adds routes <em>beyond</em> this baseline.</p>
+
+            <p style={{ marginTop: "0.35rem", color: "#667080" }}>Together: the pool worker ensures enough capacity exists (supply side), while EXP3.S distributes traffic optimally across available capacity (demand side). Neither mechanism alone is sufficient — the pool worker can't react faster than its 30-minute cycle, and EXP3.S can't create new infrastructure.</p>
+          </div>
         </div>
       </details>
       {/* Summary Cards */}
