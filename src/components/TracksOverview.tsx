@@ -40,7 +40,6 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
   useEffect(() => {
     const endMs = Date.now();
     const startMs = endMs - 7 * 86400000;
-    const stepSeconds = 3600; // 1h buckets
 
     // SigNoz v4 query_range format matching the existing "Throughput by Track" panel
     // SigNoz v5 builder format for time-series graph
