@@ -424,11 +424,11 @@ function TracksOverview() {
         // "global" = tracks with no target countries (serve everyone)
         result = result.filter((t) => !t.targetCountries || !Array.isArray(t.targetCountries) || t.targetCountries.length === 0);
       } else {
-        // Show only tracks that explicitly target this country.
-        // UNCENSORED/global tracks are excluded — "UNCENSORED" means
-        // non-censored countries, not "serve everyone including CN/IR".
+        // Show tracks that target this country OR have no country restriction
+        // (UNCENSORED tracks serve all countries including censored ones)
         result = result.filter((t) =>
-          Array.isArray(t.targetCountries) && t.targetCountries.includes(filterCountry)
+          (!t.targetCountries || !Array.isArray(t.targetCountries) || t.targetCountries.length === 0) ||
+          t.targetCountries.includes(filterCountry)
         );
       }
     }
