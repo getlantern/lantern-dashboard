@@ -352,7 +352,7 @@ function TracksOverview() {
         for (const qr of queryResult) {
           const seriesList = qr.series || [];
           for (const s of seriesList) {
-            const trackName = s.labels?.["proxy.track"] || s.labels?.[groupByKey] || "";
+            const trackName = s.labels?.["proxy.track"] || "";
             if (!trackName) continue;
             const values = s.values || [];
             if (values.length > 0) {
