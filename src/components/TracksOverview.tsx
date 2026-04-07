@@ -295,6 +295,7 @@ function TracksOverview() {
   const [filterTier, setFilterTier] = useState<FilterTier>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterCountry, setFilterCountry] = useState<string>("all");
   const [metrics, setMetrics] = useState<TrackMetrics | null>(null);
   const [metricsTimeRange, setMetricsTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("6h");
   const metricsLoadingRef = useRef(false);
@@ -414,11 +415,34 @@ function TracksOverview() {
     });
   }, []);
 
+  // Collect unique target countries across all tracks for the filter dropdown
+  const availableCountries = useMemo(() => {
+    const countries = new Set<string>();
+    for (const t of tracks) {
+      if (t.targetCountries && Array.isArray(t.targetCountries)) {
+        for (const c of t.targetCountries) countries.add(c);
+      }
+    }
+    return ["all", "global", ...Array.from(countries).sort()];
+  }, [tracks]);
+
   const filtered = useMemo(() => {
     let result = tracks;
     if (filterTier !== "all") result = result.filter((t) => t.tier.toUpperCase() === filterTier.toUpperCase());
     if (filterStatus === "withRoutes") result = result.filter((t) => t.vpsRunning > 0);
     else if (filterStatus === "empty") result = result.filter((t) => t.vpsRunning === 0);
+    if (filterCountry !== "all") {
+      if (filterCountry === "global") {
+        // "global" = tracks with no target countries (serve everyone)
+        result = result.filter((t) => !t.targetCountries || !Array.isArray(t.targetCountries) || t.targetCountries.length === 0);
+      } else {
+        // Show tracks that target this country OR have no country restriction
+        result = result.filter((t) =>
+          (!t.targetCountries || !Array.isArray(t.targetCountries) || t.targetCountries.length === 0) ||
+          t.targetCountries.includes(filterCountry)
+        );
+      }
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter((t) =>
@@ -429,7 +453,7 @@ function TracksOverview() {
       );
     }
     return result;
-  }, [tracks, filterTier, filterStatus, searchQuery]);
+  }, [tracks, filterTier, filterStatus, filterCountry, searchQuery]);
 
   const sorted = useMemo(() => {
     const mult = sortAsc ? 1 : -1;
@@ -572,6 +596,23 @@ function TracksOverview() {
               }}
             >
               {t}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: "0.2rem" }}>
+          {availableCountries.map((c) => (
+            <div
+              key={c}
+              onClick={() => setFilterCountry(c)}
+              style={{
+                ...chipStyle,
+                cursor: "pointer",
+                background: filterCountry === c ? "#e0606020" : "#ffffff08",
+                color: filterCountry === c ? "#e06060" : "#8890a0",
+                border: `1px solid ${filterCountry === c ? "#e0606030" : "transparent"}`,
+              }}
+            >
+              {c === "all" ? "all" : c === "global" ? "global" : c}
             </div>
           ))}
         </div>
