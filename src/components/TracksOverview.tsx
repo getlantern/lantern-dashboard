@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fetchTracks, fetchSigNozMetrics, type DashboardTrackDetail, type TrackMetrics } from "../api/client";
 
 const TIER_COLORS: Record<string, string> = {
@@ -29,6 +30,147 @@ function formatCount(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
   return String(Math.round(n));
+}
+
+// Per-track throughput chart — fetches 7d time-series from SigNoz on mount.
+function TrackThroughputChart({ trackName }: { trackName: string }) {
+  const [data, setData] = useState<{ ts: number; bps: number }[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const endMs = Date.now();
+    const startMs = endMs - 7 * 86400000;
+    const stepSeconds = 3600; // 1h buckets
+
+    // SigNoz v4 query_range format matching the existing "Throughput by Track" panel
+    const query = {
+      start: startMs * 1_000_000, // nanoseconds
+      end: endMs * 1_000_000,
+      step: stepSeconds,
+      compositeQuery: {
+        queryType: "builder",
+        panelType: "graph",
+        builderQueries: {
+          A: {
+            dataSource: "metrics",
+            queryName: "A",
+            aggregateAttribute: {
+              key: "proxy.io",
+              dataType: "float64",
+              type: "Sum",
+              isColumn: true,
+            },
+            timeAggregation: "rate",
+            spaceAggregation: "sum",
+            filters: {
+              items: [
+                {
+                  key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false },
+                  op: "=",
+                  value: "transmit",
+                },
+                {
+                  key: { key: "proxy.track", dataType: "string", type: "tag", isColumn: false },
+                  op: "=",
+                  value: trackName,
+                },
+              ],
+              op: "AND",
+            },
+            expression: "A",
+            disabled: false,
+            groupBy: [],
+            legend: trackName,
+            reduceTo: "avg",
+          },
+        },
+      },
+    };
+
+    fetchSigNozMetrics(query)
+      .then((resp) => {
+        // Parse SigNoz time-series response
+        const points: { ts: number; bps: number }[] = [];
+        const series = resp?.data?.result || resp?.data?.results?.[0]?.series || resp?.data?.results?.[0]?.list || [];
+        for (const s of series) {
+          const values = s.values || s.points || [];
+          for (const v of values) {
+            const ts = Number(v.timestamp || v[0]) || 0;
+            const val = parseFloat(v.value || v[1]) || 0;
+            // Convert to bits per second (* 8)
+            points.push({ ts: ts > 1e12 ? ts / 1e6 : ts * 1000, bps: val * 8 });
+          }
+        }
+        // Also try flat result format
+        if (points.length === 0 && resp?.data?.result) {
+          for (const r of Array.isArray(resp.data.result) ? resp.data.result : [resp.data.result]) {
+            for (const v of r.values || r.series || []) {
+              const ts = Number(v[0] || v.timestamp) || 0;
+              const val = parseFloat(v[1] || v.value) || 0;
+              points.push({ ts: ts > 1e12 ? ts / 1e6 : ts * 1000, bps: val * 8 });
+            }
+          }
+        }
+        points.sort((a, b) => a.ts - b.ts);
+        setData(points);
+      })
+      .catch(() => setError(true));
+  }, [trackName]);
+
+  if (error) {
+    return <div style={{ fontSize: "0.55rem", color: "#667080", padding: "0.5rem" }}>Failed to load chart</div>;
+  }
+  if (!data) {
+    return <div style={{ fontSize: "0.55rem", color: "#667080", padding: "0.5rem" }}>Loading chart...</div>;
+  }
+  if (data.length === 0) {
+    return <div style={{ fontSize: "0.55rem", color: "#667080", padding: "0.5rem" }}>No throughput data for this track</div>;
+  }
+
+  const maxBps = Math.max(...data.map((d) => d.bps));
+  const unit = maxBps >= 1e9 ? "Gbps" : maxBps >= 1e6 ? "Mbps" : maxBps >= 1e3 ? "Kbps" : "bps";
+  const divisor = maxBps >= 1e9 ? 1e9 : maxBps >= 1e6 ? 1e6 : maxBps >= 1e3 ? 1e3 : 1;
+  const chartData = data.map((d) => ({ ts: d.ts, value: d.bps / divisor }));
+
+  return (
+    <div style={{ width: "100%", height: 140 }}>
+      <div style={{ fontSize: "0.5rem", color: "#667080", marginBottom: "0.2rem", fontFamily: "var(--font-sans)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        Throughput (7 days) — {unit}
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={`grad-${trackName}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#f0a030" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#f0a030" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <XAxis
+            dataKey="ts"
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={(ts: number) => new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" })}
+            tick={{ fontSize: 9, fill: "#667080" }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            tick={{ fontSize: 9, fill: "#667080" }}
+            axisLine={false}
+            tickLine={false}
+            width={35}
+            tickFormatter={(v: number) => v.toFixed(1)}
+          />
+          <Tooltip
+            contentStyle={{ background: "#1a2030", border: "1px solid #ffffff10", borderRadius: 6, fontSize: "0.6rem", fontFamily: "var(--font-mono)" }}
+            labelFormatter={(ts: number) => new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            formatter={(v: number) => [`${v.toFixed(2)} ${unit}`, "Throughput"]}
+          />
+          <Area type="monotone" dataKey="value" stroke="#f0a030" strokeWidth={1.5} fill={`url(#grad-${trackName})`} dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 const card: CSSProperties = {
@@ -673,6 +815,11 @@ function TracksOverview() {
                       </div>
                     </div>
                   )}
+
+                  {/* Throughput chart */}
+                  <div style={{ gridColumn: "1 / -1", marginTop: "0.3rem", paddingTop: "0.4rem", borderTop: "1px solid #ffffff06" }}>
+                    <TrackThroughputChart trackName={track.name} />
+                  </div>
 
                   {/* VPS status breakdown */}
                   {totalVPS > 0 && (
