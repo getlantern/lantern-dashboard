@@ -448,7 +448,7 @@ function TracksOverview() {
       result = result.filter((t) =>
         t.name.toLowerCase().includes(q) ||
         t.protocol.toLowerCase().includes(q) ||
-        t.providers.some((p) => p.toLowerCase().includes(q)) ||
+        (t.providers || []).some((p) => p.toLowerCase().includes(q)) ||
         (t.description || "").toLowerCase().includes(q)
       );
     }
@@ -766,19 +766,19 @@ function TracksOverview() {
                 <div style={detailGrid}>
                   <div>
                     <div style={detailLabel}>Providers</div>
-                    <div>{track.providers.length > 0 ? track.providers.join(", ") : "none"}</div>
+                    <div>{track.providers?.length > 0 ? track.providers.join(", ") : "none"}</div>
                   </div>
                   <div>
                     <div style={detailLabel}>Platforms</div>
-                    <div>{track.platforms.length > 0 ? track.platforms.join(", ") : "all"}</div>
+                    <div>{track.platforms?.length > 0 ? track.platforms.join(", ") : "all"}</div>
                   </div>
                   <div>
                     <div style={detailLabel}>Target Regions</div>
-                    <div>{track.targetRegions.length > 0 ? track.targetRegions.join(", ") : "all"}</div>
+                    <div>{track.targetRegions?.length > 0 ? track.targetRegions.join(", ") : "all"}</div>
                   </div>
                   <div>
                     <div style={detailLabel}>Locations</div>
-                    <div>{track.locations.length > 0 ? track.locations.join(", ") : isBandit ? "all provider locations" : "n/a"}</div>
+                    <div>{track.locations?.length > 0 ? track.locations.join(", ") : isBandit ? "all provider locations" : "n/a"}</div>
                   </div>
                   <div>
                     <div style={detailLabel}>Client Version</div>
