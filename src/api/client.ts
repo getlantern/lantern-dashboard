@@ -265,7 +265,7 @@ export function fetchTracks(): Promise<DashboardTracksResponse> {
 // Posts a SigNoz v5 builder query to the API's /proxy/metrics endpoint.
 // Returns the raw SigNoz response (caller must parse the result structure).
 export async function fetchSigNozMetrics(body: object): Promise<any> {
-  const url = `${API_URL}/proxy/metrics`;
+  const url = `${API_URL}/v1/dashboard/metrics`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
