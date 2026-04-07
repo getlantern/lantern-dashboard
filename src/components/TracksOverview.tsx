@@ -65,7 +65,7 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
             limit: null,
             orderBy: [],
             reduceTo: "avg",
-            stepInterval: 0,
+            stepInterval: 300,
           },
         },
       },
@@ -75,23 +75,14 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
       .then((resp) => {
         // Parse SigNoz time-series response
         const points: { ts: number; bps: number }[] = [];
-        const series = resp?.data?.result || resp?.data?.results?.[0]?.series || resp?.data?.results?.[0]?.list || [];
-        for (const s of series) {
-          const values = s.values || s.points || [];
-          for (const v of values) {
-            const ts = Number(v.timestamp || v[0]) || 0;
-            const val = parseFloat(v.value || v[1]) || 0;
-            // Convert to bits per second (* 8)
-            points.push({ ts: ts > 1e12 ? ts / 1e6 : ts * 1000, bps: val * 8 });
-          }
-        }
-        // Also try flat result format
-        if (points.length === 0 && resp?.data?.result) {
-          for (const r of Array.isArray(resp.data.result) ? resp.data.result : [resp.data.result]) {
-            for (const v of r.values || r.series || []) {
-              const ts = Number(v[0] || v.timestamp) || 0;
-              const val = parseFloat(v[1] || v.value) || 0;
-              points.push({ ts: ts > 1e12 ? ts / 1e6 : ts * 1000, bps: val * 8 });
+        // SigNoz v4: data.result[0].series[].values[]
+        const queryResult = resp?.data?.result || [];
+        for (const qr of queryResult) {
+          for (const s of qr.series || []) {
+            for (const v of s.values || []) {
+              const ts = Number(v.timestamp) || 0;
+              const val = parseFloat(v.value) || 0;
+              points.push({ ts, bps: val * 8 });
             }
           }
         }
@@ -338,7 +329,7 @@ function TracksOverview() {
             limit: null,
             orderBy: [],
             reduceTo: "avg",
-            stepInterval: 0,
+            stepInterval: 300,
           },
         },
       },
@@ -356,16 +347,18 @@ function TracksOverview() {
     Promise.allSettled(queries.map(async ({ key, query }) => {
       try {
         const resp = await fetchSigNozMetrics(query);
-        // Parse SigNoz response: data.result[] has metric/values
-        const series = resp?.data?.result || resp?.data?.results?.[0]?.series || [];
-        for (const s of series) {
-          const trackName = s.metric?.["proxy.track"] || s.labelsArray?.find((l: any) => l.proxy?.track)?.proxy?.track || s.labels?.["proxy.track"] || "";
-          if (!trackName) continue;
-          // Get the latest or average value
-          const values = s.values || [];
-          if (values.length > 0) {
-            const sum = values.reduce((acc: number, v: any) => acc + (parseFloat(v.value || v[1]) || 0), 0);
-            result[key][trackName] = key === "throughputBps" ? (sum / values.length) * 8 : sum;
+        // SigNoz v4 response: data.result[0].series[] with labels + values
+        const queryResult = resp?.data?.result || [];
+        for (const qr of queryResult) {
+          const seriesList = qr.series || [];
+          for (const s of seriesList) {
+            const trackName = s.labels?.["proxy.track"] || s.labels?.[groupByKey] || "";
+            if (!trackName) continue;
+            const values = s.values || [];
+            if (values.length > 0) {
+              const sum = values.reduce((acc: number, v: any) => acc + (parseFloat(v.value || v[1]) || 0), 0);
+              result[key][trackName] = key === "throughputBps" ? (sum / values.length) * 8 : sum;
+            }
           }
         }
       } catch {
