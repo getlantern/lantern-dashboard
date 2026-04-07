@@ -55,8 +55,13 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
             aggregateAttribute: { key: "proxy.io", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
             timeAggregation: "rate",
             spaceAggregation: "sum",
-            filters: { items: [], op: "AND" },
-            filter: { expression: `(network.io.direction = 'transmit' AND proxy.track = '${trackName}')` },
+            filters: {
+              items: [
+                { key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: "transmit" },
+                { key: { key: "proxy.track", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: trackName },
+              ],
+              op: "AND",
+            },
             expression: "A",
             disabled: false,
             groupBy: [],
