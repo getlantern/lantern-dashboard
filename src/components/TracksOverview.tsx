@@ -163,8 +163,8 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
           />
           <Tooltip
             contentStyle={{ background: "#1a2030", border: "1px solid #ffffff10", borderRadius: 6, fontSize: "0.6rem", fontFamily: "var(--font-mono)" }}
-            labelFormatter={(ts: number) => new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-            formatter={(v: number) => [`${v.toFixed(2)} ${unit}`, "Throughput"]}
+            labelFormatter={(ts) => new Date(Number(ts)).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            formatter={(v) => [`${Number(v).toFixed(2)} ${unit}`, "Throughput"]}
           />
           <Area type="monotone" dataKey="value" stroke="#f0a030" strokeWidth={1.5} fill={`url(#grad-${trackName})`} dot={false} />
         </AreaChart>
