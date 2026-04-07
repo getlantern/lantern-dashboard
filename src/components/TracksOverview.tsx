@@ -43,10 +43,10 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
     const stepSeconds = 3600; // 1h buckets
 
     // SigNoz v4 query_range format matching the existing "Throughput by Track" panel
+    // SigNoz v5 builder format for time-series graph
     const query = {
-      start: startMs * 1_000_000, // nanoseconds
-      end: endMs * 1_000_000,
-      step: stepSeconds,
+      start: startMs,
+      end: endMs,
       compositeQuery: {
         queryType: "builder",
         panelType: "graph",
@@ -54,34 +54,23 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
           A: {
             dataSource: "metrics",
             queryName: "A",
-            aggregateAttribute: {
-              key: "proxy.io",
-              dataType: "float64",
-              type: "Sum",
-              isColumn: true,
-            },
-            timeAggregation: "rate",
-            spaceAggregation: "sum",
-            filters: {
-              items: [
-                {
-                  key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false },
-                  op: "=",
-                  value: "transmit",
-                },
-                {
-                  key: { key: "proxy.track", dataType: "string", type: "tag", isColumn: false },
-                  op: "=",
-                  value: trackName,
-                },
-              ],
-              op: "AND",
+            aggregations: [{
+              metricName: "proxy.io",
+              reduceTo: "avg",
+              spaceAggregation: "sum",
+              timeAggregation: "rate",
+            }],
+            filter: {
+              expression: `(network.io.direction = 'transmit' AND proxy.track = '${trackName}')`,
             },
             expression: "A",
             disabled: false,
             groupBy: [],
             legend: trackName,
-            reduceTo: "avg",
+            having: { expression: "" },
+            limit: null,
+            orderBy: [],
+            stepInterval: 0,
           },
         },
       },
@@ -331,6 +320,7 @@ function TracksOverview() {
     const endMs = Date.now();
     const startMs = endMs - (rangeMs[metricsTimeRange] || 21600000);
 
+    // SigNoz v5 builder format — matches the existing "Track Performance Overview" dashboard panels.
     const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterExpr: string, groupByKey: string) => ({
       start: startMs,
       end: endMs,
@@ -341,16 +331,21 @@ function TracksOverview() {
           A: {
             dataSource: "metrics",
             queryName: "A",
-            aggregateAttribute: { key: metricName, dataType: "float64", type: "Sum", isColumn: true },
-            timeAggregation: timeAgg,
-            spaceAggregation: spaceAgg,
-            filters: { items: [], op: "AND" },
+            aggregations: [{
+              metricName,
+              reduceTo: "avg",
+              spaceAggregation: spaceAgg,
+              timeAggregation: timeAgg,
+            }],
+            filter: { expression: filterExpr || "" },
             expression: "A",
             disabled: false,
-            groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false }],
+            groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }],
             legend: `{{${groupByKey}}}`,
-            reduceTo: "avg",
-            ...(filterExpr ? { having: { expression: filterExpr } } : {}),
+            having: { expression: "" },
+            limit: null,
+            orderBy: [],
+            stepInterval: 0,
           },
         },
       },
