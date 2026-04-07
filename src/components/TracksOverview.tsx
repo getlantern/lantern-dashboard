@@ -811,13 +811,13 @@ function TracksOverview() {
                   {track.targetCountries && (
                     <div>
                       <div style={detailLabel}>Target Countries</div>
-                      <div>{track.targetCountries}</div>
+                      <div>{Array.isArray(track.targetCountries) ? track.targetCountries.join(", ") : String(track.targetCountries)}</div>
                     </div>
                   )}
                   {track.excludedCountries && (
                     <div>
                       <div style={detailLabel}>Excluded Countries</div>
-                      <div>{track.excludedCountries}</div>
+                      <div>{Array.isArray(track.excludedCountries) ? track.excludedCountries.join(", ") : String(track.excludedCountries)}</div>
                     </div>
                   )}
                   {track.dockerImage && (
