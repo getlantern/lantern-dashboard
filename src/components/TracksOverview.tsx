@@ -316,7 +316,7 @@ function TracksOverview() {
     const startMs = endMs - (rangeMs[metricsTimeRange] || 21600000);
 
     // SigNoz v5 builder format — matches the existing "Track Performance Overview" dashboard panels.
-    const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterExpr: string, groupByKey: string) => ({
+    const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, _filterExpr: string, groupByKey: string) => ({
       start: startMs,
       end: endMs,
       compositeQuery: {
