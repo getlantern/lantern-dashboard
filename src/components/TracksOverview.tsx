@@ -42,7 +42,6 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
     const startMs = endMs - 7 * 86400000;
 
     // SigNoz v4 query_range format matching the existing "Throughput by Track" panel
-    // SigNoz v5 builder format for time-series graph
     const query = {
       start: startMs,
       end: endMs,
@@ -53,22 +52,19 @@ function TrackThroughputChart({ trackName }: { trackName: string }) {
           A: {
             dataSource: "metrics",
             queryName: "A",
-            aggregations: [{
-              metricName: "proxy.io",
-              reduceTo: "avg",
-              spaceAggregation: "sum",
-              timeAggregation: "rate",
-            }],
-            filter: {
-              expression: `(network.io.direction = 'transmit' AND proxy.track = '${trackName}')`,
-            },
+            aggregateAttribute: { key: "proxy.io", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+            timeAggregation: "rate",
+            spaceAggregation: "sum",
+            filters: { items: [], op: "AND" },
+            filter: { expression: `(network.io.direction = 'transmit' AND proxy.track = '${trackName}')` },
             expression: "A",
             disabled: false,
             groupBy: [],
             legend: trackName,
-            having: { expression: "" },
+            having: [],
             limit: null,
             orderBy: [],
+            reduceTo: "avg",
             stepInterval: 0,
           },
         },
@@ -330,20 +326,18 @@ function TracksOverview() {
           A: {
             dataSource: "metrics",
             queryName: "A",
-            aggregations: [{
-              metricName,
-              reduceTo: "avg",
-              spaceAggregation: spaceAgg,
-              timeAggregation: timeAgg,
-            }],
-            filter: { expression: filterExpr || "" },
+            aggregateAttribute: { key: metricName, dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+            timeAggregation: timeAgg,
+            spaceAggregation: spaceAgg,
+            filters: { items: [], op: "AND" },
             expression: "A",
             disabled: false,
             groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }],
             legend: `{{${groupByKey}}}`,
-            having: { expression: "" },
+            having: [],
             limit: null,
             orderBy: [],
+            reduceTo: "avg",
             stepInterval: 0,
           },
         },
