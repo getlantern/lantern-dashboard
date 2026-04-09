@@ -10,7 +10,7 @@ interface VPSOverviewProps {
 
 const STATUS_COLORS: Record<string, string> = {
   running: "#a0c8a0",
-  configuring: "#80b0e0",
+  configuring: "#f0a030",
   provisioning: "#f0a030",
   pending: "#667080",
 };
@@ -135,6 +135,7 @@ const badgeBase: CSSProperties = {
 
 function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
   const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
+  const [copiedRouteId, setCopiedRouteId] = useState<string | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -392,24 +393,24 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                           )}
                         </span>
 
-                        {/* SSH command */}
-                        <span
-                          title="Click to copy: ssh lantern@vps-..."
+                        {/* SSH command — copy to clipboard */}
+                        <button
+                          type="button"
+                          aria-label={`Copy SSH command for vps-${route.id.substring(0, 8)}`}
+                          title={`Copy: ssh lantern@vps-${route.id.substring(0, 8)}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             const cmd = `ssh lantern@vps-${route.id.substring(0, 8)}`;
-                            navigator.clipboard.writeText(cmd);
-                            const icon = e.currentTarget.querySelector('.copy-icon') as HTMLElement;
-                            if (icon) {
-                              icon.textContent = '✓';
-                              icon.style.color = 'var(--accent-primary)';
-                              setTimeout(() => { icon.textContent = '⎘'; icon.style.color = '#667080'; }, 1200);
-                            }
+                            navigator.clipboard.writeText(cmd).then(() => {
+                              setCopiedRouteId(route.id);
+                              setTimeout(() => setCopiedRouteId((prev) => prev === route.id ? null : prev), 1200);
+                            });
                           }}
                           style={{
+                            all: "unset",
                             fontFamily: "var(--font-mono)",
                             fontSize: "0.52rem",
-                            color: "#667080",
+                            color: copiedRouteId === route.id ? "var(--accent-primary)" : "#667080",
                             cursor: "pointer",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -419,9 +420,11 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                             gap: "3px",
                           }}
                         >
-                          <span className="copy-icon" style={{ fontSize: "0.7rem", opacity: 0.7 }}>⎘</span>
+                          <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>
+                            {copiedRouteId === route.id ? "✓" : "⎘"}
+                          </span>
                           vps-{route.id.substring(0, 8)}
-                        </span>
+                        </button>
                       </div>
                     );
                   })}
