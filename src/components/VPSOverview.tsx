@@ -394,14 +394,17 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
 
                         {/* SSH command */}
                         <span
-                          title="Click to copy SSH command"
+                          title="Click to copy: ssh lantern@vps-..."
                           onClick={(e) => {
                             e.stopPropagation();
                             const cmd = `ssh lantern@vps-${route.id.substring(0, 8)}`;
                             navigator.clipboard.writeText(cmd);
-                            const el = e.currentTarget;
-                            el.style.color = "var(--accent-primary)";
-                            setTimeout(() => { el.style.color = "#667080"; }, 1000);
+                            const icon = e.currentTarget.querySelector('.copy-icon') as HTMLElement;
+                            if (icon) {
+                              icon.textContent = '✓';
+                              icon.style.color = 'var(--accent-primary)';
+                              setTimeout(() => { icon.textContent = '⎘'; icon.style.color = '#667080'; }, 1200);
+                            }
                           }}
                           style={{
                             fontFamily: "var(--font-mono)",
@@ -411,8 +414,12 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "3px",
                           }}
                         >
+                          <span className="copy-icon" style={{ fontSize: "0.7rem", opacity: 0.7 }}>⎘</span>
                           vps-{route.id.substring(0, 8)}
                         </span>
                       </div>
