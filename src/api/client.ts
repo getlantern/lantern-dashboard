@@ -332,8 +332,8 @@ export interface TrackMetrics {
 // ── Admin actions ──
 
 export interface BanditResetResponse {
-  keys_found: number;
-  keys_deleted: number;
+  keysFound: number;
+  keysDeleted: number;
 }
 
 export async function resetBanditData(): Promise<BanditResetResponse> {
@@ -342,7 +342,11 @@ export async function resetBanditData(): Promise<BanditResetResponse> {
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const res = await fetch(url, { method: "POST", headers });
   if (!res.ok) throw new Error(`Bandit reset failed: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return {
+    keysFound: data.keys_found,
+    keysDeleted: data.keys_deleted,
+  };
 }
 
 export function getStreamURL(): string {

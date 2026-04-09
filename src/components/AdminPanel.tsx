@@ -95,15 +95,16 @@ export default function AdminPanel() {
             </span>
             <button
               onClick={handleReset}
+              disabled={resetting}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "0.6rem",
                 padding: "0.35rem 0.8rem",
                 borderRadius: "var(--radius-sm)",
-                background: "#ff4060",
+                background: resetting ? "#ff406080" : "#ff4060",
                 color: "#fff",
                 border: "none",
-                cursor: "pointer",
+                cursor: resetting ? "not-allowed" : "pointer",
                 textTransform: "uppercase",
                 letterSpacing: "0.06em",
               }}
@@ -141,7 +142,7 @@ export default function AdminPanel() {
             fontSize: "0.6rem",
             color: "var(--accent-primary)",
           }}>
-            Reset complete: {result.keys_deleted} / {result.keys_found} keys deleted
+            Reset complete: {result.keysDeleted} / {result.keysFound} keys deleted
           </div>
         )}
 

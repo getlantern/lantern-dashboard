@@ -138,7 +138,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : tab === "arms" ? "Bandit Arms" : tab === "tracks" ? "Tracks" : tab === "proxy" ? "Share Proxy" : "Admin"}
+              {{ map: "Map", vps: "VPS Fleet", arms: "Bandit Arms", tracks: "Tracks", proxy: "Share Proxy", admin: "Admin" }[tab]}
             </div>
           ))}
         </div>
