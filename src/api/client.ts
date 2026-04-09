@@ -329,6 +329,26 @@ export interface TrackMetrics {
   selections: Record<string, number>;        // track name → selection count
 }
 
+// ── Admin actions ──
+
+export interface BanditResetResponse {
+  keysFound: number;
+  keysDeleted: number;
+}
+
+export async function resetBanditData(): Promise<BanditResetResponse> {
+  const url = `${API_URL}/v1/dashboard/bandit/reset`;
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(url, { method: "POST", headers });
+  if (!res.ok) throw new Error(`Bandit reset failed: ${res.status}`);
+  const data = await res.json();
+  return {
+    keysFound: data.keys_found,
+    keysDeleted: data.keys_deleted,
+  };
+}
+
 export function getStreamURL(): string {
   const url = new URL(`${API_URL}/v1/dashboard/stream`);
   if (authToken) url.searchParams.set("token", authToken);
