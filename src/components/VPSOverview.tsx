@@ -10,7 +10,7 @@ interface VPSOverviewProps {
 
 const STATUS_COLORS: Record<string, string> = {
   running: "#a0c8a0",
-  configuring: "#f0a030",
+  configuring: "#80b0e0",
   provisioning: "#f0a030",
   pending: "#667080",
 };
