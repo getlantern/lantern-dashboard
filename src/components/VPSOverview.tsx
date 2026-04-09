@@ -10,7 +10,7 @@ interface VPSOverviewProps {
 
 const STATUS_COLORS: Record<string, string> = {
   running: "#a0c8a0",
-  configuring: "#f0a030",
+  configuring: "#80b0e0",
   provisioning: "#f0a030",
   pending: "#667080",
 };
@@ -112,7 +112,7 @@ const trackHeaderStyle: CSSProperties = {
 
 const rowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "20px 1fr 0.7fr 0.6fr 0.5fr 0.6fr 0.5fr",
+  gridTemplateColumns: "20px 1fr 0.7fr 0.6fr 0.5fr 0.6fr 0.5fr 0.7fr",
   alignItems: "center",
   gap: "0.5rem",
   padding: "0.4rem 1rem 0.4rem 3rem",
@@ -298,6 +298,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
           <span>Uptime</span>
           <span>Assignments</span>
           <span>Status</span>
+          <span>SSH</span>
         </div>
 
         {regionGroups.map((region) => {
@@ -389,6 +390,30 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                               {route.status}
                             </span>
                           )}
+                        </span>
+
+                        {/* SSH command */}
+                        <span
+                          title="Click to copy SSH command"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const cmd = `ssh lantern@vps-${route.id.substring(0, 8)}`;
+                            navigator.clipboard.writeText(cmd);
+                            const el = e.currentTarget;
+                            el.style.color = "var(--accent-primary)";
+                            setTimeout(() => { el.style.color = "#667080"; }, 1000);
+                          }}
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "0.52rem",
+                            color: "#667080",
+                            cursor: "pointer",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          vps-{route.id.substring(0, 8)}
                         </span>
                       </div>
                     );
