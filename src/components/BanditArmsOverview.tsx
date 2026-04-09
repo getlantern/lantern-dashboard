@@ -247,18 +247,18 @@ const ispRowStyle: CSSProperties = {
 const armRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: "0.75rem",
-  padding: "0.55rem 0.75rem 0.55rem 2.5rem",
+  gap: "0.5rem",
+  padding: "0.3rem 0.75rem 0.3rem 2.5rem",
   borderBottom: "1px solid #ffffff03",
   fontFamily: "var(--font-mono)",
-  fontSize: "0.85rem",
+  fontSize: "0.7rem",
   color: "#a0a8b8",
 };
 
 const chipStyle: CSSProperties = {
   fontFamily: "var(--font-mono)",
-  fontSize: "0.7rem",
-  padding: "0.2rem 0.5rem",
+  fontSize: "0.58rem",
+  padding: "0.12rem 0.35rem",
   borderRadius: "3px",
   background: "#ffffff08",
   color: "#8890a0",
@@ -267,8 +267,8 @@ const chipStyle: CSSProperties = {
 
 const blockedBadge: CSSProperties = {
   fontFamily: "var(--font-mono)",
-  fontSize: "0.6rem",
-  padding: "0.15rem 0.4rem",
+  fontSize: "0.5rem",
+  padding: "0.1rem 0.35rem",
   borderRadius: "3px",
   background: "#e0606020",
   color: "#e06060",
@@ -306,7 +306,7 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
       {hasTests && sr != null && (
         <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px", flexShrink: 0 }}>
           <MiniBar value={sr} color={srColor} />
-          <span style={{ color: srColor, fontSize: "0.7rem", minWidth: "32px", textAlign: "right" }}>
+          <span style={{ color: srColor, fontSize: "0.58rem", minWidth: "32px", textAlign: "right" }}>
             {Math.round(sr * 100)}%
           </span>
         </div>
