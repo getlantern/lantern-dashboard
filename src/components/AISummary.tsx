@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://api.staging.iantem.io";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.iantem.io";
 
 interface SummaryData {
   text: string;
