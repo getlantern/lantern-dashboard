@@ -12,6 +12,7 @@ import VPSOverview from "./VPSOverview";
 import BanditArmsOverview from "./BanditArmsOverview";
 import TracksOverview from "./TracksOverview";
 import AISummary from "./AISummary";
+import AdminPanel from "./AdminPanel";
 import type { GlobalStats } from "../data/mock";
 
 function LanternLogo() {
@@ -33,15 +34,16 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms' | 'tracks' | 'proxy'>(() => {
+  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms' | 'tracks' | 'proxy' | 'admin'>(() => {
     const hash = window.location.hash;
     if (hash === '#vps') return 'vps';
     if (hash === '#arms') return 'arms';
     if (hash === '#tracks') return 'tracks';
     if (hash === '#proxy') return 'proxy';
+    if (hash === '#admin') return 'admin';
     return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms' | 'tracks' | 'proxy') => {
+  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms' | 'tracks' | 'proxy' | 'admin') => {
     setActiveTab(tab);
     window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
@@ -118,7 +120,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "vps", "arms", "tracks", "proxy"] as const).map((tab) => (
+          {(["map", "vps", "arms", "tracks", "proxy", "admin"] as const).map((tab) => (
             <div
               key={tab}
               onClick={() => switchTab(tab)}
@@ -136,7 +138,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : tab === "arms" ? "Bandit Arms" : tab === "tracks" ? "Tracks" : "Share Proxy"}
+              {tab === "map" ? "Map" : tab === "vps" ? "VPS Fleet" : tab === "arms" ? "Bandit Arms" : tab === "tracks" ? "Tracks" : tab === "proxy" ? "Share Proxy" : "Admin"}
             </div>
           ))}
         </div>
@@ -223,6 +225,8 @@ export default function Dashboard() {
           <div style={{ flex: 1, padding: "1rem" }}>
             <ProxyWidget {...proxy} />
           </div>
+        ) : activeTab === "admin" ? (
+          <AdminPanel />
         ) : (
         <div className="map-section">
           <div className="map-header">
