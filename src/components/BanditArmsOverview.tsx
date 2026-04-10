@@ -399,112 +399,18 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   );
 }
 
-function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
-  const regionToCity = useMemo(() => {
-    const map = new Map<string, string>();
-    if (dataCenters) {
-      for (const dc of dataCenters) {
-        if (dc.city) map.set(dc.regionName, dc.city);
-      }
-    }
-    return map;
-  }, [dataCenters]);
-  const asnDB = useASNNames();
-  const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
-  const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
-  const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
-  const [loadingCountries, setLoadingCountries] = useState<Set<string>>(new Set());
-
-  const sorted = useMemo(
-    () => [...countries].sort((a, b) => b.asnCount - a.asnCount),
-    [countries],
-  );
-
-  const totalASNs = useMemo(() => {
-    let total = 0;
-    for (const c of countries) {
-      const cached = asnCache.get(c.country);
-      total += cached ? cached.length : c.asnCount;
-    }
-    return total;
-  }, [countries, asnCache]);
-
-  const weightedBlockRate = useMemo(() => {
-    const totalWeight = countries.reduce((s, c) => s + c.asnCount, 0);
-    if (totalWeight === 0) return 0;
-    return countries.reduce((s, c) => s + c.avgBlockRate * c.asnCount, 0) / totalWeight;
-  }, [countries]);
-
-  const weightedEntropy = useMemo(() => {
-    const totalWeight = countries.reduce((s, c) => s + c.asnCount, 0);
-    if (totalWeight === 0) return 0;
-    return countries.reduce((s, c) => s + c.avgEntropy * c.asnCount, 0) / totalWeight;
-  }, [countries]);
-
-  // Fetch ASN data for all countries and refresh every 30s
-  useEffect(() => {
-    const refreshAll = () => {
-      for (const c of countries) {
-        fetchASNs(c.country)
-          .then((data) => setAsnCache((prev) => new Map(prev).set(c.country, data)))
-          .catch(() => {});
-      }
-    };
-    refreshAll();
-    const interval = setInterval(refreshAll, 30000);
-    return () => clearInterval(interval);
-  }, [countries]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleCountry = useCallback(async (countryCode: string) => {
-    setExpandedCountries((prev) => {
-      const next = new Set(prev);
-      if (next.has(countryCode)) {
-        next.delete(countryCode);
-        return next;
-      }
-      next.add(countryCode);
-      return next;
-    });
-
-    if (!loadingCountries.has(countryCode)) {
-      setLoadingCountries((prev) => new Set(prev).add(countryCode));
-      try {
-        const data = await fetchASNs(countryCode);
-        setAsnCache((prev) => new Map(prev).set(countryCode, data));
-      } catch {
-        // Keep existing cache on error rather than clearing
-      } finally {
-        setLoadingCountries((prev) => {
-          const next = new Set(prev);
-          next.delete(countryCode);
-          return next;
-        });
-      }
-    }
-  }, [loadingCountries]);
-
-  const toggleASN = useCallback((key: string) => {
-    setExpandedASNs((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
-
-  if (countries.length === 0) {
-    return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
-        {isLive ? "No bandit data available" : "Connecting to API..."}
-      </div>
-    );
-  }
+export function BanditHowItWorks({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const padding = isOpen ? "1rem 1.25rem" : "0.5rem 0.75rem";
+  const summarySize = isOpen ? "0.9rem" : "0.75rem";
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
-      {/* How It Works */}
-      <details style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
-        <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: "0.75rem" }}>How the bandit works</summary>
+    <details
+      open={isOpen}
+      onToggle={(e) => setIsOpen((e.target as HTMLDetailsElement).open)}
+      style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding, fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}
+    >
+      <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: summarySize }}>How the bandit works</summary>
         <div style={{ marginTop: "0.5rem" }}>
           {/* Feedback Loop Diagram */}
           <svg viewBox="0 0 720 280" style={{ width: "100%", maxWidth: "720px", margin: "0.5rem 0" }}>
@@ -657,7 +563,114 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
             <p style={{ marginTop: "0.35rem", color: "#667080" }}>Together: the pool worker ensures enough capacity exists (supply side), while EXP3.S distributes traffic optimally across available capacity (demand side). Neither mechanism alone is sufficient — the pool worker can't react faster than its 30-minute cycle, and EXP3.S can't create new infrastructure.</p>
           </div>
         </div>
-      </details>
+    </details>
+  );
+}
+
+function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
+  const regionToCity = useMemo(() => {
+    const map = new Map<string, string>();
+    if (dataCenters) {
+      for (const dc of dataCenters) {
+        if (dc.city) map.set(dc.regionName, dc.city);
+      }
+    }
+    return map;
+  }, [dataCenters]);
+  const asnDB = useASNNames();
+  const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
+  const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
+  const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
+  const [loadingCountries, setLoadingCountries] = useState<Set<string>>(new Set());
+
+  const sorted = useMemo(
+    () => [...countries].sort((a, b) => b.asnCount - a.asnCount),
+    [countries],
+  );
+
+  const totalASNs = useMemo(() => {
+    let total = 0;
+    for (const c of countries) {
+      const cached = asnCache.get(c.country);
+      total += cached ? cached.length : c.asnCount;
+    }
+    return total;
+  }, [countries, asnCache]);
+
+  const weightedBlockRate = useMemo(() => {
+    const totalWeight = countries.reduce((s, c) => s + c.asnCount, 0);
+    if (totalWeight === 0) return 0;
+    return countries.reduce((s, c) => s + c.avgBlockRate * c.asnCount, 0) / totalWeight;
+  }, [countries]);
+
+  const weightedEntropy = useMemo(() => {
+    const totalWeight = countries.reduce((s, c) => s + c.asnCount, 0);
+    if (totalWeight === 0) return 0;
+    return countries.reduce((s, c) => s + c.avgEntropy * c.asnCount, 0) / totalWeight;
+  }, [countries]);
+
+  // Fetch ASN data for all countries and refresh every 30s
+  useEffect(() => {
+    const refreshAll = () => {
+      for (const c of countries) {
+        fetchASNs(c.country)
+          .then((data) => setAsnCache((prev) => new Map(prev).set(c.country, data)))
+          .catch(() => {});
+      }
+    };
+    refreshAll();
+    const interval = setInterval(refreshAll, 30000);
+    return () => clearInterval(interval);
+  }, [countries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleCountry = useCallback(async (countryCode: string) => {
+    setExpandedCountries((prev) => {
+      const next = new Set(prev);
+      if (next.has(countryCode)) {
+        next.delete(countryCode);
+        return next;
+      }
+      next.add(countryCode);
+      return next;
+    });
+
+    if (!loadingCountries.has(countryCode)) {
+      setLoadingCountries((prev) => new Set(prev).add(countryCode));
+      try {
+        const data = await fetchASNs(countryCode);
+        setAsnCache((prev) => new Map(prev).set(countryCode, data));
+      } catch {
+        // Keep existing cache on error rather than clearing
+      } finally {
+        setLoadingCountries((prev) => {
+          const next = new Set(prev);
+          next.delete(countryCode);
+          return next;
+        });
+      }
+    }
+  }, [loadingCountries]);
+
+  const toggleASN = useCallback((key: string) => {
+    setExpandedASNs((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  if (countries.length === 0) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
+        {isLive ? "No bandit data available" : "Connecting to API..."}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
+      <BanditHowItWorks />
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
         <Tip text="Countries where Lantern clients are actively connecting through the bandit-based route selection system.">

@@ -9,7 +9,7 @@ import StatsRow from "./StatsRow";
 import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
 import VPSOverview from "./VPSOverview";
-import BanditArmsOverview from "./BanditArmsOverview";
+import BanditArmsOverview, { BanditHowItWorks } from "./BanditArmsOverview";
 import TracksOverview from "./TracksOverview";
 import AISummary from "./AISummary";
 import AdminPanel from "./AdminPanel";
@@ -34,8 +34,9 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'vps' | 'arms' | 'tracks' | 'proxy' | 'admin'>(() => {
+  const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'tracks' | 'proxy' | 'admin'>(() => {
     const hash = window.location.hash;
+    if (hash === '#overview') return 'overview';
     if (hash === '#vps') return 'vps';
     if (hash === '#arms') return 'arms';
     if (hash === '#tracks') return 'tracks';
@@ -43,7 +44,7 @@ export default function Dashboard() {
     if (hash === '#admin') return 'admin';
     return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'vps' | 'arms' | 'tracks' | 'proxy' | 'admin') => {
+  const switchTab = useCallback((tab: 'map' | 'overview' | 'vps' | 'arms' | 'tracks' | 'proxy' | 'admin') => {
     setActiveTab(tab);
     window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
@@ -120,7 +121,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "vps", "arms", "tracks", "proxy", "admin"] as const).map((tab) => (
+          {(["map", "overview", "vps", "arms", "tracks", "proxy", "admin"] as const).map((tab) => (
             <div
               key={tab}
               onClick={() => switchTab(tab)}
@@ -138,7 +139,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {{ map: "Map", vps: "VPS Fleet", arms: "Bandit Arms", tracks: "Tracks", proxy: "Share Proxy", admin: "Admin" }[tab]}
+              {{ map: "Map", overview: "Overview", vps: "VPS Fleet", arms: "Bandit Arms", tracks: "Tracks", proxy: "Share Proxy", admin: "Admin" }[tab]}
             </div>
           ))}
         </div>
@@ -210,7 +211,11 @@ export default function Dashboard() {
       </header>
 
       <div className="main-layout">
-        {activeTab === "vps" ? (
+        {activeTab === "overview" ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
+            <BanditHowItWorks defaultOpen />
+          </div>
+        ) : activeTab === "vps" ? (
           <VPSOverview
             routes={vpsData.routes}
             summary={vpsData.summary}
