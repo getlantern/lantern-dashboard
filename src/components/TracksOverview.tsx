@@ -11,6 +11,31 @@ const TIER_COLORS: Record<string, string> = {
   New: "#f0a030",
 };
 
+const REGION_NAMES: Record<string, string> = {
+  nyc1: "New York", nyc2: "New York", nyc3: "New York",
+  sfo1: "San Francisco", sfo2: "San Francisco", sfo3: "San Francisco",
+  ams2: "Amsterdam", ams3: "Amsterdam",
+  sgp1: "Singapore",
+  lon1: "London",
+  fra1: "Frankfurt",
+  tor1: "Toronto",
+  blr1: "Bangalore",
+  syd1: "Sydney",
+  "us-east-1": "Virginia", "us-east-2": "Ohio", "us-west-1": "N. California", "us-west-2": "Oregon",
+  "eu-west-1": "Ireland", "eu-west-2": "London", "eu-central-1": "Frankfurt",
+  "ap-southeast-1": "Singapore", "ap-northeast-1": "Tokyo", "ap-south-1": "Mumbai",
+  "ca-central-1": "Montreal",
+};
+
+function humanizeLocation(loc: string): string {
+  return REGION_NAMES[loc] || loc.replace(/[-_]\d+$/, "").replace(/[-_]/g, " ");
+}
+
+function humanizeLocations(locations: string[]): string {
+  const cities = [...new Set(locations.map(humanizeLocation))];
+  return cities.join(", ");
+}
+
 const STATUS_COLORS: Record<string, string> = {
   running: "#a0c8a0",
   configuring: "#80b0e0",
@@ -765,7 +790,7 @@ function TracksOverview() {
                   </div>
                   <div>
                     <div style={detailLabel}>Locations</div>
-                    <div>{track.locations?.length > 0 ? track.locations.join(", ") : isBandit ? "all provider locations" : "n/a"}</div>
+                    <div>{track.locations?.length > 0 ? humanizeLocations(track.locations) : isBandit ? "all provider locations" : "n/a"}</div>
                   </div>
                   <div>
                     <div style={detailLabel}>Client Version</div>
@@ -780,10 +805,6 @@ function TracksOverview() {
                       <div>
                         <div style={detailLabel}>Pool Size</div>
                         <div>{track.vpsPoolSize} per location</div>
-                      </div>
-                      <div>
-                        <div style={detailLabel}>Max Clients/Route</div>
-                        <div>{track.vpsMaxClientsPerRoute || "unlimited"}</div>
                       </div>
                       <div>
                         <div style={detailLabel}>Route Age</div>
