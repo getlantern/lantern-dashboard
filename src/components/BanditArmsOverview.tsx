@@ -399,19 +399,18 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   );
 }
 
-export function BanditHowItWorks({ defaultOpen = false }: { defaultOpen?: boolean }) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  const padding = isOpen ? "1rem 1.25rem" : "0.5rem 0.75rem";
-  const summarySize = isOpen ? "0.9rem" : "0.75rem";
-
+export function BanditHowItWorks() {
   return (
-    <details
-      open={isOpen}
-      onToggle={(e) => setIsOpen((e.target as HTMLDetailsElement).open)}
-      style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding, fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}
-    >
-      <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: summarySize }}>How the bandit works</summary>
-        <div style={{ marginTop: "0.5rem" }}>
+    <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "1rem 1.25rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
+      <div style={{ color: "#c0c8d4", fontWeight: 600, fontSize: "0.9rem", marginBottom: "0.5rem" }}>How the bandit works</div>
+      <BanditHowItWorksContent />
+    </div>
+  );
+}
+
+function BanditHowItWorksContent() {
+  return (
+        <div>
           {/* Feedback Loop Diagram */}
           <svg viewBox="0 0 720 280" style={{ width: "100%", maxWidth: "720px", margin: "0.5rem 0" }}>
             <defs>
@@ -563,7 +562,6 @@ export function BanditHowItWorks({ defaultOpen = false }: { defaultOpen?: boolea
             <p style={{ marginTop: "0.35rem", color: "#667080" }}>Together: the pool worker ensures enough capacity exists (supply side), while EXP3.S distributes traffic optimally across available capacity (demand side). Neither mechanism alone is sufficient — the pool worker can't react faster than its 30-minute cycle, and EXP3.S can't create new infrastructure.</p>
           </div>
         </div>
-    </details>
   );
 }
 
@@ -670,7 +668,10 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
-      <BanditHowItWorks />
+      <details style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
+        <summary style={{ cursor: "pointer", color: "#c0c8d4", fontWeight: 600, fontSize: "0.75rem" }}>How the bandit works</summary>
+        <BanditHowItWorksContent />
+      </details>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
         <Tip text="Countries where Lantern clients are actively connecting through the bandit-based route selection system.">

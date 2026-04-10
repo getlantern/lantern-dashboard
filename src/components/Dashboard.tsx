@@ -213,7 +213,7 @@ export default function Dashboard() {
       <div className="main-layout">
         {activeTab === "overview" ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
-            <BanditHowItWorks defaultOpen />
+            <BanditHowItWorks />
           </div>
         ) : activeTab === "vps" ? (
           <VPSOverview
