@@ -28,7 +28,13 @@ const REGION_NAMES: Record<string, string> = {
 };
 
 function humanizeLocation(loc: string): string {
-  return REGION_NAMES[loc] || loc.replace(/[-_]\d+$/, "").replace(/[-_]/g, " ");
+  if (REGION_NAMES[loc]) return REGION_NAMES[loc];
+  // Strip cloud prefixes (ap-, us-, eu-, ca-, me-, af-, sa-) and trailing numbers
+  const cleaned = loc
+    .replace(/^(ap|us|eu|ca|me|af|sa)[-_]/, "")
+    .replace(/[-_]\d+$/, "")
+    .replace(/[-_]/g, " ");
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function humanizeLocations(locations: string[]): string {
