@@ -9,7 +9,7 @@ import StatsRow from "./StatsRow";
 import ProtocolFeed from "./ProtocolFeed";
 import ProxyWidget from "./ProxyWidget";
 import VPSOverview from "./VPSOverview";
-import BanditArmsOverview from "./BanditArmsOverview";
+import BanditArmsOverview, { BanditHowItWorks } from "./BanditArmsOverview";
 import TracksOverview from "./TracksOverview";
 import AISummary from "./AISummary";
 import AdminPanel from "./AdminPanel";
@@ -212,7 +212,9 @@ export default function Dashboard() {
 
       <div className="main-layout">
         {activeTab === "overview" ? (
-          <BanditArmsOverview countries={globalStats.countries} dataCenters={dataCenters} isLive={isLive} overviewOnly />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
+            <BanditHowItWorks defaultOpen />
+          </div>
         ) : activeTab === "vps" ? (
           <VPSOverview
             routes={vpsData.routes}
