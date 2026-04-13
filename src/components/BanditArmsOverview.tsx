@@ -379,7 +379,13 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
     setAllArmsErr(null);
     fetchASNArms(asn.asn)
       .then((resp) => { setAllArms(resp.arms); })
-      .catch((e) => { setAllArmsErr(e instanceof Error ? e.message : String(e)); })
+      .catch((e) => {
+        // Log the raw error for operators inspecting the console; show a
+        // short friendly message in the UI so the page doesn't expose
+        // transport-level details.
+        console.error("Failed to load ASN arms", e);
+        setAllArmsErr("Unable to load all arms right now. Please try again.");
+      })
       .finally(() => { setLoadingAll(false); });
   }, [asn.asn]);
 
