@@ -453,7 +453,7 @@ function filterAndSortArms(arms: DashboardArmEntry[], f: ArmFilters): DashboardA
   return out;
 }
 
-function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity, filters }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string>; filters: ArmFilters }) {
+function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity, filters, onLiveArmsLoaded }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string>; filters: ArmFilters; onLiveArmsLoaded?: (asn: string, arms: DashboardArmEntry[]) => void }) {
   const key = `${country}-${asn.asn}`;
   const expanded = expandedASNs.has(key);
   const name = asnDisplayName(asn.asn, asnDB);
@@ -470,7 +470,13 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
     setLoadingAll(true);
     setAllArmsErr(null);
     fetchASNArms(asn.asn)
-      .then((resp) => { setAllArms(resp.arms); })
+      .then((resp) => {
+        setAllArms(resp.arms);
+        // Let the parent union these regions/protocols into the filter
+        // dropdowns so low-weight arms that only appear in the live fetch
+        // are still filterable.
+        onLiveArmsLoaded?.(asn.asn, resp.arms);
+      })
       .catch((e) => {
         // Log the raw error for operators inspecting the console; show a
         // short friendly message in the UI so the page doesn't expose
@@ -479,7 +485,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
         setAllArmsErr("Unable to load all arms right now. Please try again.");
       })
       .finally(() => { setLoadingAll(false); });
-  }, [asn.asn]);
+  }, [asn.asn, onLiveArmsLoaded]);
 
   const baseArms = allArms ?? asn.topArms;
   const displayedArms = useMemo(() => filterAndSortArms(baseArms, filters), [baseArms, filters]);
@@ -730,6 +736,17 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
   const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
   const [loadingCountries, setLoadingCountries] = useState<Set<string>>(new Set());
+  // Full live-arm fetches keyed by ASN. Populated when a user clicks "Show all
+  // arms (live)" inside an ISPSection; the regions/protocols seen here get
+  // merged into the filter dropdown options below.
+  const [liveArmsCache, setLiveArmsCache] = useState<Map<string, DashboardArmEntry[]>>(new Map());
+  const handleLiveArmsLoaded = useCallback((asn: string, arms: DashboardArmEntry[]) => {
+    setLiveArmsCache((prev) => {
+      const next = new Map(prev);
+      next.set(asn, arms);
+      return next;
+    });
+  }, []);
 
   // Arm filter / sort state — applies to every expanded ASN's arm list.
   const [regionFilter, setRegionFilter] = useState<string>("");
@@ -745,20 +762,27 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
   const { availableRegions, availableProtocols } = useMemo(() => {
     const regions = new Set<string>();
     const protocols = new Set<string>();
+    const addArm = (arm: DashboardArmEntry) => {
+      if (arm.regionName) regions.add(arm.regionName);
+      const proto = protocolFromTrackName(arm.trackName);
+      if (proto) protocols.add(proto);
+    };
     for (const asnList of asnCache.values()) {
       for (const asn of asnList) {
-        for (const arm of asn.topArms) {
-          if (arm.regionName) regions.add(arm.regionName);
-          const proto = protocolFromTrackName(arm.trackName);
-          if (proto) protocols.add(proto);
-        }
+        for (const arm of asn.topArms) addArm(arm);
       }
+    }
+    // Also include arms discovered via the live per-ASN fetch so low-weight
+    // regions/protocols that never made the snapshot top-N are still
+    // filterable once a user drills in.
+    for (const arms of liveArmsCache.values()) {
+      for (const arm of arms) addArm(arm);
     }
     return {
       availableRegions: Array.from(regions).sort(),
       availableProtocols: Array.from(protocols).sort(),
     };
-  }, [asnCache]);
+  }, [asnCache, liveArmsCache]);
 
   const sorted = useMemo(
     () => [...countries].sort((a, b) => b.asnCount - a.asnCount),
@@ -1004,6 +1028,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
                       asnDB={asnDB}
                       regionToCity={regionToCity}
                       filters={armFilters}
+                      onLiveArmsLoaded={handleLiveArmsLoaded}
                     />
                   ))}
                 </div>
