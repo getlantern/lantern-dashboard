@@ -138,6 +138,21 @@ export function fetchASNs(country: string): Promise<DashboardASN[]> {
   return apiFetch("/asns", { country });
 }
 
+export interface DashboardASNArmsResponse {
+  asn: string;
+  country: string;
+  totalPulls: number;
+  fetchedAt: string;
+  arms: DashboardArmEntry[];
+}
+
+// fetchASNArms returns the full live EXP3 arm list for a single ASN, read
+// directly from Redis (not the snapshot table). Use this for the drill-in
+// view where all arms — including low-weight ones — matter.
+export function fetchASNArms(asn: string): Promise<DashboardASNArmsResponse> {
+  return apiFetch("/asn-arms", { asn });
+}
+
 export function fetchInfrastructure(includeRoutes?: boolean): Promise<DashboardInfraResponse & { vpsRoutes?: DashboardVPSRoutesResponse }> {
   const params: Record<string, string> = {};
   if (includeRoutes) params.include_routes = "true";

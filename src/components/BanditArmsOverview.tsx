@@ -5,7 +5,7 @@ import type {
   DashboardArmEntry,
   DashboardDataCenter,
 } from "../api/client";
-import { fetchASNs } from "../api/client";
+import { fetchASNs, fetchASNArms } from "../api/client";
 
 interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
@@ -265,6 +265,50 @@ const chipStyle: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const filterBarStyle: CSSProperties = {
+  display: "flex",
+  gap: "0.75rem",
+  alignItems: "center",
+  padding: "0.4rem 0.75rem",
+  background: "rgba(255,255,255,0.015)",
+  border: "1px solid #ffffff08",
+  borderRadius: "6px",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.65rem",
+  color: "#8890a0",
+  flexWrap: "wrap",
+};
+
+const filterLabelStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  color: "#8890a0",
+};
+
+const selectStyle: CSSProperties = {
+  background: "var(--bg-card)",
+  color: "#c0c8d4",
+  border: "1px solid #ffffff14",
+  borderRadius: "4px",
+  padding: "0.2rem 0.4rem",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.65rem",
+  cursor: "pointer",
+};
+
+const clearButtonStyle: CSSProperties = {
+  background: "transparent",
+  color: "#00e5c8",
+  border: "1px solid rgba(0,229,200,0.25)",
+  borderRadius: "4px",
+  padding: "0.2rem 0.6rem",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.6rem",
+  cursor: "pointer",
+  marginLeft: "auto",
+};
+
 const blockedBadge: CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: "0.5rem",
@@ -361,11 +405,93 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
   );
 }
 
-function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string> }) {
+// Derive the protocol from a trackName like "reflex-linode-pro" or
+// "samizdat-pro-oci". First hyphen-separated segment is the protocol.
+function protocolFromTrackName(trackName: string | undefined): string {
+  if (!trackName) return "";
+  const idx = trackName.indexOf("-");
+  return idx > 0 ? trackName.substring(0, idx) : trackName;
+}
+
+type SortBy = "weight" | "successRate";
+
+function armSuccessRate(arm: DashboardArmEntry): number | null {
+  if (arm.successRate != null) return arm.successRate;
+  if (arm.totalTests != null && arm.totalTests > 0) {
+    return (arm.successCount ?? 0) / arm.totalTests;
+  }
+  return null;
+}
+
+interface ArmFilters {
+  region: string;   // empty = all
+  protocol: string; // empty = all
+  sortBy: SortBy;
+}
+
+function filterAndSortArms(arms: DashboardArmEntry[], f: ArmFilters): DashboardArmEntry[] {
+  let out = arms;
+  if (f.region) {
+    out = out.filter((a) => a.regionName === f.region);
+  }
+  if (f.protocol) {
+    out = out.filter((a) => protocolFromTrackName(a.trackName) === f.protocol);
+  }
+  if (f.sortBy === "successRate") {
+    // Arms with no test data sort to the bottom.
+    out = [...out].sort((a, b) => {
+      const ra = armSuccessRate(a);
+      const rb = armSuccessRate(b);
+      if (ra == null && rb == null) return b.weight - a.weight;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      return rb - ra;
+    });
+  } else {
+    out = [...out].sort((a, b) => b.weight - a.weight);
+  }
+  return out;
+}
+
+function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity, filters, onLiveArmsLoaded }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string>; filters: ArmFilters; onLiveArmsLoaded?: (asn: string, arms: DashboardArmEntry[]) => void }) {
   const key = `${country}-${asn.asn}`;
   const expanded = expandedASNs.has(key);
   const name = asnDisplayName(asn.asn, asnDB);
   const blockedColor = asn.numBlocked > 0 ? "#e06060" : "#667080";
+
+  // Live-fetched full arm set (vs snapshot top-N). Loaded on demand when the
+  // user clicks "Show all arms" — reads directly from Redis on the server,
+  // so it's fresher than the snapshot and uncapped.
+  const [allArms, setAllArms] = useState<DashboardArmEntry[] | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [allArmsErr, setAllArmsErr] = useState<string | null>(null);
+
+  const loadAllArms = useCallback(() => {
+    setLoadingAll(true);
+    setAllArmsErr(null);
+    fetchASNArms(asn.asn)
+      .then((resp) => {
+        setAllArms(resp.arms);
+        // Let the parent union these regions/protocols into the filter
+        // dropdowns so low-weight arms that only appear in the live fetch
+        // are still filterable.
+        onLiveArmsLoaded?.(asn.asn, resp.arms);
+      })
+      .catch((e) => {
+        // Log the raw error for operators inspecting the console; show a
+        // short friendly message in the UI so the page doesn't expose
+        // transport-level details.
+        console.error("Failed to load ASN arms", e);
+        setAllArmsErr("Unable to load all arms right now. Please try again.");
+      })
+      .finally(() => { setLoadingAll(false); });
+  }, [asn.asn, onLiveArmsLoaded]);
+
+  const baseArms = allArms ?? asn.topArms;
+  const displayedArms = useMemo(() => filterAndSortArms(baseArms, filters), [baseArms, filters]);
+  const filtersActive = !!filters.region || !!filters.protocol || filters.sortBy !== "weight";
+  const hasMoreBeyondSnapshot = asn.topArms.length < asn.numArms;
+  const showFullLoadButton = expanded && allArms === null && hasMoreBeyondSnapshot;
 
   return (
     <div>
@@ -379,7 +505,9 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
         <span style={{ fontWeight: 600, color: "#c0c8d4" }}>{name}</span>
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <span style={chipStyle}>{asn.numArms} arms{asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}</span>
+          <span style={chipStyle}>
+            {asn.numArms} arms{allArms ? ` (all shown, live)` : asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}
+          </span>
           <Tip text="Arms where connections are failing vs total arms. Could be censorship, network issues, or server problems.">
             <span style={{ ...chipStyle, color: blockedColor }}>
               {asn.numBlocked}/{asn.numArms} blocked <InfoIcon />
@@ -388,11 +516,39 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
           <span style={chipStyle}>{asn.totalPulls.toLocaleString()} pulls</span>
         </span>
       </div>
-      {expanded && asn.topArms && asn.topArms.length > 0 && (
+      {expanded && displayedArms.length > 0 && (
         <div>
-          {asn.topArms.map((arm) => (
+          {displayedArms.map((arm) => (
             <ArmRow key={arm.armId} arm={arm} regionToCity={regionToCity} />
           ))}
+        </div>
+      )}
+      {expanded && displayedArms.length === 0 && baseArms.length > 0 && filtersActive && (
+        <div style={{ padding: "0.5rem 1rem", fontSize: "0.7rem", color: "#667080" }}>
+          No arms match the current filters.
+        </div>
+      )}
+      {showFullLoadButton && (
+        <div style={{ padding: "0.5rem 1rem", fontSize: "0.7rem" }}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); loadAllArms(); }}
+            disabled={loadingAll}
+            style={{
+              background: "transparent",
+              color: "#00e5c8",
+              border: "1px solid rgba(0,229,200,0.3)",
+              borderRadius: "4px",
+              padding: "0.3rem 0.75rem",
+              cursor: loadingAll ? "wait" : "pointer",
+              fontSize: "0.7rem",
+            }}
+          >
+            {loadingAll ? "Loading…" : `Show all ${asn.numArms} arms (live)`}
+          </button>
+          {allArmsErr && (
+            <span style={{ marginLeft: "0.75rem", color: "#e06060" }}>{allArmsErr}</span>
+          )}
         </div>
       )}
     </div>
@@ -580,6 +736,53 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
   const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
   const [loadingCountries, setLoadingCountries] = useState<Set<string>>(new Set());
+  // Full live-arm fetches keyed by ASN. Populated when a user clicks "Show all
+  // arms (live)" inside an ISPSection; the regions/protocols seen here get
+  // merged into the filter dropdown options below.
+  const [liveArmsCache, setLiveArmsCache] = useState<Map<string, DashboardArmEntry[]>>(new Map());
+  const handleLiveArmsLoaded = useCallback((asn: string, arms: DashboardArmEntry[]) => {
+    setLiveArmsCache((prev) => {
+      const next = new Map(prev);
+      next.set(asn, arms);
+      return next;
+    });
+  }, []);
+
+  // Arm filter / sort state — applies to every expanded ASN's arm list.
+  const [regionFilter, setRegionFilter] = useState<string>("");
+  const [protocolFilter, setProtocolFilter] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortBy>("weight");
+  const armFilters: ArmFilters = useMemo(
+    () => ({ region: regionFilter, protocol: protocolFilter, sortBy }),
+    [regionFilter, protocolFilter, sortBy],
+  );
+
+  // Collect unique region names / protocol names across every arm we know
+  // about so the filter dropdowns stay current as the asn cache fills in.
+  const { availableRegions, availableProtocols } = useMemo(() => {
+    const regions = new Set<string>();
+    const protocols = new Set<string>();
+    const addArm = (arm: DashboardArmEntry) => {
+      if (arm.regionName) regions.add(arm.regionName);
+      const proto = protocolFromTrackName(arm.trackName);
+      if (proto) protocols.add(proto);
+    };
+    for (const asnList of asnCache.values()) {
+      for (const asn of asnList) {
+        for (const arm of asn.topArms) addArm(arm);
+      }
+    }
+    // Also include arms discovered via the live per-ASN fetch so low-weight
+    // regions/protocols that never made the snapshot top-N are still
+    // filterable once a user drills in.
+    for (const arms of liveArmsCache.values()) {
+      for (const arm of arms) addArm(arm);
+    }
+    return {
+      availableRegions: Array.from(regions).sort(),
+      availableProtocols: Array.from(protocols).sort(),
+    };
+  }, [asnCache, liveArmsCache]);
 
   const sorted = useMemo(
     () => [...countries].sort((a, b) => b.asnCount - a.asnCount),
@@ -708,6 +911,58 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
         </Tip>
       </div>
 
+      {/* Arm filter / sort controls */}
+      <div style={filterBarStyle}>
+        <label style={filterLabelStyle}>
+          Region
+          <select
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">All</option>
+            {availableRegions.map((r) => (
+              <option key={r} value={r}>
+                {regionToCity.get(r) ? `${regionToCity.get(r)} (${r})` : r}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={filterLabelStyle}>
+          Protocol
+          <select
+            value={protocolFilter}
+            onChange={(e) => setProtocolFilter(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">All</option>
+            {availableProtocols.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+        <label style={filterLabelStyle}>
+          Sort by
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+            style={selectStyle}
+          >
+            <option value="weight">Weight (default)</option>
+            <option value="successRate">Success rate</option>
+          </select>
+        </label>
+        {(regionFilter || protocolFilter || sortBy !== "weight") && (
+          <button
+            type="button"
+            onClick={() => { setRegionFilter(""); setProtocolFilter(""); setSortBy("weight"); }}
+            style={clearButtonStyle}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* Country list */}
       <div style={{ background: "var(--bg-card)", borderRadius: "var(--radius-md)", border: "1px solid #ffffff08", overflow: "auto", flex: 1 }}>
         {sorted.map((c) => {
@@ -772,6 +1027,8 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
                       toggleASN={toggleASN}
                       asnDB={asnDB}
                       regionToCity={regionToCity}
+                      filters={armFilters}
+                      onLiveArmsLoaded={handleLiveArmsLoaded}
                     />
                   ))}
                 </div>
