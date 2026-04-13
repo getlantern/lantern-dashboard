@@ -44,7 +44,8 @@ const LIVE_CSS_CLASS: Record<string, string> = {
 // means the tunnel worked — the server treats it as a success for blocking
 // signals regardless of reward value. Reward just ranks arms for EXP3
 // weight updates: fast (~200ms) → 0.98, slow (~3s+) → ≈0.
-// We use the reward to color the feed — fast = green, slow = yellow — but
+// We use the reward to color the feed — fast uses the success/deployed
+// accent (green), slow uses the primary/generated accent (teal) — but
 // never label a callback-event as "failed" (no callback = no event at all).
 const CALLBACK_FAST_THRESHOLD = 0.5; // ~1500ms on the latency sigmoid
 
@@ -125,7 +126,7 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
                 style={isCallback ? { opacity: 0.7 } : undefined}>
                 <div className={`feed-icon ${
                   isCallback
-                    ? (callbackFast ? "evaded" : "generated")
+                    ? (callbackFast ? "deployed" : "generated")
                     : (LIVE_CSS_CLASS[event.eventType] || "generated")
                 }`}>
                   {isCallback
