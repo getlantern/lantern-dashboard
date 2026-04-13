@@ -40,7 +40,14 @@ const LIVE_CSS_CLASS: Record<string, string> = {
   [EventType.CALLBACK]: "generated",
 };
 
-const CALLBACK_SUCCESS_THRESHOLD = 0.1;
+// Reward is a sigmoid of callback latency ∈ [0, 1]. ANY callback arriving
+// means the tunnel worked — the server treats it as a success for blocking
+// signals regardless of reward value. Reward just ranks arms for EXP3
+// weight updates: fast (~200ms) → 0.98, slow (~3s+) → ≈0.
+// We use the reward to color the feed — fast uses the success/deployed
+// accent (green), slow uses the primary/generated accent (teal) — but
+// never label a callback-event as "failed" (no callback = no event at all).
+const CALLBACK_FAST_THRESHOLD = 0.5; // ~1500ms on the latency sigmoid
 
 function timeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -111,23 +118,25 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
         {useLive
           ? liveList.map((event, i) => {
               const isCallback = event.eventType === EventType.CALLBACK;
-              const callbackOk = isCallback && (event.reward ?? 0) > CALLBACK_SUCCESS_THRESHOLD;
+              const callbackFast = isCallback && (event.reward ?? 0) > CALLBACK_FAST_THRESHOLD;
+              const latencyMs = event.latencyMs ?? 0;
+              const latencySuffix = isCallback && latencyMs > 0 ? ` (${humanizeMs(`${latencyMs}ms`)})` : "";
               return (
               <div key={`${event.timestamp}-${i}`} className="feed-item"
                 style={isCallback ? { opacity: 0.7 } : undefined}>
                 <div className={`feed-icon ${
                   isCallback
-                    ? (callbackOk ? "evaded" : "blocked")
+                    ? (callbackFast ? "deployed" : "generated")
                     : (LIVE_CSS_CLASS[event.eventType] || "generated")
                 }`}>
                   {isCallback
-                    ? (callbackOk ? "✓" : "✗")
+                    ? (callbackFast ? "✓" : "⏱")
                     : (LIVE_TYPE_ICONS[event.eventType] || "📡")}
                 </div>
                 <div className="feed-content">
                   <div className="feed-title">
                     {isCallback
-                      ? `${callbackOk ? "Route OK" : "Probe Failed"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}`
+                      ? `${callbackFast ? "Route OK" : "Route OK (slow)"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}${latencySuffix}`
                       : `${LIVE_TYPE_LABELS[event.eventType] || event.eventType}${event.detail ? `: ${humanizeMs(event.detail)}` : ""}`}
                   </div>
                   <div className="feed-meta">
