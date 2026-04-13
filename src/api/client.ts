@@ -161,6 +161,7 @@ export interface DashboardActivityEvent {
   routeId?: string;
   detail?: string;
   reward?: number;
+  latencyMs?: number;
   timestamp: number;
 }
 
