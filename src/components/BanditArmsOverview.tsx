@@ -265,6 +265,50 @@ const chipStyle: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const filterBarStyle: CSSProperties = {
+  display: "flex",
+  gap: "0.75rem",
+  alignItems: "center",
+  padding: "0.4rem 0.75rem",
+  background: "rgba(255,255,255,0.015)",
+  border: "1px solid #ffffff08",
+  borderRadius: "6px",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.65rem",
+  color: "#8890a0",
+  flexWrap: "wrap",
+};
+
+const filterLabelStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  color: "#8890a0",
+};
+
+const selectStyle: CSSProperties = {
+  background: "var(--bg-card)",
+  color: "#c0c8d4",
+  border: "1px solid #ffffff14",
+  borderRadius: "4px",
+  padding: "0.2rem 0.4rem",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.65rem",
+  cursor: "pointer",
+};
+
+const clearButtonStyle: CSSProperties = {
+  background: "transparent",
+  color: "#00e5c8",
+  border: "1px solid rgba(0,229,200,0.25)",
+  borderRadius: "4px",
+  padding: "0.2rem 0.6rem",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.6rem",
+  cursor: "pointer",
+  marginLeft: "auto",
+};
+
 const blockedBadge: CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: "0.5rem",
@@ -361,7 +405,55 @@ function ArmRow({ arm, regionToCity }: { arm: DashboardArmEntry; regionToCity?: 
   );
 }
 
-function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string> }) {
+// Derive the protocol from a trackName like "reflex-linode-pro" or
+// "samizdat-pro-oci". First hyphen-separated segment is the protocol.
+function protocolFromTrackName(trackName: string | undefined): string {
+  if (!trackName) return "";
+  const idx = trackName.indexOf("-");
+  return idx > 0 ? trackName.substring(0, idx) : trackName;
+}
+
+type SortBy = "weight" | "successRate";
+
+function armSuccessRate(arm: DashboardArmEntry): number | null {
+  if (arm.successRate != null) return arm.successRate;
+  if (arm.totalTests != null && arm.totalTests > 0) {
+    return (arm.successCount ?? 0) / arm.totalTests;
+  }
+  return null;
+}
+
+interface ArmFilters {
+  region: string;   // empty = all
+  protocol: string; // empty = all
+  sortBy: SortBy;
+}
+
+function filterAndSortArms(arms: DashboardArmEntry[], f: ArmFilters): DashboardArmEntry[] {
+  let out = arms;
+  if (f.region) {
+    out = out.filter((a) => a.regionName === f.region);
+  }
+  if (f.protocol) {
+    out = out.filter((a) => protocolFromTrackName(a.trackName) === f.protocol);
+  }
+  if (f.sortBy === "successRate") {
+    // Arms with no test data sort to the bottom.
+    out = [...out].sort((a, b) => {
+      const ra = armSuccessRate(a);
+      const rb = armSuccessRate(b);
+      if (ra == null && rb == null) return b.weight - a.weight;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      return rb - ra;
+    });
+  } else {
+    out = [...out].sort((a, b) => b.weight - a.weight);
+  }
+  return out;
+}
+
+function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity, filters }: { asn: DashboardASN; country: string; expandedASNs: Set<string>; toggleASN: (key: string) => void; asnDB: Record<string, string> | null; regionToCity?: Map<string, string>; filters: ArmFilters }) {
   const key = `${country}-${asn.asn}`;
   const expanded = expandedASNs.has(key);
   const name = asnDisplayName(asn.asn, asnDB);
@@ -389,7 +481,9 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
       .finally(() => { setLoadingAll(false); });
   }, [asn.asn]);
 
-  const displayedArms = allArms ?? asn.topArms;
+  const baseArms = allArms ?? asn.topArms;
+  const displayedArms = useMemo(() => filterAndSortArms(baseArms, filters), [baseArms, filters]);
+  const filtersActive = !!filters.region || !!filters.protocol || filters.sortBy !== "weight";
   const hasMoreBeyondSnapshot = asn.topArms.length < asn.numArms;
   const showFullLoadButton = expanded && allArms === null && hasMoreBeyondSnapshot;
 
@@ -416,11 +510,16 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
           <span style={chipStyle}>{asn.totalPulls.toLocaleString()} pulls</span>
         </span>
       </div>
-      {expanded && displayedArms && displayedArms.length > 0 && (
+      {expanded && displayedArms.length > 0 && (
         <div>
           {displayedArms.map((arm) => (
             <ArmRow key={arm.armId} arm={arm} regionToCity={regionToCity} />
           ))}
+        </div>
+      )}
+      {expanded && displayedArms.length === 0 && baseArms.length > 0 && filtersActive && (
+        <div style={{ padding: "0.5rem 1rem", fontSize: "0.7rem", color: "#667080" }}>
+          No arms match the current filters.
         </div>
       )}
       {showFullLoadButton && (
@@ -632,6 +731,35 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
   const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
   const [loadingCountries, setLoadingCountries] = useState<Set<string>>(new Set());
 
+  // Arm filter / sort state — applies to every expanded ASN's arm list.
+  const [regionFilter, setRegionFilter] = useState<string>("");
+  const [protocolFilter, setProtocolFilter] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortBy>("weight");
+  const armFilters: ArmFilters = useMemo(
+    () => ({ region: regionFilter, protocol: protocolFilter, sortBy }),
+    [regionFilter, protocolFilter, sortBy],
+  );
+
+  // Collect unique region names / protocol names across every arm we know
+  // about so the filter dropdowns stay current as the asn cache fills in.
+  const { availableRegions, availableProtocols } = useMemo(() => {
+    const regions = new Set<string>();
+    const protocols = new Set<string>();
+    for (const asnList of asnCache.values()) {
+      for (const asn of asnList) {
+        for (const arm of asn.topArms) {
+          if (arm.regionName) regions.add(arm.regionName);
+          const proto = protocolFromTrackName(arm.trackName);
+          if (proto) protocols.add(proto);
+        }
+      }
+    }
+    return {
+      availableRegions: Array.from(regions).sort(),
+      availableProtocols: Array.from(protocols).sort(),
+    };
+  }, [asnCache]);
+
   const sorted = useMemo(
     () => [...countries].sort((a, b) => b.asnCount - a.asnCount),
     [countries],
@@ -759,6 +887,58 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
         </Tip>
       </div>
 
+      {/* Arm filter / sort controls */}
+      <div style={filterBarStyle}>
+        <label style={filterLabelStyle}>
+          Region
+          <select
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">All</option>
+            {availableRegions.map((r) => (
+              <option key={r} value={r}>
+                {regionToCity.get(r) ? `${regionToCity.get(r)} (${r})` : r}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={filterLabelStyle}>
+          Protocol
+          <select
+            value={protocolFilter}
+            onChange={(e) => setProtocolFilter(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">All</option>
+            {availableProtocols.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+        <label style={filterLabelStyle}>
+          Sort by
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+            style={selectStyle}
+          >
+            <option value="weight">Weight (default)</option>
+            <option value="successRate">Success rate</option>
+          </select>
+        </label>
+        {(regionFilter || protocolFilter || sortBy !== "weight") && (
+          <button
+            type="button"
+            onClick={() => { setRegionFilter(""); setProtocolFilter(""); setSortBy("weight"); }}
+            style={clearButtonStyle}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* Country list */}
       <div style={{ background: "var(--bg-card)", borderRadius: "var(--radius-md)", border: "1px solid #ffffff08", overflow: "auto", flex: 1 }}>
         {sorted.map((c) => {
@@ -823,6 +1003,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
                       toggleASN={toggleASN}
                       asnDB={asnDB}
                       regionToCity={regionToCity}
+                      filters={armFilters}
                     />
                   ))}
                 </div>
