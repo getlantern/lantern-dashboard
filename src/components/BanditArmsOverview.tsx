@@ -5,7 +5,7 @@ import type {
   DashboardArmEntry,
   DashboardDataCenter,
 } from "../api/client";
-import { fetchASNs } from "../api/client";
+import { fetchASNs, fetchASNArms } from "../api/client";
 
 interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
@@ -367,6 +367,26 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   const name = asnDisplayName(asn.asn, asnDB);
   const blockedColor = asn.numBlocked > 0 ? "#e06060" : "#667080";
 
+  // Live-fetched full arm set (vs snapshot top-N). Loaded on demand when the
+  // user clicks "Show all arms" — reads directly from Redis on the server,
+  // so it's fresher than the snapshot and uncapped.
+  const [allArms, setAllArms] = useState<DashboardArmEntry[] | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [allArmsErr, setAllArmsErr] = useState<string | null>(null);
+
+  const loadAllArms = useCallback(() => {
+    setLoadingAll(true);
+    setAllArmsErr(null);
+    fetchASNArms(asn.asn)
+      .then((resp) => { setAllArms(resp.arms); })
+      .catch((e) => { setAllArmsErr(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { setLoadingAll(false); });
+  }, [asn.asn]);
+
+  const displayedArms = allArms ?? asn.topArms;
+  const hasMoreBeyondSnapshot = asn.topArms.length < asn.numArms;
+  const showFullLoadButton = expanded && allArms === null && hasMoreBeyondSnapshot;
+
   return (
     <div>
       <div
@@ -379,7 +399,9 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
         <span style={{ fontWeight: 600, color: "#c0c8d4" }}>{name}</span>
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <span style={chipStyle}>{asn.numArms} arms{asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}</span>
+          <span style={chipStyle}>
+            {asn.numArms} arms{allArms ? ` (all shown, live)` : asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}
+          </span>
           <Tip text="Arms where connections are failing vs total arms. Could be censorship, network issues, or server problems.">
             <span style={{ ...chipStyle, color: blockedColor }}>
               {asn.numBlocked}/{asn.numArms} blocked <InfoIcon />
@@ -388,11 +410,34 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
           <span style={chipStyle}>{asn.totalPulls.toLocaleString()} pulls</span>
         </span>
       </div>
-      {expanded && asn.topArms && asn.topArms.length > 0 && (
+      {expanded && displayedArms && displayedArms.length > 0 && (
         <div>
-          {asn.topArms.map((arm) => (
+          {displayedArms.map((arm) => (
             <ArmRow key={arm.armId} arm={arm} regionToCity={regionToCity} />
           ))}
+        </div>
+      )}
+      {showFullLoadButton && (
+        <div style={{ padding: "0.5rem 1rem", fontSize: "0.7rem" }}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); loadAllArms(); }}
+            disabled={loadingAll}
+            style={{
+              background: "transparent",
+              color: "#00e5c8",
+              border: "1px solid rgba(0,229,200,0.3)",
+              borderRadius: "4px",
+              padding: "0.3rem 0.75rem",
+              cursor: loadingAll ? "wait" : "pointer",
+              fontSize: "0.7rem",
+            }}
+          >
+            {loadingAll ? "Loading…" : `Show all ${asn.numArms} arms (live)`}
+          </button>
+          {allArmsErr && (
+            <span style={{ marginLeft: "0.75rem", color: "#e06060" }}>{allArmsErr}</span>
+          )}
         </div>
       )}
     </div>
