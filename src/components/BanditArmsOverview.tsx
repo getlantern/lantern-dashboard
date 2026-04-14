@@ -79,6 +79,8 @@ const CENSORED_COUNTRIES = new Set([
   "KZ", "MM", "PK", "RU", "SA", "TH", "TM", "TR", "UZ", "VE", "VN",
 ]);
 
+const PRIMARY_COUNTRIES = new Set(["CN", "IR", "RU"]);
+
 const ASN_NAMES: Record<string, string> = {
   // Iran
   AS44244: "Irancell", AS197207: "MCI", AS58224: "TCI", AS12880: "Afranet",
@@ -137,6 +139,21 @@ function blockRateColor(rate: number): string {
   if (rate > 0.3) return "#e0a080";
   if (rate > 0.1) return "#d8c090";
   return "#a0c8a0";
+}
+
+function errorRateColor(rate: number): string {
+  if (rate > 0.5) return "#e06060";
+  if (rate > 0.2) return "#e0a080";
+  if (rate > 0.05) return "#d8c090";
+  return "#80c8a0";
+}
+
+function countryHealthColor(c: DashboardCountry): string {
+  const errorRate = c.avgErrorRate ?? 0;
+  if (c.avgBlockRate > 0.3 || errorRate > 0.5) return "#e06060";
+  if (c.avgBlockRate > 0.1 || errorRate > 0.2) return "#e0a080";
+  if (errorRate > 0.05) return "#d8c090";
+  return "#00e5c8";
 }
 
 function successRateColor(rate: number): string {
@@ -748,6 +765,8 @@ function CountryRow({
   const loading = loadingCountries.has(c.country);
   const asns = asnCache.get(c.country);
   const brColor = blockRateColor(c.avgBlockRate);
+  const erColor = c.avgErrorRate != null ? errorRateColor(c.avgErrorRate) : "#556070";
+  const nameColor = countryHealthColor(c);
 
   return (
     <div>
@@ -758,19 +777,30 @@ function CountryRow({
         onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.015)"; }}
       >
         <span style={chevronStyle(expanded)}>&#9662;</span>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "#00e5c8" }}>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: nameColor }}>
           {countryName(c.country)}
         </span>
         <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
 
-        <Tip text={`${(c.avgBlockRate * 100).toFixed(1)}% of arms are currently blocked for ISPs in ${countryName(c.country)}.`}>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px" }}>
+        <Tip text={`${(c.avgBlockRate * 100).toFixed(1)}% of arms are blocked in ${countryName(c.country)}.`}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
             <MiniBar value={c.avgBlockRate} color={brColor} />
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: brColor, minWidth: "32px", textAlign: "right" }}>
               {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
             </span>
           </div>
         </Tip>
+
+        {c.avgErrorRate != null && (
+          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probes fail in ${countryName(c.country)}. Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
+              <MiniBar value={c.avgErrorRate} color={erColor} />
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: erColor, minWidth: "32px", textAlign: "right" }}>
+                {(c.avgErrorRate * 100).toFixed(1)}%
+              </span>
+            </div>
+          </Tip>
+        )}
 
         <Tip text={`Weight entropy: ${c.avgEntropy.toFixed(3)}. ${c.avgEntropy < 0.5 ? "Strongly converged." : c.avgEntropy < 1.5 ? "Moderate focus." : "High exploration."}`}>
           <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "#8890a0" }}>
@@ -876,20 +906,24 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     };
   }, [asnCache, liveArmsCache]);
 
-  const { censoredCountries, uncensoredCountries } = useMemo(() => {
-    const censored: DashboardCountry[] = [];
+  const { primaryCountries, otherCensoredCountries, uncensoredCountries } = useMemo(() => {
+    const primary: DashboardCountry[] = [];
+    const otherCensored: DashboardCountry[] = [];
     const uncensored: DashboardCountry[] = [];
     for (const c of countries) {
-      if (CENSORED_COUNTRIES.has(c.country)) censored.push(c);
+      if (PRIMARY_COUNTRIES.has(c.country)) primary.push(c);
+      else if (CENSORED_COUNTRIES.has(c.country)) otherCensored.push(c);
       else uncensored.push(c);
     }
     const alpha = (a: DashboardCountry, b: DashboardCountry) =>
       countryName(a.country).localeCompare(countryName(b.country));
-    censored.sort(alpha);
+    primary.sort(alpha);
+    otherCensored.sort(alpha);
     uncensored.sort(alpha);
-    return { censoredCountries: censored, uncensoredCountries: uncensored };
+    return { primaryCountries: primary, otherCensoredCountries: otherCensored, uncensoredCountries: uncensored };
   }, [countries]);
 
+  const [showOtherCensored, setShowOtherCensored] = useState(false);
   const [showUncensored, setShowUncensored] = useState(false);
 
   const totalASNs = useMemo(() => {
@@ -911,6 +945,13 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     const totalWeight = countries.reduce((s, c) => s + c.asnCount, 0);
     if (totalWeight === 0) return 0;
     return countries.reduce((s, c) => s + c.avgEntropy * c.asnCount, 0) / totalWeight;
+  }, [countries]);
+
+  const weightedErrorRate = useMemo(() => {
+    const totalTests = countries.reduce((s, c) => s + (c.totalTests ?? 0), 0);
+    if (totalTests === 0) return 0;
+    const totalSuccess = countries.reduce((s, c) => s + (c.totalSuccess ?? 0), 0);
+    return 1 - totalSuccess / totalTests;
   }, [countries]);
 
   // Fetch ASN data for all countries and refresh every 30s
@@ -999,6 +1040,15 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
             <div style={cardHint}>of arms blocked across all ISPs</div>
           </div>
         </Tip>
+        <Tip text="Percentage of probe callbacks that fail. Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
+          <div style={card}>
+            <div style={cardLabel}>Avg Error Rate <InfoIcon /></div>
+            <div style={{ ...cardValue, color: errorRateColor(weightedErrorRate) }}>
+              {(weightedErrorRate * 100).toFixed(1)}%
+            </div>
+            <div style={cardHint}>probe callback failures</div>
+          </div>
+        </Tip>
         <Tip text={`Shannon entropy measures how spread out the bandit's weight distribution is across arms. Low entropy (near 0) means the algorithm has converged on one or two winning arms. High entropy (near ${Math.log2(Math.max(2, totalASNs)).toFixed(1)}) means it's still exploring equally across all options. Moderate values indicate a healthy balance between exploiting known-good arms and exploring alternatives.`}>
           <div style={card}>
             <div style={cardLabel}>Avg Entropy <InfoIcon /></div>
@@ -1066,14 +1116,43 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
         )}
       </div>
 
-      {/* Country list */}
+      {/* Country list — 3 tiers */}
       <div style={{ background: "var(--bg-card)", borderRadius: "var(--radius-md)", border: "1px solid #ffffff08", overflow: "auto", flex: 1 }}>
-        {censoredCountries.map((c) => (
+        {/* Tier 1: China, Iran, Russia — always visible */}
+        {primaryCountries.map((c) => (
           <CountryRow key={c.country} c={c} expandedCountries={expandedCountries} loadingCountries={loadingCountries}
             asnCache={asnCache} toggleCountry={toggleCountry} expandedASNs={expandedASNs} toggleASN={toggleASN}
             asnDB={asnDB} regionToCity={regionToCity} armFilters={armFilters} handleLiveArmsLoaded={handleLiveArmsLoaded} />
         ))}
 
+        {/* Tier 2: Other censored countries — collapsible */}
+        {otherCensoredCountries.length > 0 && (
+          <>
+            <div
+              onClick={() => setShowOtherCensored((v) => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: "0.5rem",
+                padding: "0.5rem 0.75rem", cursor: "pointer", userSelect: "none",
+                borderTop: "1px solid #ffffff08", borderBottom: showOtherCensored ? "1px solid #ffffff08" : "none",
+                background: "rgba(255,255,255,0.01)",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.03)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.01)"; }}
+            >
+              <span style={chevronStyle(showOtherCensored)}>&#9662;</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "#8090a0", letterSpacing: "0.03em" }}>
+                Other censored countries ({otherCensoredCountries.length})
+              </span>
+            </div>
+            {showOtherCensored && otherCensoredCountries.map((c) => (
+              <CountryRow key={c.country} c={c} expandedCountries={expandedCountries} loadingCountries={loadingCountries}
+                asnCache={asnCache} toggleCountry={toggleCountry} expandedASNs={expandedASNs} toggleASN={toggleASN}
+                asnDB={asnDB} regionToCity={regionToCity} armFilters={armFilters} handleLiveArmsLoaded={handleLiveArmsLoaded} />
+            ))}
+          </>
+        )}
+
+        {/* Tier 3: Uncensored countries — collapsible */}
         {uncensoredCountries.length > 0 && (
           <>
             <div
