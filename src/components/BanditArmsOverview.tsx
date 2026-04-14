@@ -74,6 +74,11 @@ function countryName(code: string): string {
   return COUNTRY_NAMES[code] ?? COUNTRY_NAMES_EXTRA[code] ?? code;
 }
 
+const CENSORED_COUNTRIES = new Set([
+  "AE", "AF", "BD", "BY", "CN", "CU", "EG", "ET", "IQ", "IR",
+  "KZ", "MM", "PK", "RU", "SA", "TH", "TM", "TR", "UZ", "VE", "VN",
+]);
+
 const ASN_NAMES: Record<string, string> = {
   // Iran
   AS44244: "Irancell", AS197207: "MCI", AS58224: "TCI", AS12880: "Afranet",
@@ -721,6 +726,93 @@ function BanditHowItWorksContent() {
   );
 }
 
+interface CountryRowProps {
+  c: DashboardCountry;
+  expandedCountries: Set<string>;
+  loadingCountries: Set<string>;
+  asnCache: Map<string, DashboardASN[]>;
+  toggleCountry: (code: string) => void;
+  expandedASNs: Set<string>;
+  toggleASN: (key: string) => void;
+  asnDB: Record<string, string> | null;
+  regionToCity: Map<string, string>;
+  armFilters: ArmFilters;
+  handleLiveArmsLoaded: (asn: string, arms: DashboardArmEntry[]) => void;
+}
+
+function CountryRow({
+  c, expandedCountries, loadingCountries, asnCache, toggleCountry,
+  expandedASNs, toggleASN, asnDB, regionToCity, armFilters, handleLiveArmsLoaded,
+}: CountryRowProps) {
+  const expanded = expandedCountries.has(c.country);
+  const loading = loadingCountries.has(c.country);
+  const asns = asnCache.get(c.country);
+  const brColor = blockRateColor(c.avgBlockRate);
+
+  return (
+    <div>
+      <div
+        style={countryHeaderStyle}
+        onClick={() => toggleCountry(c.country)}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.03)"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.015)"; }}
+      >
+        <span style={chevronStyle(expanded)}>&#9662;</span>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "#00e5c8" }}>
+          {countryName(c.country)}
+        </span>
+        <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
+
+        <Tip text={`${(c.avgBlockRate * 100).toFixed(1)}% of arms are currently blocked for ISPs in ${countryName(c.country)}.`}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px" }}>
+            <MiniBar value={c.avgBlockRate} color={brColor} />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
+              {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
+            </span>
+          </div>
+        </Tip>
+
+        <Tip text={`Weight entropy: ${c.avgEntropy.toFixed(3)}. ${c.avgEntropy < 0.5 ? "Strongly converged." : c.avgEntropy < 1.5 ? "Moderate focus." : "High exploration."}`}>
+          <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "#8890a0" }}>
+            H={c.avgEntropy.toFixed(2)}
+            <span style={{ fontSize: "0.6rem", color: "#556070", marginLeft: "0.3rem" }}>
+              {c.avgEntropy < 0.5 ? "converged" : c.avgEntropy < 1.5 ? "focused" : "exploring"}
+            </span>
+          </span>
+        </Tip>
+      </div>
+
+      {expanded && (
+        <div>
+          {loading && (
+            <div style={{ padding: "0.6rem 1.5rem", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#667080" }}>
+              Loading ISPs...
+            </div>
+          )}
+          {!loading && asns && asns.length === 0 && (
+            <div style={{ padding: "0.6rem 1.5rem", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#667080" }}>
+              No ASN data
+            </div>
+          )}
+          {!loading && asns && asns.map((asn) => (
+            <ISPSection
+              key={asn.asn}
+              asn={asn}
+              country={c.country}
+              expandedASNs={expandedASNs}
+              toggleASN={toggleASN}
+              asnDB={asnDB}
+              regionToCity={regionToCity}
+              filters={armFilters}
+              onLiveArmsLoaded={handleLiveArmsLoaded}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
   const regionToCity = useMemo(() => {
     const map = new Map<string, string>();
@@ -784,10 +876,21 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     };
   }, [asnCache, liveArmsCache]);
 
-  const sorted = useMemo(
-    () => [...countries].sort((a, b) => b.asnCount - a.asnCount),
-    [countries],
-  );
+  const { censoredCountries, uncensoredCountries } = useMemo(() => {
+    const censored: DashboardCountry[] = [];
+    const uncensored: DashboardCountry[] = [];
+    for (const c of countries) {
+      if (CENSORED_COUNTRIES.has(c.country)) censored.push(c);
+      else uncensored.push(c);
+    }
+    const alpha = (a: DashboardCountry, b: DashboardCountry) =>
+      countryName(a.country).localeCompare(countryName(b.country));
+    censored.sort(alpha);
+    uncensored.sort(alpha);
+    return { censoredCountries: censored, uncensoredCountries: uncensored };
+  }, [countries]);
+
+  const [showUncensored, setShowUncensored] = useState(false);
 
   const totalASNs = useMemo(() => {
     let total = 0;
@@ -965,77 +1068,37 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
 
       {/* Country list */}
       <div style={{ background: "var(--bg-card)", borderRadius: "var(--radius-md)", border: "1px solid #ffffff08", overflow: "auto", flex: 1 }}>
-        {sorted.map((c) => {
-          const expanded = expandedCountries.has(c.country);
-          const loading = loadingCountries.has(c.country);
-          const asns = asnCache.get(c.country);
-          const brColor = blockRateColor(c.avgBlockRate);
+        {censoredCountries.map((c) => (
+          <CountryRow key={c.country} c={c} expandedCountries={expandedCountries} loadingCountries={loadingCountries}
+            asnCache={asnCache} toggleCountry={toggleCountry} expandedASNs={expandedASNs} toggleASN={toggleASN}
+            asnDB={asnDB} regionToCity={regionToCity} armFilters={armFilters} handleLiveArmsLoaded={handleLiveArmsLoaded} />
+        ))}
 
-          return (
-            <div key={c.country}>
-              {/* Country header */}
-              <div
-                style={countryHeaderStyle}
-                onClick={() => toggleCountry(c.country)}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.03)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.015)"; }}
-              >
-                <span style={chevronStyle(expanded)}>&#9662;</span>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "#00e5c8" }}>
-                  {countryName(c.country)}
-                </span>
-                <span style={chipStyle}>{asns ? asns.length : c.asnCount} ASN{(asns ? asns.length : c.asnCount) !== 1 ? "s" : ""}</span>
-
-                <Tip text={`${(c.avgBlockRate * 100).toFixed(1)}% of arms (region+protocol combinations) are currently blocked for ISPs in ${countryName(c.country)}. This means censors or network issues are preventing connections on those routes. The bandit automatically shifts traffic to unblocked arms.`}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "90px" }}>
-                    <MiniBar value={c.avgBlockRate} color={brColor} />
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: brColor, minWidth: "36px", textAlign: "right" }}>
-                      {c.avgBlockRate < 0.01 ? (c.avgBlockRate * 100).toFixed(2) : (c.avgBlockRate * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                </Tip>
-
-                <Tip text={`Weight entropy: ${c.avgEntropy.toFixed(3)}. ${c.avgEntropy < 0.5 ? "The bandit has strongly converged — it's confident about which arms work best here." : c.avgEntropy < 1.5 ? "Moderate focus — the bandit has preferences but is still exploring alternatives." : "High exploration — the bandit is still learning which arms work best in this country."}`}>
-                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "#8890a0" }}>
-                    H={c.avgEntropy.toFixed(2)}
-                    <span style={{ fontSize: "0.6rem", color: "#556070", marginLeft: "0.3rem" }}>
-                      {c.avgEntropy < 0.5 ? "converged" : c.avgEntropy < 1.5 ? "focused" : "exploring"}
-                    </span>
-                  </span>
-                </Tip>
-              </div>
-
-              {/* Expanded ISP list */}
-              {expanded && (
-                <div>
-                  {loading && (
-                    <div style={{ padding: "0.6rem 1.5rem", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#667080" }}>
-                      Loading ISPs...
-                    </div>
-                  )}
-                  {!loading && asns && asns.length === 0 && (
-                    <div style={{ padding: "0.6rem 1.5rem", fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#667080" }}>
-                      No ASN data
-                    </div>
-                  )}
-                  {!loading && asns && asns.map((asn) => (
-                    <ISPSection
-                      key={asn.asn}
-                      asn={asn}
-                      country={c.country}
-                      expandedASNs={expandedASNs}
-                      toggleASN={toggleASN}
-                      asnDB={asnDB}
-                      regionToCity={regionToCity}
-                      filters={armFilters}
-                      onLiveArmsLoaded={handleLiveArmsLoaded}
-                    />
-                  ))}
-                </div>
-              )}
+        {uncensoredCountries.length > 0 && (
+          <>
+            <div
+              onClick={() => setShowUncensored((v) => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: "0.5rem",
+                padding: "0.5rem 0.75rem", cursor: "pointer", userSelect: "none",
+                borderTop: "1px solid #ffffff08", borderBottom: showUncensored ? "1px solid #ffffff08" : "none",
+                background: "rgba(255,255,255,0.01)",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.03)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.01)"; }}
+            >
+              <span style={chevronStyle(showUncensored)}>&#9662;</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "#667080", letterSpacing: "0.03em" }}>
+                Other countries ({uncensoredCountries.length})
+              </span>
             </div>
-          );
-        })}
+            {showUncensored && uncensoredCountries.map((c) => (
+              <CountryRow key={c.country} c={c} expandedCountries={expandedCountries} loadingCountries={loadingCountries}
+                asnCache={asnCache} toggleCountry={toggleCountry} expandedASNs={expandedASNs} toggleASN={toggleASN}
+                asnDB={asnDB} regionToCity={regionToCity} armFilters={armFilters} handleLiveArmsLoaded={handleLiveArmsLoaded} />
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
