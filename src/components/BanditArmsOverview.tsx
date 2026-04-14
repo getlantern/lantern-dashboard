@@ -74,6 +74,11 @@ function countryName(code: string): string {
   return COUNTRY_NAMES[code] ?? COUNTRY_NAMES_EXTRA[code] ?? code;
 }
 
+const CENSORED_COUNTRIES = new Set([
+  "AE", "AF", "BD", "BY", "CN", "CU", "EG", "ET", "IQ", "IR",
+  "KZ", "MM", "PK", "RU", "SA", "TH", "TM", "TR", "UZ", "VE", "VN",
+]);
+
 const ASN_NAMES: Record<string, string> = {
   // Iran
   AS44244: "Irancell", AS197207: "MCI", AS58224: "TCI", AS12880: "Afranet",
@@ -735,7 +740,7 @@ interface CountryRowProps {
   handleLiveArmsLoaded: (asn: string, arms: DashboardArmEntry[]) => void;
 }
 
-const CountryRow = memo(function CountryRow({
+function CountryRow({
   c, expandedCountries, loadingCountries, asnCache, toggleCountry,
   expandedASNs, toggleASN, asnDB, regionToCity, armFilters, handleLiveArmsLoaded,
 }: CountryRowProps) {
@@ -806,7 +811,7 @@ const CountryRow = memo(function CountryRow({
       )}
     </div>
   );
-});
+}
 
 function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
   const regionToCity = useMemo(() => {
@@ -871,11 +876,6 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     };
   }, [asnCache, liveArmsCache]);
 
-  const CENSORED_COUNTRIES = useMemo(() => new Set([
-    "AE", "AF", "BD", "BY", "CN", "CU", "EG", "ET", "IQ", "IR",
-    "KZ", "MM", "PK", "RU", "SA", "TH", "TM", "TR", "UZ", "VE", "VN",
-  ]), []);
-
   const { censoredCountries, uncensoredCountries } = useMemo(() => {
     const censored: DashboardCountry[] = [];
     const uncensored: DashboardCountry[] = [];
@@ -888,7 +888,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     censored.sort(alpha);
     uncensored.sort(alpha);
     return { censoredCountries: censored, uncensoredCountries: uncensored };
-  }, [countries, CENSORED_COUNTRIES]);
+  }, [countries]);
 
   const [showUncensored, setShowUncensored] = useState(false);
 
