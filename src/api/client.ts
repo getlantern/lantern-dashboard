@@ -370,3 +370,92 @@ export function getStreamURL(): string {
   if (authToken) url.searchParams.set("token", authToken);
   return url.toString();
 }
+
+// ── Admin mutations ──
+// All endpoints below are OAuth-gated server-side; the actor's email is
+// audit-logged on every call via the otel span the handler creates.
+
+async function apiMutate<T = void>(
+  path: string,
+  method: "POST" | "PATCH" | "PUT",
+  body?: unknown,
+): Promise<T> {
+  const url = `${API_URL}/v1/dashboard${path}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${method} ${path}: ${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
+  }
+  // Some handlers return no body (204/200 empty). Guard against that.
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) return undefined as T;
+  return (await res.json()) as T;
+}
+
+/** Deprecate (or un-deprecate) a single route by ID. */
+export function deprecateRoute(routeId: string, undeprecate = false): Promise<void> {
+  return apiMutate<void>(`/routes/${encodeURIComponent(routeId)}/deprecate`, "POST", { undeprecate });
+}
+
+export interface UpdateTrackBody {
+  vpsPoolSize?: number;
+  disabled?: boolean;
+  testing?: boolean;
+}
+
+/** PATCH a small set of safe fields on a track. Omitted fields are left alone. */
+export function updateTrack(trackId: number, body: UpdateTrackBody): Promise<void> {
+  return apiMutate<void>(`/tracks/${trackId}`, "PATCH", body);
+}
+
+export interface UpdateTrackLocationsBody {
+  locationIds: number[];
+  deprecateRemovedRoutes?: boolean;
+}
+
+export interface UpdateTrackLocationsResponse {
+  added: number[];
+  removed: number[];
+  routesDeprecated: number;
+}
+
+/** Replace the full vps_locations set for a track. */
+export function updateTrackLocations(
+  trackId: number,
+  body: UpdateTrackLocationsBody,
+): Promise<UpdateTrackLocationsResponse> {
+  return apiMutate<UpdateTrackLocationsResponse>(`/tracks/${trackId}/locations`, "PUT", body);
+}
+
+export interface DashboardLocation {
+  id: number;
+  name: string;
+  providerName: string;
+}
+
+/** List all locations, optionally scoped by provider name (e.g. "LINODE"). */
+export function fetchLocations(provider?: string): Promise<DashboardLocation[]> {
+  const params: Record<string, string> = {};
+  if (provider) params.provider = provider;
+  return apiFetch<DashboardLocation[]>("/locations", params);
+}
+
+/** Read the current vps_locations for a track (for pre-populating the editor). */
+export function fetchTrackLocations(trackId: number): Promise<{ locationId: number; name: string }[]> {
+  // Reuses the existing unauthed /track-locations/{id} endpoint which is
+  // behind the same API host. It returns [{locationId, name}].
+  return fetch(`${API_URL}/track-locations/${trackId}`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error(`track-locations ${trackId}: ${r.status}`);
+      return r.json();
+    });
+}

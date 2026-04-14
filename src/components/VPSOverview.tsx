@@ -1,11 +1,25 @@
 import { useState, useMemo, useEffect, memo, type CSSProperties } from "react";
-import type { DashboardVPSRoute, DashboardVPSSummary } from "../api/client";
+import { deprecateRoute, type DashboardVPSRoute, type DashboardVPSSummary } from "../api/client";
 
 interface VPSOverviewProps {
   routes: DashboardVPSRoute[];
   summary: DashboardVPSSummary | null;
   isLoading: boolean;
   error: string | null;
+  onRefresh?: () => void;
+}
+
+// Routes in provisioning/configuring that have been around for >10 min are
+// effectively stuck — the pool worker retries every ~60s so anything that
+// hasn't reached "running" by then almost certainly won't without intervention.
+const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
+
+function isStuck(route: DashboardVPSRoute): boolean {
+  if (route.deprecated) return false;
+  if (route.status !== "provisioning" && route.status !== "configuring" && route.status !== "pending") {
+    return false;
+  }
+  return Date.now() - Date.parse(route.created) > STUCK_THRESHOLD_MS;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -133,10 +147,33 @@ const badgeBase: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
+function VPSOverview({ routes, summary, isLoading, error, onRefresh }: VPSOverviewProps) {
   const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
   const [copiedRouteId, setCopiedRouteId] = useState<string | null>(null);
   const [, setTick] = useState(0);
+
+  // Deprecation state: one pending route id while a request is in-flight, plus
+  // a confirmation modal payload for the row the user has armed.
+  const [confirmDeprecate, setConfirmDeprecate] = useState<DashboardVPSRoute | null>(null);
+  const [deprecatingId, setDeprecatingId] = useState<string | null>(null);
+  const [deprecateError, setDeprecateError] = useState<string | null>(null);
+
+  const runDeprecate = async (route: DashboardVPSRoute) => {
+    setDeprecatingId(route.id);
+    setDeprecateError(null);
+    try {
+      await deprecateRoute(route.id);
+      setConfirmDeprecate(null);
+      onRefresh?.();
+    } catch (err) {
+      console.error("deprecate route failed", err);
+      setDeprecateError(
+        err instanceof Error ? err.message : "Failed to deprecate route",
+      );
+    } finally {
+      setDeprecatingId(null);
+    }
+  };
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000);
@@ -237,6 +274,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
   }
 
   return (
+    <>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem" }}>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
@@ -380,8 +418,8 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                           <span style={{ color: "#667080" }}> / {route.peakAssignmentCount}</span>
                         </span>
 
-                        {/* Status / Deprecated badge */}
-                        <span>
+                        {/* Status / Deprecated badge + stuck indicator */}
+                        <span style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
                           {isDeprecated ? (
                             <span style={{ ...badgeBase, background: "#e0606018", color: "#e06060", border: "1px solid #e0606030" }}>
                               deprecated
@@ -391,7 +429,45 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                               {route.status}
                             </span>
                           )}
+                          {isStuck(route) && (
+                            <span
+                              title={`In ${route.status} for > ${Math.floor((Date.now() - Date.parse(route.created)) / 60000)} minutes — likely stuck`}
+                              style={{ ...badgeBase, background: "#e0606010", color: "#e06060", border: "1px dashed #e0606050" }}
+                            >
+                              stuck
+                            </span>
+                          )}
                         </span>
+
+                        {/* Deprecate button */}
+                        {!isDeprecated && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeprecateError(null);
+                              setConfirmDeprecate(route);
+                            }}
+                            disabled={deprecatingId === route.id}
+                            title="Deprecate this route (pool worker will destroy the VM)"
+                            style={{
+                              all: "unset",
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "0.52rem",
+                              color: "#e06060",
+                              border: "1px solid #e0606040",
+                              background: "#e0606008",
+                              padding: "0.1rem 0.4rem",
+                              borderRadius: "3px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.03em",
+                              cursor: deprecatingId === route.id ? "wait" : "pointer",
+                              opacity: deprecatingId === route.id ? 0.5 : 1,
+                            }}
+                          >
+                            {deprecatingId === route.id ? "…" : "Deprecate"}
+                          </button>
+                        )}
 
                         {/* SSH command — copy to clipboard */}
                         <button
@@ -435,6 +511,84 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
         })}
       </div>
     </div>
+    {confirmDeprecate && (
+      <div
+        onClick={() => !deprecatingId && setConfirmDeprecate(null)}
+        style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000,
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid #e0606040",
+            borderRadius: "6px",
+            padding: "1.1rem 1.3rem",
+            width: "min(460px, 92vw)",
+            fontFamily: "var(--font-sans)",
+            color: "#c0c8d4",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e06060", marginBottom: "0.5rem" }}>
+            Deprecate route?
+          </div>
+          <div style={{ fontSize: "0.72rem", lineHeight: 1.6, color: "#a0a8b8" }}>
+            Route <code style={{ fontFamily: "var(--font-mono)", fontSize: "0.68rem" }}>
+              {confirmDeprecate.id.substring(0, 8)}
+            </code> on{" "}
+            <strong>{confirmDeprecate.trackName}</strong> in{" "}
+            <strong>{confirmDeprecate.regionName}</strong>{" "}
+            ({confirmDeprecate.vpsProvider} / {confirmDeprecate.vpsRegion}).
+            The destroy worker will tear down the VM on its next cycle.
+          </div>
+          {deprecateError && (
+            <div style={{ marginTop: "0.75rem", fontSize: "0.68rem", color: "#e06060" }}>
+              {deprecateError}
+            </div>
+          )}
+          <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => setConfirmDeprecate(null)}
+              disabled={!!deprecatingId}
+              style={{
+                all: "unset",
+                fontFamily: "var(--font-mono)",
+                fontSize: "0.68rem",
+                padding: "0.35rem 0.8rem",
+                borderRadius: "4px",
+                cursor: deprecatingId ? "not-allowed" : "pointer",
+                color: "#8890a0",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => runDeprecate(confirmDeprecate)}
+              disabled={!!deprecatingId}
+              style={{
+                all: "unset",
+                fontFamily: "var(--font-mono)",
+                fontSize: "0.68rem",
+                padding: "0.35rem 0.9rem",
+                borderRadius: "4px",
+                background: "#e06060",
+                color: "#fff",
+                cursor: deprecatingId ? "wait" : "pointer",
+                fontWeight: 600,
+              }}
+            >
+              {deprecatingId === confirmDeprecate.id ? "Deprecating…" : "Deprecate"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

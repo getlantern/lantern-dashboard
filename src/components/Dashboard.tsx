@@ -221,6 +221,7 @@ export default function Dashboard() {
             summary={vpsData.summary}
             isLoading={vpsData.isLoading}
             error={vpsData.error}
+            onRefresh={vpsData.refresh}
           />
         ) : activeTab === "arms" ? (
           <BanditArmsOverview countries={globalStats.countries} dataCenters={dataCenters} isLive={isLive} />
