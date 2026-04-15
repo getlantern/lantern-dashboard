@@ -768,6 +768,17 @@ function CountryRow({
   const erColor = c.avgErrorRate != null ? errorRateColor(c.avgErrorRate) : "#556070";
   const nameColor = countryHealthColor(c);
 
+  // Top 3 worst ASNs by error rate — only shown for primary censored countries
+  // to avoid clutter. Requires cached ASN data (fetched for all countries in a
+  // 30s background loop).
+  const worstASNs = useMemo(() => {
+    if (!PRIMARY_COUNTRIES.has(c.country) || !asns) return [];
+    return asns
+      .filter((a) => a.totalTests != null && a.totalTests >= 20 && a.errorRate != null)
+      .sort((a, b) => (b.errorRate ?? 0) - (a.errorRate ?? 0))
+      .slice(0, 3);
+  }, [c.country, asns]);
+
   return (
     <div>
       <div
@@ -792,7 +803,7 @@ function CountryRow({
         </Tip>
 
         {c.avgErrorRate != null && (
-          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
+          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Data window: each ISP's latest ~1-hour tumbling window (snapshots taken every minute; Redis counters reset each hour). Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
             <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
               <MiniBar value={c.avgErrorRate} color={erColor} />
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: erColor, minWidth: "32px", textAlign: "right" }}>
@@ -811,6 +822,28 @@ function CountryRow({
           </span>
         </Tip>
       </div>
+
+      {worstASNs.length > 0 && !expanded && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "0.4rem",
+          padding: "0.1rem 0.75rem 0.3rem 2rem",
+          fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "#8890a0",
+          flexWrap: "wrap",
+        }}>
+          <span style={{ color: "#556070", letterSpacing: "0.03em" }}>Worst ISPs:</span>
+          {worstASNs.map((a, i) => {
+            const rate = a.errorRate ?? 0;
+            const color = errorRateColor(rate);
+            return (
+              <span key={a.asn}>
+                <span style={{ color: "#a0b0c8" }}>{asnDisplayName(a.asn, asnDB)}</span>
+                <span style={{ color, marginLeft: "0.25rem" }}>{(rate * 100).toFixed(0)}%</span>
+                {i < worstASNs.length - 1 && <span style={{ color: "#2a3040", margin: "0 0.15rem" }}>·</span>}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {expanded && (
         <div>
@@ -1040,7 +1073,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
             <div style={cardHint}>of arms blocked across all ISPs</div>
           </div>
         </Tip>
-        <Tip text="Percentage of probe callbacks that fail. Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
+        <Tip text="Percentage of probe callbacks that fail, weighted by probe volume across all ISPs. Data window: each ISP's latest ~1-hour tumbling window (snapshots every minute; Redis signal counters reset each hour). Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
           <div style={card}>
             <div style={cardLabel}>Avg Error Rate <InfoIcon /></div>
             <div style={{ ...cardValue, color: weightedErrorRate != null ? errorRateColor(weightedErrorRate) : "#667080" }}>
