@@ -774,7 +774,7 @@ function CountryRow({
   const worstASNs = useMemo(() => {
     if (!PRIMARY_COUNTRIES.has(c.country) || !asns) return [];
     return asns
-      .filter((a) => a.totalTests != null && a.totalTests > 20 && a.errorRate != null)
+      .filter((a) => a.totalTests != null && a.totalTests >= 20 && a.errorRate != null)
       .sort((a, b) => (b.errorRate ?? 0) - (a.errorRate ?? 0))
       .slice(0, 3);
   }, [c.country, asns]);
