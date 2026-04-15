@@ -481,6 +481,50 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   const name = asnDisplayName(asn.asn, asnDB);
   const blockedColor = asn.numBlocked > 0 ? "#e06060" : "#667080";
 
+  // Severity combines two independent signals:
+  //   • Error rate: from Redis ASN signals (1-hour window). Requires ≥20
+  //     probe tests to avoid noise from low-traffic ASNs; drives the full
+  //     critical/warning/caution ladder.
+  //   • Block rate: fraction of arms the bandit has already flagged as
+  //     blocked. The bandit applies its own minimum-sample threshold before
+  //     flagging, so a high block fraction is meaningful even if the
+  //     recent probe window expired — covers the low-signal case.
+  const hasSignal = asn.totalTests != null && asn.totalTests >= 20;
+  const errorRate = hasSignal ? (asn.errorRate ?? 0) : 0;
+  const blockFrac = asn.numArms > 0 ? asn.numBlocked / asn.numArms : 0;
+  let severity: "critical" | "warning" | "caution" | "ok" = "ok";
+  if (hasSignal) {
+    if (errorRate > 0.5 || blockFrac > 0.5) severity = "critical";
+    else if (errorRate > 0.2 || blockFrac > 0.2) severity = "warning";
+    else if (errorRate > 0.05) severity = "caution";
+  } else if (blockFrac > 0.5) {
+    severity = "critical";
+  } else if (blockFrac > 0.2) {
+    severity = "warning";
+  }
+  const severityBg: Record<typeof severity, string> = {
+    critical: "rgba(224,96,96,0.08)",
+    warning:  "rgba(224,160,128,0.07)",
+    caution:  "rgba(216,192,144,0.05)",
+    ok:       "rgba(255,255,255,0.008)",
+  };
+  const severityHoverBg: Record<typeof severity, string> = {
+    critical: "rgba(224,96,96,0.14)",
+    warning:  "rgba(224,160,128,0.12)",
+    caution:  "rgba(216,192,144,0.09)",
+    ok:       "rgba(255,255,255,0.02)",
+  };
+  const severityBorder: Record<typeof severity, string> = {
+    critical: "2px solid #e06060",
+    warning:  "2px solid #e0a080",
+    caution:  "2px solid #d8c090",
+    ok:       "2px solid transparent",
+  };
+  const nameColor = severity === "critical" ? "#ffb0b0"
+    : severity === "warning" ? "#f0c8a8"
+    : severity === "caution" ? "#e8d8a8"
+    : "#c0c8d4";
+
   // Live-fetched full arm set (vs snapshot top-N). Loaded on demand when the
   // user clicks "Show all arms" — reads directly from Redis on the server,
   // so it's fresher than the snapshot and uncapped.
@@ -518,13 +562,13 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   return (
     <div>
       <div
-        style={ispRowStyle}
+        style={{ ...ispRowStyle, background: severityBg[severity], borderLeft: severityBorder[severity] }}
         onClick={() => toggleASN(key)}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.02)"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.008)"; }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = severityHoverBg[severity]; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = severityBg[severity]; }}
       >
         <span style={chevronStyle(expanded)}>&#9662;</span>
-        <span style={{ fontWeight: 600, color: "#c0c8d4" }}>{name}</span>
+        <span style={{ fontWeight: 600, color: nameColor }}>{name}</span>
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <span style={chipStyle}>
@@ -535,6 +579,15 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
               {asn.numBlocked}/{asn.numArms} blocked <InfoIcon />
             </span>
           </Tip>
+          {hasSignal && (
+            <Tip text={asn.totalSuccess != null && asn.totalTests != null
+              ? `${(errorRate * 100).toFixed(1)}% of probe callbacks fail across this ISP's tracks (${asn.totalSuccess}/${asn.totalTests} succeeded in the latest 1-hour window).`
+              : `${(errorRate * 100).toFixed(1)}% of probe callbacks fail across this ISP's tracks in the latest 1-hour window.`}>
+              <span style={{ ...chipStyle, color: errorRateColor(errorRate) }}>
+                {(errorRate * 100).toFixed(0)}% err <InfoIcon />
+              </span>
+            </Tip>
+          )}
           <span style={chipStyle}>{asn.totalPulls.toLocaleString()} pulls</span>
         </span>
       </div>
@@ -803,7 +856,7 @@ function CountryRow({
         </Tip>
 
         {c.avgErrorRate != null && (
-          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Data window: each ISP's latest ~1-hour tumbling window (snapshots taken every minute; Redis counters reset each hour). Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
+          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Data window: each ISP's latest 1-hour rolling window (snapshots taken every minute). Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
             <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
               <MiniBar value={c.avgErrorRate} color={erColor} />
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: erColor, minWidth: "32px", textAlign: "right" }}>
@@ -1073,7 +1126,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
             <div style={cardHint}>of arms blocked across all ISPs</div>
           </div>
         </Tip>
-        <Tip text="Percentage of probe callbacks that fail, weighted by probe volume across all ISPs. Data window: each ISP's latest ~1-hour tumbling window (snapshots every minute; Redis signal counters reset each hour). Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
+        <Tip text="Percentage of probe callbacks that fail, weighted by probe volume across all ISPs. Data window: each ISP's latest 1-hour rolling window (snapshots every minute). Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
           <div style={card}>
             <div style={cardLabel}>Avg Error Rate <InfoIcon /></div>
             <div style={{ ...cardValue, color: weightedErrorRate != null ? errorRateColor(weightedErrorRate) : "#667080" }}>
