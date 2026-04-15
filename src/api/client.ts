@@ -49,6 +49,9 @@ export interface DashboardCountry {
   asnCount: number;
   avgBlockRate: number;
   avgEntropy: number;
+  avgErrorRate?: number;
+  totalSuccess?: number;
+  totalTests?: number;
 }
 
 export interface DashboardGlobalStats {
@@ -83,6 +86,9 @@ export interface DashboardASN {
   entropy: number;
   snapshotTime: string;
   topArms: DashboardArmEntry[];
+  totalSuccess?: number;
+  totalTests?: number;
+  errorRate?: number;
 }
 
 export interface DashboardTrackInfo {
