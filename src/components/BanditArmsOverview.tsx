@@ -792,7 +792,7 @@ function CountryRow({
         </Tip>
 
         {c.avgErrorRate != null && (
-          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probes fail in ${countryName(c.country)}. Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
+          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
             <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
               <MiniBar value={c.avgErrorRate} color={erColor} />
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: erColor, minWidth: "32px", textAlign: "right" }}>
@@ -947,9 +947,9 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     return countries.reduce((s, c) => s + c.avgEntropy * c.asnCount, 0) / totalWeight;
   }, [countries]);
 
-  const weightedErrorRate = useMemo(() => {
+  const weightedErrorRate = useMemo((): number | null => {
     const totalTests = countries.reduce((s, c) => s + (c.totalTests ?? 0), 0);
-    if (totalTests === 0) return 0;
+    if (totalTests === 0) return null;
     const totalSuccess = countries.reduce((s, c) => s + (c.totalSuccess ?? 0), 0);
     return 1 - totalSuccess / totalTests;
   }, [countries]);
@@ -1043,8 +1043,8 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
         <Tip text="Percentage of probe callbacks that fail. Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
           <div style={card}>
             <div style={cardLabel}>Avg Error Rate <InfoIcon /></div>
-            <div style={{ ...cardValue, color: errorRateColor(weightedErrorRate) }}>
-              {(weightedErrorRate * 100).toFixed(1)}%
+            <div style={{ ...cardValue, color: weightedErrorRate != null ? errorRateColor(weightedErrorRate) : "#667080" }}>
+              {weightedErrorRate != null ? `${(weightedErrorRate * 100).toFixed(1)}%` : "N/A"}
             </div>
             <div style={cardHint}>probe callback failures</div>
           </div>
