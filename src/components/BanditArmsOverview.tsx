@@ -481,10 +481,14 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   const name = asnDisplayName(asn.asn, asnDB);
   const blockedColor = asn.numBlocked > 0 ? "#e06060" : "#667080";
 
-  // Severity is derived from error rate (primary signal) and block rate as a
-  // secondary amplifier. High error rate without blocks = degraded but not
-  // censored; high block rate = active censorship. Either warrants a visible
-  // warning. Requires ≥20 probe tests to avoid noise from low-traffic ASNs.
+  // Severity combines two independent signals:
+  //   • Error rate: from Redis ASN signals (1-hour window). Requires ≥20
+  //     probe tests to avoid noise from low-traffic ASNs; drives the full
+  //     critical/warning/caution ladder.
+  //   • Block rate: fraction of arms the bandit has already flagged as
+  //     blocked. The bandit applies its own minimum-sample threshold before
+  //     flagging, so a high block fraction is meaningful even if the
+  //     recent probe window expired — covers the low-signal case.
   const hasSignal = asn.totalTests != null && asn.totalTests >= 20;
   const errorRate = hasSignal ? (asn.errorRate ?? 0) : 0;
   const blockFrac = asn.numArms > 0 ? asn.numBlocked / asn.numArms : 0;
@@ -576,7 +580,9 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
             </span>
           </Tip>
           {hasSignal && (
-            <Tip text={`${(errorRate * 100).toFixed(1)}% of probe callbacks fail across this ISP's tracks (${asn.totalSuccess}/${asn.totalTests} succeeded in the latest 1-hour window).`}>
+            <Tip text={asn.totalSuccess != null && asn.totalTests != null
+              ? `${(errorRate * 100).toFixed(1)}% of probe callbacks fail across this ISP's tracks (${asn.totalSuccess}/${asn.totalTests} succeeded in the latest 1-hour window).`
+              : `${(errorRate * 100).toFixed(1)}% of probe callbacks fail across this ISP's tracks in the latest 1-hour window.`}>
               <span style={{ ...chipStyle, color: errorRateColor(errorRate) }}>
                 {(errorRate * 100).toFixed(0)}% err <InfoIcon />
               </span>
@@ -850,7 +856,7 @@ function CountryRow({
         </Tip>
 
         {c.avgErrorRate != null && (
-          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Data window: each ISP's latest ~1-hour tumbling window (snapshots taken every minute; Redis counters reset each hour). Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
+          <Tip text={`${(c.avgErrorRate * 100).toFixed(1)}% of probe callbacks fail in ${countryName(c.country)}. Data window: each ISP's latest 1-hour rolling window (snapshots taken every minute). Unlike block rate (binary per arm), error rate shows continuous connection quality.`}>
             <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "80px" }}>
               <MiniBar value={c.avgErrorRate} color={erColor} />
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: erColor, minWidth: "32px", textAlign: "right" }}>
@@ -1120,7 +1126,7 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
             <div style={cardHint}>of arms blocked across all ISPs</div>
           </div>
         </Tip>
-        <Tip text="Percentage of probe callbacks that fail, weighted by probe volume across all ISPs. Data window: each ISP's latest ~1-hour tumbling window (snapshots every minute; Redis signal counters reset each hour). Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
+        <Tip text="Percentage of probe callbacks that fail, weighted by probe volume across all ISPs. Data window: each ISP's latest 1-hour rolling window (snapshots every minute). Unlike block rate (binary: an arm is either blocked or not), error rate shows continuous connection quality. A country may have 0% block rate but 30% error rate — meaning connections are degraded but no arms have crossed the blocking threshold.">
           <div style={card}>
             <div style={cardLabel}>Avg Error Rate <InfoIcon /></div>
             <div style={{ ...cardValue, color: weightedErrorRate != null ? errorRateColor(weightedErrorRate) : "#667080" }}>
