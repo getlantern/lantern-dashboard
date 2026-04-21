@@ -45,8 +45,8 @@ const LIVE_CSS_CLASS: Record<string, string> = {
 
 // Short human-friendly labels for the structured reason codes the API
 // emits alongside route_provision_started / route_deprecated events.
-// Unknown reasons fall through to the raw code (which is already lowercase
-// snake_case, so it still reads reasonably on screen).
+// Unknown reasons fall through to the API code with underscores converted
+// to spaces, so they still read reasonably on screen.
 const REASON_LABELS: Record<string, string> = {
   pool_deficit: "pool deficit",
   capacity_scale_up: "capacity scale-up",
@@ -55,13 +55,17 @@ const REASON_LABELS: Record<string, string> = {
   track_deleted: "track deleted",
 };
 
+// color-mix lets us layer transparency on top of --accent-primary without
+// hard-coding a second palette entry. Appending a hex alpha suffix directly
+// to a var() expression (e.g. `var(--accent-primary)33`) is invalid CSS —
+// the browser parses it as two tokens and drops the declaration.
 const reasonChipStyle: React.CSSProperties = {
   display: "inline-block",
   padding: "1px 6px",
   marginLeft: "6px",
   borderRadius: "3px",
-  border: "1px solid var(--accent-primary, #00e5c8)33",
-  background: "var(--accent-primary, #00e5c8)12",
+  border: "1px solid color-mix(in srgb, var(--accent-primary, #00e5c8) 20%, transparent)",
+  background: "color-mix(in srgb, var(--accent-primary, #00e5c8) 7%, transparent)",
   color: "var(--accent-primary, #00e5c8)",
   fontFamily: "var(--font-mono)",
   fontSize: "0.52rem",
