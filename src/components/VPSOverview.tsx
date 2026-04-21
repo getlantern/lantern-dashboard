@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, memo, type CSSProperties } from "react";
 import type { DashboardVPSRoute, DashboardVPSSummary } from "../api/client";
+import VPSBandwidthModal from "./VPSBandwidthModal";
 
 interface VPSOverviewProps {
   routes: DashboardVPSRoute[];
@@ -136,6 +137,7 @@ const badgeBase: CSSProperties = {
 function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
   const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
   const [copiedRouteId, setCopiedRouteId] = useState<string | null>(null);
+  const [bandwidthRoute, setBandwidthRoute] = useState<DashboardVPSRoute | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -348,7 +350,40 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                     const isDeprecated = !!route.deprecated;
 
                     return (
-                      <div key={route.id} style={{ ...rowStyle, opacity: isDeprecated ? 0.5 : 1 }}>
+                      <div
+                        key={route.id}
+                        style={{ ...rowStyle, opacity: isDeprecated ? 0.5 : 1, cursor: "pointer", outline: "none" }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open bandwidth chart for vps-${route.id.substring(0, 8)}`}
+                        title="Click to view last 7 days of bandwidth"
+                        onClick={() => setBandwidthRoute(route)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setBandwidthRoute(route);
+                          }
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.02)"; }}
+                        onMouseLeave={(e) => {
+                          const el = e.currentTarget as HTMLDivElement;
+                          // Only clear hover bg if the row isn't the current keyboard-focus target;
+                          // the onFocus handler owns the focused background otherwise.
+                          if (el !== document.activeElement) {
+                            el.style.background = "transparent";
+                          }
+                        }}
+                        onFocus={(e) => {
+                          const el = e.currentTarget as HTMLDivElement;
+                          el.style.background = "rgba(255,255,255,0.04)";
+                          el.style.boxShadow = "inset 0 0 0 1px var(--accent-primary, #00e5c8)";
+                        }}
+                        onBlur={(e) => {
+                          const el = e.currentTarget as HTMLDivElement;
+                          el.style.background = "transparent";
+                          el.style.boxShadow = "none";
+                        }}
+                      >
                         {/* Status dot */}
                         <span style={{ width: 7, height: 7, borderRadius: "50%", background: sc, boxShadow: `0 0 5px ${sc}60`, display: "inline-block", flexShrink: 0 }} />
 
@@ -434,6 +469,10 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
           );
         })}
       </div>
+
+      {bandwidthRoute && (
+        <VPSBandwidthModal route={bandwidthRoute} onClose={() => setBandwidthRoute(null)} />
+      )}
     </div>
   );
 }
