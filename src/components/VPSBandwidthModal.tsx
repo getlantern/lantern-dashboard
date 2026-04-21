@@ -64,7 +64,7 @@ const subtitleStyle: CSSProperties = {
 };
 
 const closeBtn: CSSProperties = {
-  all: "unset",
+  background: "transparent",
   fontFamily: "var(--font-mono)",
   fontSize: "0.9rem",
   color: "#8890a0",
@@ -72,6 +72,12 @@ const closeBtn: CSSProperties = {
   padding: "0.1rem 0.5rem",
   borderRadius: 4,
   border: "1px solid #ffffff14",
+  outline: "none",
+};
+
+const closeBtnFocused: CSSProperties = {
+  outline: "2px solid var(--accent-primary, #00e5c8)",
+  outlineOffset: 2,
 };
 
 const statsRow: CSSProperties = {
@@ -173,6 +179,7 @@ function buildRouteBandwidthQuery(routeId: string, startMs: number, endMs: numbe
 export default function VPSBandwidthModal({ route, onClose }: VPSBandwidthModalProps) {
   const [data, setData] = useState<Point[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [closeFocused, setCloseFocused] = useState(false);
 
   useEffect(() => {
     const endMs = Date.now();
@@ -219,19 +226,34 @@ export default function VPSBandwidthModal({ route, onClose }: VPSBandwidthModalP
   const shortId = route.id.substring(0, 8);
   const addr = route.address ? `${route.address}${route.port ? `:${route.port}` : ""}` : "(no address)";
 
+  const titleId = `vps-bw-title-${shortId}`;
+
   return (
-    <div style={overlay} onClick={onClose} role="dialog" aria-modal="true">
-      <div style={panel} onClick={(e) => e.stopPropagation()}>
+    <div style={overlay} onClick={onClose}>
+      <div
+        style={panel}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div style={header}>
           <div style={titleBlock}>
-            <div style={titleStyle}>
+            <div id={titleId} style={titleStyle}>
               Bandwidth — vps-{shortId}
             </div>
             <div style={subtitleStyle}>
               {route.trackName} · {route.regionName}{route.city ? ` (${route.city})` : ""} · {route.providerName} · {addr}
             </div>
           </div>
-          <button type="button" aria-label="Close bandwidth panel" onClick={onClose} style={closeBtn}>
+          <button
+            type="button"
+            aria-label="Close bandwidth panel"
+            onClick={onClose}
+            onFocus={() => setCloseFocused(true)}
+            onBlur={() => setCloseFocused(false)}
+            style={closeFocused ? { ...closeBtn, ...closeBtnFocused } : closeBtn}
+          >
             ✕
           </button>
         </div>

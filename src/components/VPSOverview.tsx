@@ -352,7 +352,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                     return (
                       <div
                         key={route.id}
-                        style={{ ...rowStyle, opacity: isDeprecated ? 0.5 : 1, cursor: "pointer" }}
+                        style={{ ...rowStyle, opacity: isDeprecated ? 0.5 : 1, cursor: "pointer", outline: "none" }}
                         role="button"
                         tabIndex={0}
                         aria-label={`Open bandwidth chart for vps-${route.id.substring(0, 8)}`}
@@ -365,7 +365,24 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                           }
                         }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.02)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                        onMouseLeave={(e) => {
+                          const el = e.currentTarget as HTMLDivElement;
+                          // Only clear hover bg if the row isn't the current keyboard-focus target;
+                          // the onFocus handler owns the focused background otherwise.
+                          if (el !== document.activeElement) {
+                            el.style.background = "transparent";
+                          }
+                        }}
+                        onFocus={(e) => {
+                          const el = e.currentTarget as HTMLDivElement;
+                          el.style.background = "rgba(255,255,255,0.04)";
+                          el.style.boxShadow = "inset 0 0 0 1px var(--accent-primary, #00e5c8)";
+                        }}
+                        onBlur={(e) => {
+                          const el = e.currentTarget as HTMLDivElement;
+                          el.style.background = "transparent";
+                          el.style.boxShadow = "none";
+                        }}
                       >
                         {/* Status dot */}
                         <span style={{ width: 7, height: 7, borderRadius: "50%", background: sc, boxShadow: `0 0 5px ${sc}60`, display: "inline-block", flexShrink: 0 }} />
