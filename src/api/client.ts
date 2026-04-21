@@ -170,6 +170,7 @@ export const EventType = {
   ROUTE_UNBLOCKED: "route_unblocked",
   ROUTE_DEPRECATED: "route_deprecated",
   ROUTE_PROVISIONED: "route_provisioned",
+  ROUTE_PROVISION_STARTED: "route_provision_started",
   CALLBACK: "callback",
 } as const;
 
@@ -181,6 +182,7 @@ export interface DashboardActivityEvent {
   asn?: string;
   routeId?: string;
   detail?: string;
+  reason?: string;
   reward?: number;
   latencyMs?: number;
   timestamp: number;
