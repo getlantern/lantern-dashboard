@@ -1,6 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { fetchTracks, fetchSigNozMetrics, type DashboardTrackDetail, type TrackMetrics } from "../api/client";
+import {
+  fetchTracks,
+  fetchSigNozMetrics,
+  updateTrack,
+  updateTrackLocations,
+  fetchLocations,
+  fetchTrackLocations,
+  type DashboardTrackDetail,
+  type TrackMetrics,
+  type DashboardLocation,
+} from "../api/client";
 
 const TIER_COLORS: Record<string, string> = {
   FREE: "#a0c8a0",
@@ -263,6 +273,35 @@ const detailLabel: CSSProperties = {
   marginBottom: "0.15rem",
 };
 
+const editButtonStyle: CSSProperties = {
+  all: "unset",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.5rem",
+  color: "#00e5c8",
+  border: "1px solid #00e5c840",
+  padding: "0.1rem 0.35rem",
+  borderRadius: "3px",
+  cursor: "pointer",
+  textTransform: "uppercase",
+  letterSpacing: "0.03em",
+};
+
+function flagButtonStyle(on: boolean, accent: string): CSSProperties {
+  return {
+    all: "unset",
+    fontFamily: "var(--font-mono)",
+    fontSize: "0.52rem",
+    color: on ? accent : "#667080",
+    border: `1px solid ${on ? `${accent}60` : "#ffffff14"}`,
+    background: on ? `${accent}15` : "transparent",
+    padding: "0.15rem 0.45rem",
+    borderRadius: "3px",
+    cursor: "pointer",
+    textTransform: "uppercase",
+    letterSpacing: "0.03em",
+  };
+}
+
 type SortField = "name" | "tier" | "protocol" | "vpsRunning" | "vpsPoolSize";
 type FilterTier = "all" | "Free" | "Pro" | "New";
 type FilterStatus = "all" | "withRoutes" | "empty";
@@ -311,27 +350,68 @@ function TracksOverview() {
   const [metricsTimeRange, setMetricsTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("6h");
   const metricsLoadingRef = useRef(false);
 
+  // ── Edit state ──
+  // Which track (if any) is being edited, and what dialog is active.
+  // The "poolConfirm" dialog shows a 2-step confirm when a pool-size bump
+  // would trigger provisioning. The "locations" dialog is the multi-select
+  // editor. `busy` disables every control while a mutation is in flight.
+  const [poolEdit, setPoolEdit] = useState<{ trackId: number; trackName: string; current: number; next: number } | null>(null);
+  const [savingTrackId, setSavingTrackId] = useState<number | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [locEditor, setLocEditor] = useState<{ trackId: number; trackName: string; providers: string[] } | null>(null);
+
+  const savePoolSize = async () => {
+    if (!poolEdit) return;
+    setSavingTrackId(poolEdit.trackId);
+    setEditError(null);
+    try {
+      await updateTrack(poolEdit.trackId, { vpsPoolSize: poolEdit.next });
+      setPoolEdit(null);
+      await reloadTracks();
+    } catch (e) {
+      console.error("update pool size failed", e);
+      setEditError(e instanceof Error ? e.message : "Failed to update pool size");
+    } finally {
+      setSavingTrackId(null);
+    }
+  };
+
+  const toggleFlag = async (track: DashboardTrackDetail, field: "disabled" | "testing", value: boolean) => {
+    setSavingTrackId(track.id);
+    setEditError(null);
+    try {
+      await updateTrack(track.id, { [field]: value });
+      await reloadTracks();
+    } catch (e) {
+      console.error(`update ${field} failed`, e);
+      setEditError(e instanceof Error ? e.message : `Failed to update ${field}`);
+    } finally {
+      setSavingTrackId(null);
+    }
+  };
+
+  const reloadTracks = useCallback(async () => {
+    try {
+      const data = await fetchTracks();
+      setTracks(data.tracks || []);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load tracks");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      try {
-        const data = await fetchTracks();
-        if (!cancelled) {
-          setTracks(data.tracks || []);
-          setError(null);
-          setIsLoading(false);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load tracks");
-          setIsLoading(false);
-        }
-      }
+    const tick = async () => {
+      if (cancelled) return;
+      await reloadTracks();
     };
-    load();
-    const interval = setInterval(load, 60_000);
+    tick();
+    const interval = setInterval(tick, 60_000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  }, [reloadTracks]);
 
   // Fetch SigNoz metrics grouped by track
   useEffect(() => {
@@ -518,6 +598,36 @@ function TracksOverview() {
   }
 
   return (
+    <>
+    {editError && (
+      <div style={{
+        position: "fixed", top: "1rem", right: "1rem", zIndex: 9001,
+        background: "#e06060", color: "#fff",
+        fontFamily: "var(--font-mono)", fontSize: "0.65rem",
+        padding: "0.5rem 0.9rem", borderRadius: "4px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+        maxWidth: "360px",
+      }}>
+        {editError}
+      </div>
+    )}
+    {poolEdit && <PoolSizeConfirm
+      edit={poolEdit}
+      busy={savingTrackId !== null}
+      onCancel={() => setPoolEdit(null)}
+      onSave={savePoolSize}
+      onChange={(next) => setPoolEdit({ ...poolEdit, next })}
+    />}
+    {locEditor && <LocationsEditor
+      trackId={locEditor.trackId}
+      trackName={locEditor.trackName}
+      providers={locEditor.providers}
+      busy={savingTrackId !== null}
+      onClose={() => setLocEditor(null)}
+      onSaved={async () => { setLocEditor(null); await reloadTracks(); }}
+      setBusyId={setSavingTrackId}
+      setErr={setEditError}
+    />}
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem" }}>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
@@ -810,11 +920,63 @@ function TracksOverview() {
                     <>
                       <div>
                         <div style={detailLabel}>Pool Size</div>
-                        <div>{track.vpsPoolSize} per location</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                          <span>{track.vpsPoolSize} per location</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditError(null);
+                              setPoolEdit({ trackId: track.id, trackName: track.name, current: track.vpsPoolSize, next: track.vpsPoolSize });
+                            }}
+                            disabled={savingTrackId === track.id}
+                            style={editButtonStyle}
+                          >
+                            edit
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <div style={detailLabel}>Route Age</div>
                         <div>{track.routeAgeHours ? `${track.routeAgeHours}h` : "never expires"}</div>
+                      </div>
+                      <div>
+                        <div style={detailLabel}>Locations</div>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditError(null);
+                              setLocEditor({ trackId: track.id, trackName: track.name, providers: track.providers });
+                            }}
+                            disabled={savingTrackId === track.id}
+                            style={editButtonStyle}
+                          >
+                            edit locations
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <div style={detailLabel}>Flags</div>
+                        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleFlag(track, "disabled", !track.disabled); }}
+                            disabled={savingTrackId === track.id}
+                            style={flagButtonStyle(track.disabled, "#e06060")}
+                          >
+                            {track.disabled ? "disabled ✓" : "disabled"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleFlag(track, "testing", !track.testing); }}
+                            disabled={savingTrackId === track.id}
+                            style={flagButtonStyle(track.testing, "#f0a030")}
+                          >
+                            {track.testing ? "testing ✓" : "testing"}
+                          </button>
+                        </div>
                       </div>
                     </>
                   )}
@@ -903,6 +1065,277 @@ function TracksOverview() {
             No tracks match filters
           </div>
         )}
+      </div>
+    </div>
+    </>
+  );
+}
+
+// ── Pool-size confirmation dialog ──
+// Two-step intent: shows the current size, lets the user type the new size,
+// and spells out the consequence ("increasing triggers immediate VPS
+// provisioning by the pool worker on its next cycle"). Save is disabled until
+// the value actually changes.
+function PoolSizeConfirm({
+  edit,
+  busy,
+  onCancel,
+  onSave,
+  onChange,
+}: {
+  edit: { trackId: number; trackName: string; current: number; next: number };
+  busy: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  onChange: (n: number) => void;
+}) {
+  const diff = edit.next - edit.current;
+  const willTriggerProvisioning = diff > 0;
+  const willTriggerDeprecation = diff < 0;
+  return (
+    <div
+      onClick={() => !busy && onCancel()}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "var(--bg-card)", border: "1px solid #00e5c840", borderRadius: "6px", padding: "1.1rem 1.3rem", width: "min(480px, 92vw)", fontFamily: "var(--font-sans)", color: "#c0c8d4", boxShadow: "0 10px 40px rgba(0,0,0,0.6)" }}
+      >
+        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "#00e5c8", marginBottom: "0.5rem" }}>
+          Edit pool size — {edit.trackName}
+        </div>
+        <div style={{ fontSize: "0.72rem", lineHeight: 1.6, color: "#a0a8b8" }}>
+          Current pool size: <strong>{edit.current}</strong> VPS routes per location.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.8rem" }}>
+          <span style={{ fontSize: "0.7rem", color: "#8890a0" }}>New size:</span>
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={edit.next}
+            onChange={(e) => onChange(Math.max(0, Math.min(50, parseInt(e.target.value) || 0)))}
+            disabled={busy}
+            style={{ all: "unset", fontFamily: "var(--font-mono)", fontSize: "0.9rem", color: "#00e5c8", background: "#00e5c808", border: "1px solid #00e5c830", padding: "0.25rem 0.5rem", borderRadius: "4px", width: "4rem", textAlign: "center" }}
+          />
+          <span style={{ fontSize: "0.7rem", color: "#667080" }}>per location</span>
+        </div>
+        <div style={{ marginTop: "0.9rem", fontSize: "0.68rem", lineHeight: 1.55, padding: "0.6rem 0.75rem", borderRadius: "4px", background: willTriggerProvisioning ? "#f0a03012" : willTriggerDeprecation ? "#e0606012" : "#ffffff05", color: willTriggerProvisioning ? "#f0a030" : willTriggerDeprecation ? "#e06060" : "#8890a0", border: `1px solid ${willTriggerProvisioning ? "#f0a03030" : willTriggerDeprecation ? "#e0606030" : "#ffffff0a"}` }}>
+          {willTriggerProvisioning ? (
+            <>Heads up: increasing pool size triggers <strong>new VPS provisioning</strong> on the next pool-worker tick (~60s). This will incur cloud-provider costs.</>
+          ) : willTriggerDeprecation ? (
+            <>Heads up: decreasing pool size will cause the pool worker to <strong>deprecate excess routes</strong> (up to {Math.abs(diff)} per location), triggering VM teardown.</>
+          ) : (
+            <>No change from current value.</>
+          )}
+        </div>
+        <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+          <button type="button" onClick={onCancel} disabled={busy} style={{ all: "unset", fontFamily: "var(--font-mono)", fontSize: "0.68rem", padding: "0.35rem 0.8rem", borderRadius: "4px", cursor: busy ? "not-allowed" : "pointer", color: "#8890a0" }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={busy || diff === 0}
+            style={{ all: "unset", fontFamily: "var(--font-mono)", fontSize: "0.68rem", padding: "0.35rem 0.9rem", borderRadius: "4px", background: diff === 0 ? "#667080" : "#00e5c8", color: "#0a0f14", cursor: (busy || diff === 0) ? "not-allowed" : "pointer", fontWeight: 600, opacity: diff === 0 ? 0.5 : 1 }}
+          >
+            {busy ? "Saving…" : `Apply (${edit.current} → ${edit.next})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Locations editor ──
+// Multi-select of locations filtered to the track's providers. Shows current
+// set as removable chips and a dropdown of available-but-unselected locations.
+// Removing a location prompts the operator to also deprecate any vps_routes
+// in that location — critical because the track's pool worker would otherwise
+// orphan them (see 2026-04-13 Madrid incident).
+function LocationsEditor({
+  trackId,
+  trackName,
+  providers,
+  busy,
+  onClose,
+  onSaved,
+  setBusyId,
+  setErr,
+}: {
+  trackId: number;
+  trackName: string;
+  providers: string[];
+  busy: boolean;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  setBusyId: (id: number | null) => void;
+  setErr: (msg: string | null) => void;
+}) {
+  const [current, setCurrent] = useState<{ locationId: number; name: string }[] | null>(null);
+  const [available, setAvailable] = useState<DashboardLocation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deprecateRemoved, setDeprecateRemoved] = useState(true);
+  const [addPickerOpen, setAddPickerOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // We load locations for every provider the track supports and union
+        // them so a track on ["LINODE", "OCI"] sees both provider's locations.
+        const [cur, ...provLists] = await Promise.all([
+          fetchTrackLocations(trackId),
+          ...providers.map((p) => fetchLocations(p)),
+        ]);
+        if (cancelled) return;
+        setCurrent(cur);
+        const merged = new Map<number, DashboardLocation>();
+        for (const list of provLists) {
+          for (const l of list) merged.set(l.id, l);
+        }
+        setAvailable(Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
+      } catch (e) {
+        console.error("load locations for editor failed", e);
+        if (!cancelled) setErr(e instanceof Error ? e.message : "Failed to load locations");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [trackId, providers, setErr]);
+
+  const selectedIds = new Set((current ?? []).map((c) => c.locationId));
+  const pickableLocations = available.filter((l) => !selectedIds.has(l.id));
+
+  const remove = (id: number) => {
+    setCurrent((prev) => prev ? prev.filter((c) => c.locationId !== id) : prev);
+  };
+  const add = (loc: DashboardLocation) => {
+    setCurrent((prev) => prev ? [...prev, { locationId: loc.id, name: loc.name }].sort((a, b) => a.name.localeCompare(b.name)) : [{ locationId: loc.id, name: loc.name }]);
+    setAddPickerOpen(false);
+  };
+
+  const save = async () => {
+    if (!current) return;
+    setBusyId(trackId);
+    setErr(null);
+    try {
+      const resp = await updateTrackLocations(trackId, {
+        locationIds: current.map((c) => c.locationId),
+        deprecateRemovedRoutes: deprecateRemoved,
+      });
+      if (resp.routesDeprecated > 0) {
+        // Surface the side-effect so the operator sees it.
+        setErr(null);
+      }
+      await onSaved();
+    } catch (e) {
+      console.error("save track locations failed", e);
+      setErr(e instanceof Error ? e.message : "Failed to save locations");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div
+      onClick={() => !busy && onClose()}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "var(--bg-card)", border: "1px solid #00e5c840", borderRadius: "6px", padding: "1.1rem 1.3rem", width: "min(620px, 94vw)", maxHeight: "85vh", display: "flex", flexDirection: "column", fontFamily: "var(--font-sans)", color: "#c0c8d4", boxShadow: "0 10px 40px rgba(0,0,0,0.6)" }}
+      >
+        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "#00e5c8", marginBottom: "0.3rem" }}>
+          Edit locations — {trackName}
+        </div>
+        <div style={{ fontSize: "0.65rem", color: "#667080" }}>
+          Providers: {providers.join(", ")}
+        </div>
+
+        <div style={{ marginTop: "0.9rem", flex: 1, overflowY: "auto" }}>
+          {loading ? (
+            <div style={{ color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.7rem" }}>Loading locations…</div>
+          ) : (
+            <>
+              <div style={{ fontSize: "0.62rem", color: "#8890a0", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.4rem" }}>
+                Current ({current?.length ?? 0})
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                {(current ?? []).map((c) => (
+                  <span key={c.locationId} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "#00e5c810", color: "#00e5c8", border: "1px solid #00e5c830", padding: "0.15rem 0.45rem", borderRadius: "3px", fontFamily: "var(--font-mono)", fontSize: "0.62rem" }}>
+                    {c.name}
+                    <button
+                      type="button"
+                      onClick={() => remove(c.locationId)}
+                      disabled={busy}
+                      style={{ all: "unset", cursor: busy ? "not-allowed" : "pointer", color: "#00e5c8", opacity: 0.7, fontSize: "0.7rem" }}
+                      title={`Remove ${c.name}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setAddPickerOpen((v) => !v)}
+                  disabled={busy || pickableLocations.length === 0}
+                  style={{ all: "unset", cursor: busy ? "not-allowed" : "pointer", fontFamily: "var(--font-mono)", fontSize: "0.62rem", color: "#a0a8b8", border: "1px dashed #ffffff20", padding: "0.15rem 0.45rem", borderRadius: "3px" }}
+                >
+                  {addPickerOpen ? "– close" : "+ add"}
+                </button>
+              </div>
+
+              {addPickerOpen && (
+                <div style={{ marginTop: "0.6rem", border: "1px solid #ffffff0a", borderRadius: "4px", maxHeight: "220px", overflowY: "auto" }}>
+                  {pickableLocations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => add(loc)}
+                      style={{ all: "unset", display: "flex", justifyContent: "space-between", width: "100%", padding: "0.35rem 0.6rem", fontFamily: "var(--font-mono)", fontSize: "0.62rem", color: "#c0c8d4", cursor: "pointer", borderBottom: "1px solid #ffffff06" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#00e5c808"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                    >
+                      <span>{loc.name}</span>
+                      <span style={{ color: "#667080" }}>{loc.providerName}</span>
+                    </button>
+                  ))}
+                  {pickableLocations.length === 0 && (
+                    <div style={{ padding: "0.6rem", color: "#667080", fontSize: "0.62rem", textAlign: "center" }}>
+                      No more locations available for this track's providers.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "1rem", fontSize: "0.68rem", color: "#a0a8b8", cursor: "pointer" }}>
+                <input type="checkbox" checked={deprecateRemoved} onChange={(e) => setDeprecateRemoved(e.target.checked)} disabled={busy} />
+                <span>
+                  Also deprecate existing VPS routes in removed locations
+                  <div style={{ fontSize: "0.58rem", color: "#667080", marginTop: "0.1rem" }}>
+                    Recommended — prevents orphaned routes (see the 2026-04-13 Madrid incident).
+                  </div>
+                </span>
+              </label>
+            </>
+          )}
+        </div>
+
+        <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+          <button type="button" onClick={onClose} disabled={busy} style={{ all: "unset", fontFamily: "var(--font-mono)", fontSize: "0.68rem", padding: "0.35rem 0.8rem", borderRadius: "4px", cursor: busy ? "not-allowed" : "pointer", color: "#8890a0" }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={busy || loading || !current}
+            style={{ all: "unset", fontFamily: "var(--font-mono)", fontSize: "0.68rem", padding: "0.35rem 0.9rem", borderRadius: "4px", background: "#00e5c8", color: "#0a0f14", cursor: busy ? "wait" : "pointer", fontWeight: 600 }}
+          >
+            {busy ? "Saving…" : "Save locations"}
+          </button>
+        </div>
       </div>
     </div>
   );
