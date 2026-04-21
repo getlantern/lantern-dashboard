@@ -21,6 +21,7 @@ const LIVE_TYPE_ICONS: Record<string, string> = {
   [EventType.ROUTE_UNBLOCKED]: "⚡",
   [EventType.ROUTE_DEPRECATED]: "💀",
   [EventType.ROUTE_PROVISIONED]: "🚀",
+  [EventType.ROUTE_PROVISION_STARTED]: "🛠",
   [EventType.CALLBACK]: "📡",
 };
 
@@ -29,6 +30,7 @@ const LIVE_TYPE_LABELS: Record<string, string> = {
   [EventType.ROUTE_UNBLOCKED]: "Block Evaded",
   [EventType.ROUTE_DEPRECATED]: "Route Deprecated",
   [EventType.ROUTE_PROVISIONED]: "Route Deployed",
+  [EventType.ROUTE_PROVISION_STARTED]: "Provisioning",
   [EventType.CALLBACK]: "Probe Callback",
 };
 
@@ -37,7 +39,36 @@ const LIVE_CSS_CLASS: Record<string, string> = {
   [EventType.ROUTE_UNBLOCKED]: "evaded",
   [EventType.ROUTE_DEPRECATED]: "blocked",
   [EventType.ROUTE_PROVISIONED]: "deployed",
+  [EventType.ROUTE_PROVISION_STARTED]: "generated",
   [EventType.CALLBACK]: "generated",
+};
+
+// Short human-friendly labels for the structured reason codes the API
+// emits alongside route_provision_started / route_deprecated events.
+// Unknown reasons fall through to the raw code (which is already lowercase
+// snake_case, so it still reads reasonably on screen).
+const REASON_LABELS: Record<string, string> = {
+  pool_deficit: "pool deficit",
+  capacity_scale_up: "capacity scale-up",
+  blocked_grace: "blocked (grace elapsed)",
+  manual: "manual",
+  track_deleted: "track deleted",
+};
+
+const reasonChipStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "1px 6px",
+  marginLeft: "6px",
+  borderRadius: "3px",
+  border: "1px solid var(--accent-primary, #00e5c8)33",
+  background: "var(--accent-primary, #00e5c8)12",
+  color: "var(--accent-primary, #00e5c8)",
+  fontFamily: "var(--font-mono)",
+  fontSize: "0.52rem",
+  letterSpacing: "0.02em",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+  verticalAlign: "middle",
 };
 
 // Reward is a sigmoid of callback latency ∈ [0, 1]. ANY callback arriving
@@ -138,6 +169,14 @@ export default function ProtocolFeed({ liveEvents, demoMode }: ProtocolFeedProps
                     {isCallback
                       ? `${callbackFast ? "Route OK" : "Route OK (slow)"}${event.trackName ? ` — ${event.trackName}` : ""}${event.regionName ? ` via ${event.regionName}` : ""}${latencySuffix}`
                       : `${LIVE_TYPE_LABELS[event.eventType] || event.eventType}${event.detail ? `: ${humanizeMs(event.detail)}` : ""}`}
+                    {event.reason && (
+                      <span
+                        style={reasonChipStyle}
+                        title={`Reason code: ${event.reason}`}
+                      >
+                        {REASON_LABELS[event.reason] || event.reason.replace(/_/g, " ")}
+                      </span>
+                    )}
                   </div>
                   <div className="feed-meta">
                     {event.trackName && <span className="feed-protocol">{event.trackName}</span>}
