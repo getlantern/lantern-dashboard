@@ -34,6 +34,24 @@ function formatUptime(createdISO: string): string {
   return `${minutes}m`;
 }
 
+// Short human-friendly labels for the reason codes the API stamps on
+// vps_routes.provision_reason / deprecation_reason. Unknown codes fall
+// through with underscores replaced by spaces so they still read cleanly
+// on screen (e.g. a future reason code ships before the UI is updated).
+const REASON_LABELS: Record<string, string> = {
+  pool_deficit: "pool deficit",
+  capacity_scale_up: "capacity scale-up",
+  admin_create: "admin create",
+  blocked_grace: "blocked (grace)",
+  manual: "manual",
+  track_deleted: "track deleted",
+  force_release: "force released",
+};
+
+function formatReason(code: string): string {
+  return REASON_LABELS[code] || code.replace(/_/g, " ");
+}
+
 interface RegionGroup {
   regionName: string;
   city?: string;
@@ -415,16 +433,36 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
                           <span style={{ color: "#667080" }}> / {route.peakAssignmentCount}</span>
                         </span>
 
-                        {/* Status / Deprecated badge */}
-                        <span>
+                        {/* Status / Deprecated badge + reason chip */}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", flexWrap: "wrap" }}>
                           {isDeprecated ? (
-                            <span style={{ ...badgeBase, background: "#e0606018", color: "#e06060", border: "1px solid #e0606030" }}>
-                              deprecated
-                            </span>
+                            <>
+                              <span style={{ ...badgeBase, background: "#e0606018", color: "#e06060", border: "1px solid #e0606030" }}>
+                                deprecated
+                              </span>
+                              {route.deprecationReason && (
+                                <span
+                                  style={{ ...badgeBase, background: "#e0606010", color: "#d08080", border: "1px solid #e0606020" }}
+                                  title={`deprecation_reason: ${route.deprecationReason}`}
+                                >
+                                  {formatReason(route.deprecationReason)}
+                                </span>
+                              )}
+                            </>
                           ) : (
-                            <span style={{ ...badgeBase, background: `${sc}18`, color: sc, border: `1px solid ${sc}30` }}>
-                              {route.status}
-                            </span>
+                            <>
+                              <span style={{ ...badgeBase, background: `${sc}18`, color: sc, border: `1px solid ${sc}30` }}>
+                                {route.status}
+                              </span>
+                              {route.provisionReason && route.status !== "running" && (
+                                <span
+                                  style={{ ...badgeBase, background: "#ffffff06", color: "#8890a0", border: "1px solid #ffffff10" }}
+                                  title={`provision_reason: ${route.provisionReason}`}
+                                >
+                                  {formatReason(route.provisionReason)}
+                                </span>
+                              )}
+                            </>
                           )}
                         </span>
 

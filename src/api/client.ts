@@ -217,6 +217,8 @@ export interface DashboardVPSRoute {
   vpsInstanceId?: string;
   assignmentCount: number;
   peakAssignmentCount: number;
+  provisionReason?: string;
+  deprecationReason?: string;
   trackName: string;
   protocolName: string;
   locationName?: string;
