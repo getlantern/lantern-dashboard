@@ -220,6 +220,7 @@ export default function Dashboard() {
             routes={vpsData.routes}
             summary={vpsData.summary}
             isLoading={vpsData.isLoading}
+            hasLoaded={vpsData.hasLoaded}
             error={vpsData.error}
           />
         ) : activeTab === "arms" ? (

@@ -7,30 +7,36 @@ export function useVPSData(enabled: boolean) {
   const [routes, setRoutes] = useState<DashboardVPSRoute[]>([]);
   const [summary, setSummary] = useState<DashboardVPSSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled || !isAuthenticated) return;
     let cancelled = false;
+    let isFirst = true;
 
     const refresh = async () => {
-      setIsLoading(true);
+      if (isFirst) setIsLoading(true);
       try {
         const data = await fetchInfrastructure(true);
         if (cancelled) return;
         if (!data.vpsRoutes) {
-          setRoutes([]);
-          setSummary(null);
+          if (isFirst) {
+            setRoutes([]);
+            setSummary(null);
+          }
           setError("VPS route data unavailable");
           return;
         }
         setRoutes(data.vpsRoutes.routes);
         setSummary(data.vpsRoutes.summary);
         setError(null);
+        setHasLoaded(true);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load VPS data");
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled && isFirst) setIsLoading(false);
+        isFirst = false;
       }
     };
 
@@ -39,5 +45,5 @@ export function useVPSData(enabled: boolean) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [enabled, isAuthenticated]);
 
-  return { routes, summary, isLoading, error };
+  return { routes, summary, isLoading, hasLoaded, error };
 }
