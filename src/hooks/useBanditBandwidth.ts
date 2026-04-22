@@ -17,13 +17,18 @@ interface UseBanditBandwidthResult {
   error: string | null;
 }
 
-export function useBanditBandwidth(enabled: boolean, filters: BandwidthFilters, windowDays: number): UseBanditBandwidthResult {
+export function useBanditBandwidth(
+  enabled: boolean,
+  filters: BandwidthFilters,
+  windowMinutes: number,
+  stepSeconds: number,
+): UseBanditBandwidthResult {
   const { isAuthenticated } = useAuth();
   const [data, setData] = useState<BandwidthData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const key = `${enabled}|${filters.country ?? ""}|${filters.tier ?? ""}|${filters.protocol ?? ""}|${windowDays}`;
+  const key = `${enabled}|${filters.country ?? ""}|${filters.tier ?? ""}|${filters.protocol ?? ""}|${windowMinutes}|${stepSeconds}`;
 
   useEffect(() => {
     if (!enabled || !isAuthenticated) return;
@@ -32,8 +37,7 @@ export function useBanditBandwidth(enabled: boolean, filters: BandwidthFilters, 
     setError(null);
 
     const endMs = Date.now();
-    const startMs = endMs - windowDays * 86_400_000;
-    const stepSeconds = windowDays > 2 ? 3600 : 300;
+    const startMs = endMs - windowMinutes * 60_000;
     const query = buildBandwidthQuery({ filters, groupByTrack: true, startMs, endMs, stepSeconds });
 
     fetchSigNozMetrics(query)
