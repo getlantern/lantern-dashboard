@@ -79,25 +79,6 @@ const chartCard: CSSProperties = {
   padding: "1rem 1.1rem",
 };
 
-const tableContainer: CSSProperties = {
-  background: "var(--bg-card)",
-  borderRadius: "var(--radius-md)",
-  border: "1px solid #ffffff08",
-  overflow: "auto",
-};
-
-const trackRowStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "8px 1fr 0.8fr 0.8fr",
-  alignItems: "center",
-  gap: "0.75rem",
-  padding: "0.5rem 1rem",
-  borderBottom: "1px solid #ffffff06",
-  fontSize: "0.65rem",
-  fontFamily: "var(--font-mono)",
-  color: "#c0c8d4",
-};
-
 export default function BandwidthOverview({ enabled, countries }: BandwidthOverviewProps) {
   const [country, setCountry] = useState("");
   const [tier, setTier] = useState<"" | "pro" | "free">("");
@@ -159,18 +140,9 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     return banditSeries.some((s) => s.key === selectedTrack) ? selectedTrack : null;
   }, [banditSeries, selectedTrack]);
 
-  // Chart + summary-card scope: narrow to the selected track when one is picked.
-  const displaySeries = useMemo(() => {
-    if (!effectiveSelectedTrack) return banditSeries;
-    return banditSeries.filter((s) => s.key === effectiveSelectedTrack);
-  }, [banditSeries, effectiveSelectedTrack]);
-
   // Stable color + gradient id per track. Keyed off the /tracks list when
-  // available so a given track keeps its color across window/filter changes
-  // (banditSeries alone is keyed off which tracks happen to have samples in
-  // the current response, so sort order — and thus color assignment — would
-  // shift when tracks drop out). Falls back to banditSeries when /tracks is
-  // unavailable.
+  // available so a given track keeps its color across window/filter changes;
+  // falls back to banditSeries when /tracks is unavailable.
   const { trackColor, trackGradientId } = useMemo(() => {
     const keys = tracksReady && !tracksError && tracks.length > 0
       ? tracks.map((t) => t.name).sort()
@@ -184,11 +156,12 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     return { trackColor: colorMap, trackGradientId: gradientIdMap };
   }, [tracks, tracksReady, tracksError, banditSeries]);
 
-  // Merge display series into wide-format rows for the area chart.
+  // All tracks present in the current data, in stable order. Rendered as Areas;
+  // non-selected ones get hide=true so the legend still lists them for switching.
   const { chartData, trackKeys } = useMemo(() => {
-    const keys = displaySeries.map((s) => s.key).sort();
+    const keys = banditSeries.map((s) => s.key).sort();
     const byTs = new Map<number, Record<string, number>>();
-    for (const s of displaySeries) {
+    for (const s of banditSeries) {
       for (const p of s.points) {
         if (!byTs.has(p.ts)) byTs.set(p.ts, { ts: p.ts });
         byTs.get(p.ts)![s.key] = p.value;
@@ -198,25 +171,16 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
       .map((r) => ({ ...r, ts: Number(r.ts) }))
       .sort((a, b) => a.ts - b.ts);
     return { chartData: rows, trackKeys: keys };
-  }, [displaySeries]);
+  }, [banditSeries]);
 
-  // Per-track table always reflects the full set so another track can be selected.
-  const trackTotals = useMemo(() => {
-    const windowSec = windowMinutes * 60;
-    return banditSeries
-      .map((s) => {
-        const { totalBytes, maxBytesPerSec } = integrateRate(s.points);
-        const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
-        return { key: s.key, totalBytes, avgBytesPerSec, maxBytesPerSec };
-      })
-      .sort((a, b) => b.totalBytes - a.totalBytes);
-  }, [banditSeries, windowMinutes]);
-
-  // Aggregate is derived from the *displayed* series so the summary
-  // cards agree with the chart (and scope to the selected track).
+  // Aggregate scopes to the selected track when one is picked, so the summary
+  // cards agree with what the chart shows. Summed across all tracks otherwise.
   const aggregate = useMemo(() => {
+    const series = effectiveSelectedTrack
+      ? banditSeries.filter((s) => s.key === effectiveSelectedTrack)
+      : banditSeries;
     const summed = new Map<number, number>();
-    for (const s of displaySeries) {
+    for (const s of series) {
       for (const p of s.points) summed.set(p.ts, (summed.get(p.ts) ?? 0) + p.value);
     }
     const points = Array.from(summed.entries())
@@ -226,7 +190,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     const windowSec = windowMinutes * 60;
     const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
     return { totalBytes, avgBytesPerSec, maxBytesPerSec };
-  }, [displaySeries, windowMinutes]);
+  }, [banditSeries, effectiveSelectedTrack, windowMinutes]);
 
   const hasSelectedFilters = !!(country || tier || protocol);
 
@@ -376,7 +340,20 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                   labelFormatter={(ts) => new Date(Number(ts)).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   formatter={(v, name) => [formatBytesPerSec(Number(v)), name as string]}
                 />
-                <Legend wrapperStyle={{ fontSize: "0.6rem", fontFamily: "var(--font-mono)" }} />
+                <Legend
+                  wrapperStyle={{ fontSize: "0.6rem", fontFamily: "var(--font-mono)", cursor: "pointer" }}
+                  onClick={(payload) => {
+                    const key = (payload as { dataKey?: string; value?: string })?.dataKey
+                             ?? (payload as { value?: string })?.value;
+                    if (typeof key !== "string") return;
+                    setSelectedTrack((prev) => (prev === key ? null : key));
+                  }}
+                  formatter={(value) =>
+                    effectiveSelectedTrack && value === effectiveSelectedTrack
+                      ? <span style={{ color: "#00e5c8" }}>{value}</span>
+                      : <span>{value}</span>
+                  }
+                />
                 {trackKeys.map((k) => (
                   <Area
                     key={k}
@@ -388,6 +365,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                     fill={`url(#${trackGradientId[k]})`}
                     dot={false}
                     isAnimationActive={false}
+                    hide={effectiveSelectedTrack !== null && effectiveSelectedTrack !== k}
                   />
                 ))}
               </AreaChart>
@@ -396,50 +374,6 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
         </div>
       </div>
 
-      <div style={tableContainer}>
-        <div style={{ ...trackRowStyle, padding: "0.5rem 1rem", color: "#667080", fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "var(--font-sans)", borderBottom: "1px solid #ffffff08" }}>
-          <span />
-          <span>Track</span>
-          <span style={{ textAlign: "right" }}>Avg</span>
-          <span style={{ textAlign: "right" }}>Total egress</span>
-        </div>
-        {trackTotals.length === 0 ? (
-          <div style={{ padding: "1rem", color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.7rem", textAlign: "center" }}>
-            No per-track data
-          </div>
-        ) : (
-          trackTotals.map((t) => {
-            const isSelected = effectiveSelectedTrack === t.key;
-            const rowBg = isSelected ? "rgba(0,229,200,0.08)" : "transparent";
-            const rowBorder = isSelected ? "1px solid #00e5c850" : trackRowStyle.borderBottom;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                aria-pressed={isSelected}
-                title={isSelected ? "Click to clear selection" : "Click to scope chart and summary to this track"}
-                onClick={() => setSelectedTrack(isSelected ? null : t.key)}
-                style={{
-                  ...trackRowStyle,
-                  width: "100%",
-                  cursor: "pointer",
-                  background: rowBg,
-                  border: "none",
-                  borderBottom: rowBorder,
-                  textAlign: "left",
-                  font: "inherit",
-                  color: "inherit",
-                }}
-              >
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: trackColor[t.key] ?? "#667080", boxShadow: `0 0 5px ${trackColor[t.key] ?? "#667080"}60` }} />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isSelected ? "#00e5c8" : undefined }}>{t.key}</span>
-                <span style={{ textAlign: "right", color: "#a0a8b8" }}>{formatBytesPerSec(t.avgBytesPerSec)}</span>
-                <span style={{ textAlign: "right" }}>{formatBytes(t.totalBytes)}</span>
-              </button>
-            );
-          })
-        )}
-      </div>
     </div>
   );
 }
