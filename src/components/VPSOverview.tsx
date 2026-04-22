@@ -6,6 +6,7 @@ interface VPSOverviewProps {
   routes: DashboardVPSRoute[];
   summary: DashboardVPSSummary | null;
   isLoading: boolean;
+  hasLoaded: boolean;
   error: string | null;
 }
 
@@ -134,7 +135,7 @@ const badgeBase: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
+function VPSOverview({ routes, summary, isLoading, hasLoaded, error }: VPSOverviewProps) {
   const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
   const [copiedRouteId, setCopiedRouteId] = useState<string | null>(null);
   const [bandwidthRoute, setBandwidthRoute] = useState<DashboardVPSRoute | null>(null);
@@ -222,7 +223,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
     );
   }
 
-  if (error && routes.length === 0) {
+  if (error && !hasLoaded) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
         {error}
@@ -230,7 +231,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
     );
   }
 
-  if (routes.length === 0) {
+  if (hasLoaded && routes.length === 0 && !error) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
         No active VPS routes
@@ -240,11 +241,14 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem" }}>
-      {error && (
-        <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#e0606012", border: "1px solid #e0606030", color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
-          Refresh failed: {error}
-        </div>
-      )}
+      {/* Reserve height for the banner so its appearance/disappearance doesn't shift scroll. */}
+      <div style={{ minHeight: "2rem" }}>
+        {error && (
+          <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#e0606012", border: "1px solid #e0606030", color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
+            Refresh failed: {error}
+          </div>
+        )}
+      </div>
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
         <div style={card}>

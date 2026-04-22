@@ -7,6 +7,7 @@ export function useVPSData(enabled: boolean) {
   const [routes, setRoutes] = useState<DashboardVPSRoute[]>([]);
   const [summary, setSummary] = useState<DashboardVPSSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export function useVPSData(enabled: boolean) {
         setRoutes(data.vpsRoutes.routes);
         setSummary(data.vpsRoutes.summary);
         setError(null);
+        setHasLoaded(true);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load VPS data");
       } finally {
@@ -43,5 +45,5 @@ export function useVPSData(enabled: boolean) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [enabled, isAuthenticated]);
 
-  return { routes, summary, isLoading, error };
+  return { routes, summary, isLoading, hasLoaded, error };
 }
