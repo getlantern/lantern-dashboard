@@ -3,12 +3,11 @@ import { buildBandwidthQuery, fetchSigNozMetrics, type BandwidthFilters } from "
 import { useAuth } from "./useAuth";
 
 export interface BandwidthSeries {
-  key: string;            // "total" or track name
+  key: string;            // track name
   points: Array<{ ts: number; value: number }>;  // value in bytes/sec
 }
 
 export interface BandwidthData {
-  total: BandwidthSeries | null;
   byTrack: BandwidthSeries[];
 }
 
@@ -35,17 +34,12 @@ export function useBanditBandwidth(enabled: boolean, filters: BandwidthFilters, 
     const endMs = Date.now();
     const startMs = endMs - windowDays * 86_400_000;
     const stepSeconds = windowDays > 2 ? 3600 : 300;
+    const query = buildBandwidthQuery({ filters, groupByTrack: true, startMs, endMs, stepSeconds });
 
-    const totalQ = buildBandwidthQuery({ filters, groupByTrack: false, startMs, endMs, stepSeconds });
-    const trackQ = buildBandwidthQuery({ filters, groupByTrack: true,  startMs, endMs, stepSeconds });
-
-    Promise.all([fetchSigNozMetrics(totalQ), fetchSigNozMetrics(trackQ)])
-      .then(([totalResp, trackResp]) => {
+    fetchSigNozMetrics(query)
+      .then((resp) => {
         if (cancelled) return;
-        setData({
-          total: extractTotal(totalResp),
-          byTrack: extractSeries(trackResp),
-        });
+        setData({ byTrack: extractSeries(resp) });
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load bandwidth");
@@ -59,18 +53,6 @@ export function useBanditBandwidth(enabled: boolean, filters: BandwidthFilters, 
   }, [key, isAuthenticated]);
 
   return { data, isLoading, error };
-}
-
-function extractTotal(resp: unknown): BandwidthSeries | null {
-  const series = extractSeries(resp);
-  if (series.length === 0) return null;
-  if (series.length === 1) return { key: "total", points: series[0].points };
-  // Fallback: sum across any extra series we weren't expecting.
-  const merged = new Map<number, number>();
-  for (const s of series) {
-    for (const p of s.points) merged.set(p.ts, (merged.get(p.ts) ?? 0) + p.value);
-  }
-  return { key: "total", points: Array.from(merged.entries()).sort((a, b) => a[0] - b[0]).map(([ts, value]) => ({ ts, value })) };
 }
 
 function extractSeries(resp: unknown): BandwidthSeries[] {
