@@ -84,11 +84,22 @@ export default function AdminPanel() {
             fontSize: "0.55rem",
             color: "var(--text-muted)",
           }}>
-            current: <span style={{
-              color: currentEnv === "prod" ? "var(--accent-primary)" : "#f0a030",
-            }}>{currentEnv}</span>
+            current: <span style={{ color: envColor(currentEnv) }}>{currentEnv}</span>
           </span>
         </div>
+        {currentEnv === "custom" && (
+          <div style={{
+            marginTop: "0.75rem",
+            fontFamily: "var(--font-mono)",
+            fontSize: "0.55rem",
+            color: "#ff4060",
+            lineHeight: 1.5,
+          }}>
+            Requests are going to a non-canonical URL from VITE_API_URL
+            (typically a local-dev tunnel). Click prod or staging above
+            to override with a canonical endpoint.
+          </div>
+        )}
       </div>
 
       {/* Bandit Reset */}
@@ -221,9 +232,9 @@ export default function AdminPanel() {
   );
 }
 
-function EnvButton({ env, active }: { env: ApiEnv; active: boolean }) {
+function EnvButton({ env, active }: { env: "prod" | "staging"; active: boolean }) {
   const activeBg = env === "prod" ? "var(--accent-primary-dim)" : "#f0a03020";
-  const activeColor = env === "prod" ? "var(--accent-primary)" : "#f0a030";
+  const activeColor = envColor(env);
   const activeBorder = env === "prod" ? "#00e5c830" : "#f0a03040";
   return (
     <button
@@ -247,4 +258,15 @@ function EnvButton({ env, active }: { env: ApiEnv; active: boolean }) {
       {env}
     </button>
   );
+}
+
+function envColor(env: ApiEnv): string {
+  switch (env) {
+    case "prod":
+      return "var(--accent-primary)";
+    case "staging":
+      return "#f0a030";
+    case "custom":
+      return "#ff4060";
+  }
 }

@@ -20,14 +20,28 @@ import type { GlobalStats } from "../data/mock";
 // ApiEnvBadge makes the current API environment impossible to miss.
 // Staging routes 1x1 pixel of your attention when you'd otherwise think
 // you're looking at prod. Clicking jumps to the Admin tab where the
-// actual toggle lives.
-function ApiEnvBadge() {
+// actual toggle lives — this is just an indicator + shortcut, not the
+// toggle itself, so no reload is needed.
+function ApiEnvBadge({ onJumpToAdmin }: { onJumpToAdmin: () => void }) {
   const env = getApiEnv();
-  const isStaging = env === "staging";
+  const color =
+    env === "prod" ? "var(--accent-primary)" :
+    env === "staging" ? "#f0a030" :
+    "#ff4060"; // custom — red so it can't be confused with the two canonical envs
+  const bg =
+    env === "prod" ? "var(--accent-primary-dim)" :
+    env === "staging" ? "#f0a03015" :
+    "#ff406015";
+  const border =
+    env === "prod" ? "#00e5c830" :
+    env === "staging" ? "#f0a03040" :
+    "#ff406040";
   return (
-    <div
-      onClick={() => { window.location.hash = "#admin"; window.location.reload(); }}
+    <button
+      type="button"
+      onClick={onJumpToAdmin}
       title="Click to open Admin panel and switch environments"
+      aria-label={`API environment: ${env} — click to open Admin panel`}
       style={{
         marginLeft: "0.75rem",
         padding: "0.15rem 0.5rem",
@@ -38,13 +52,13 @@ function ApiEnvBadge() {
         letterSpacing: "0.08em",
         cursor: "pointer",
         userSelect: "none" as const,
-        color: isStaging ? "#f0a030" : "var(--accent-primary)",
-        background: isStaging ? "#f0a03015" : "var(--accent-primary-dim)",
-        border: `1px solid ${isStaging ? "#f0a03040" : "#00e5c830"}`,
+        color,
+        background: bg,
+        border: `1px solid ${border}`,
       }}
     >
       {env}
-    </div>
+    </button>
   );
 }
 
@@ -153,7 +167,7 @@ export default function Dashboard() {
             <div className="header-title">Lantern</div>
             <div className="header-subtitle">Bandit Dashboard</div>
           </div>
-          <ApiEnvBadge />
+          <ApiEnvBadge onJumpToAdmin={() => switchTab("admin")} />
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
           {(["map", "overview", "vps", "arms", "tracks", "bandwidth", "proxy", "admin"] as const).map((tab) => (

@@ -13,41 +13,52 @@
 // so a post-toggle reload hits the new endpoint.
 export const API_ENV_STORAGE_KEY = "lantern-dashboard-api-env";
 
-export type ApiEnv = "prod" | "staging";
+// "custom" is reported when VITE_API_URL is set to a non-canonical URL
+// (typically a local-dev tunnel) and no operator override is stored —
+// makes the badge say "custom" instead of lying with "prod" while
+// actually talking to something else.
+export type ApiEnv = "prod" | "staging" | "custom";
 
-const API_URLS: Record<ApiEnv, string> = {
+const API_URLS: Record<Exclude<ApiEnv, "custom">, string> = {
   prod: "https://api.iantem.io",
   staging: "https://api.staging.iantem.io",
 };
 
-export function getApiEnv(): ApiEnv {
+function getStoredApiEnv(): Exclude<ApiEnv, "custom"> | null {
   try {
     const v = localStorage.getItem(API_ENV_STORAGE_KEY);
     if (v === "prod" || v === "staging") return v;
   } catch {
     // localStorage unavailable (private tab, etc.) — fall through.
   }
+  return null;
+}
+
+export function getApiEnv(): ApiEnv {
+  const stored = getStoredApiEnv();
+  if (stored) return stored;
+
   // Build-time VITE_API_URL takes effect only when no explicit override:
   // lets local dev point at anything (including a tunnel) without the
   // toggle UI fighting the build config.
   const built = import.meta.env.VITE_API_URL;
   if (built === API_URLS.staging) return "staging";
+  if (built === API_URLS.prod) return "prod";
+  if (built) return "custom";
   return "prod";
 }
 
 export function getApiUrl(): string {
   // If a build-time URL was set AND no explicit override is stored,
   // honor it (supports local dev against a non-canonical tunnel).
-  try {
-    const stored = localStorage.getItem(API_ENV_STORAGE_KEY);
-    if (stored !== "prod" && stored !== "staging") {
-      const built = import.meta.env.VITE_API_URL;
-      if (built) return built;
-    }
-  } catch {
-    // fall through
+  const stored = getStoredApiEnv();
+  if (!stored) {
+    const built = import.meta.env.VITE_API_URL;
+    if (built) return built;
   }
-  return API_URLS[getApiEnv()];
+  const env = getApiEnv();
+  if (env === "staging") return API_URLS.staging;
+  return API_URLS.prod;
 }
 
 // setApiEnv writes the operator's choice to localStorage and reloads
@@ -491,7 +502,7 @@ export interface BanditResetResponse {
 }
 
 export async function resetBanditData(): Promise<BanditResetResponse> {
-  const url = `${API_URL}/v1/dashboard/bandit/reset`;
+  const url = `${getApiUrl()}/v1/dashboard/bandit/reset`;
   const headers: Record<string, string> = {};
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const res = await fetch(url, { method: "POST", headers });
@@ -504,7 +515,7 @@ export async function resetBanditData(): Promise<BanditResetResponse> {
 }
 
 export function getStreamURL(): string {
-  const url = new URL(`${API_URL}/v1/dashboard/stream`);
+  const url = new URL(`${getApiUrl()}/v1/dashboard/stream`);
   if (authToken) url.searchParams.set("token", authToken);
   return url.toString();
 }
