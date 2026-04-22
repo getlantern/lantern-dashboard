@@ -99,13 +99,23 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
   const [protocol, setProtocol] = useState("");
   const [windowDays, setWindowDays] = useState(7);
   const [tracks, setTracks] = useState<DashboardTrackDetail[]>([]);
+  const [tracksReady, setTracksReady] = useState(false);
+  const [tracksError, setTracksError] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     fetchTracks()
-      .then((resp) => { if (!cancelled) setTracks(resp.tracks ?? []); })
-      .catch(() => { /* protocol filter stays empty */ });
+      .then((resp) => {
+        if (cancelled) return;
+        setTracks(resp.tracks ?? []);
+        setTracksReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTracksReady(true);
+        setTracksError(true);
+      });
     return () => { cancelled = true; };
   }, [enabled]);
 
@@ -123,9 +133,20 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     return Array.from(set).sort();
   }, [tracks]);
 
+  // Restrict every view to bandit-managed tracks (names the lantern-cloud /tracks
+  // endpoint returns). Fall back to unfiltered if /tracks failed outright so a
+  // transient tracks-API outage doesn't blank the whole view.
+  const banditSeries = useMemo(() => {
+    const all = data?.byTrack ?? [];
+    if (tracksError) return all;
+    if (!tracksReady) return all;
+    const names = new Set(tracks.map((t) => t.name));
+    return all.filter((s) => names.has(s.key));
+  }, [data, tracks, tracksReady, tracksError]);
+
   // Merge per-track time series into wide-format rows for the stacked area chart.
   const { chartData, trackKeys, trackColor, trackGradientId } = useMemo(() => {
-    const keys = (data?.byTrack ?? []).map((s) => s.key).sort();
+    const keys = banditSeries.map((s) => s.key).sort();
     const colorMap: Record<string, string> = {};
     const gradientIdMap: Record<string, string> = {};
     keys.forEach((k, i) => {
@@ -134,7 +155,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     });
 
     const byTs = new Map<number, Record<string, number>>();
-    for (const s of data?.byTrack ?? []) {
+    for (const s of banditSeries) {
       for (const p of s.points) {
         if (!byTs.has(p.ts)) byTs.set(p.ts, { ts: p.ts });
         byTs.get(p.ts)![s.key] = p.value;
@@ -144,26 +165,34 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
       .map((r) => ({ ...r, ts: Number(r.ts) }))
       .sort((a, b) => a.ts - b.ts);
     return { chartData: rows, trackKeys: keys, trackColor: colorMap, trackGradientId: gradientIdMap };
-  }, [data]);
+  }, [banditSeries]);
 
   const trackTotals = useMemo(() => {
-    if (!data) return [];
     const windowSec = windowDays * 86400;
-    return (data.byTrack ?? [])
+    return banditSeries
       .map((s) => {
         const { totalBytes, maxBytesPerSec } = integrateRate(s.points);
         const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
         return { key: s.key, totalBytes, avgBytesPerSec, maxBytesPerSec };
       })
       .sort((a, b) => b.totalBytes - a.totalBytes);
-  }, [data, windowDays]);
+  }, [banditSeries, windowDays]);
 
+  // Aggregate is derived from the filtered per-track series so the summary
+  // cards always agree with the chart/table.
   const aggregate = useMemo(() => {
-    const { totalBytes, maxBytesPerSec } = integrateRate(data?.total?.points ?? []);
+    const summed = new Map<number, number>();
+    for (const s of banditSeries) {
+      for (const p of s.points) summed.set(p.ts, (summed.get(p.ts) ?? 0) + p.value);
+    }
+    const points = Array.from(summed.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([ts, value]) => ({ ts, value }));
+    const { totalBytes, maxBytesPerSec } = integrateRate(points);
     const windowSec = windowDays * 86400;
     const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
     return { totalBytes, avgBytesPerSec, maxBytesPerSec };
-  }, [data, windowDays]);
+  }, [banditSeries, windowDays]);
 
   const hasSelectedFilters = !!(country || tier || protocol);
 
@@ -228,6 +257,11 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
       {error && (
         <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#e0606012", border: "1px solid #e0606030", color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
           {error}
+        </div>
+      )}
+      {tracksError && (
+        <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#f0a03012", border: "1px solid #f0a03030", color: "#f0a030", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
+          Track list unavailable — showing all tracks (including non-bandit).
         </div>
       )}
 
