@@ -353,6 +353,69 @@ export interface TrackMetrics {
   selections: Record<string, number>;        // track name → selection count
 }
 
+// BandwidthFilters drives queries on the Bandwidth tab.
+// Any field left undefined/empty means "no filter on this dimension".
+export interface BandwidthFilters {
+  country?: string;           // ISO-2, matches `country` attribute on proxy.io
+  tier?: "pro" | "free";      // maps to client.is_pro = true|false
+  protocol?: string;          // matches `proxy.protocol` resource attribute
+}
+
+function filterItems(f: BandwidthFilters): object[] {
+  const items: object[] = [
+    { key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: "transmit" },
+  ];
+  if (f.country) {
+    items.push({ key: { key: "country", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.country });
+  }
+  if (f.tier) {
+    items.push({ key: { key: "client.is_pro", dataType: "bool", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.tier === "pro" });
+  }
+  if (f.protocol) {
+    items.push({ key: { key: "proxy.protocol", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.protocol });
+  }
+  return items;
+}
+
+// Build a SigNoz query for proxy.io as bytes/sec, optionally grouped by `proxy.track`.
+export function buildBandwidthQuery(opts: {
+  filters: BandwidthFilters;
+  groupByTrack: boolean;
+  startMs: number;
+  endMs: number;
+  stepSeconds: number;
+}): object {
+  return {
+    start: opts.startMs,
+    end: opts.endMs,
+    compositeQuery: {
+      queryType: "builder",
+      panelType: "graph",
+      builderQueries: {
+        A: {
+          dataSource: "metrics",
+          queryName: "A",
+          aggregateAttribute: { key: "proxy.io", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+          timeAggregation: "rate",
+          spaceAggregation: "sum",
+          filters: { items: filterItems(opts.filters), op: "AND" },
+          expression: "A",
+          disabled: false,
+          groupBy: opts.groupByTrack
+            ? [{ key: "proxy.track", dataType: "string", type: "tag", isColumn: false, isJSON: false }]
+            : [],
+          legend: opts.groupByTrack ? "{{proxy.track}}" : "total",
+          having: [],
+          limit: null,
+          orderBy: [],
+          reduceTo: "avg",
+          stepInterval: opts.stepSeconds,
+        },
+      },
+    },
+  };
+}
+
 // ── Admin actions ──
 
 export interface BanditResetResponse {
