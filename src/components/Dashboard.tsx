@@ -14,7 +14,39 @@ import TracksOverview from "./TracksOverview";
 import BandwidthOverview from "./BandwidthOverview";
 import AISummary from "./AISummary";
 import AdminPanel from "./AdminPanel";
+import { getApiEnv } from "../api/client";
 import type { GlobalStats } from "../data/mock";
+
+// ApiEnvBadge makes the current API environment impossible to miss.
+// Staging routes 1x1 pixel of your attention when you'd otherwise think
+// you're looking at prod. Clicking jumps to the Admin tab where the
+// actual toggle lives.
+function ApiEnvBadge() {
+  const env = getApiEnv();
+  const isStaging = env === "staging";
+  return (
+    <div
+      onClick={() => { window.location.hash = "#admin"; window.location.reload(); }}
+      title="Click to open Admin panel and switch environments"
+      style={{
+        marginLeft: "0.75rem",
+        padding: "0.15rem 0.5rem",
+        borderRadius: "var(--radius-sm)",
+        fontFamily: "var(--font-mono)",
+        fontSize: "0.55rem",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        cursor: "pointer",
+        userSelect: "none" as const,
+        color: isStaging ? "#f0a030" : "var(--accent-primary)",
+        background: isStaging ? "#f0a03015" : "var(--accent-primary-dim)",
+        border: `1px solid ${isStaging ? "#f0a03040" : "#00e5c830"}`,
+      }}
+    >
+      {env}
+    </div>
+  );
+}
 
 function LanternLogo() {
   return (
@@ -121,6 +153,7 @@ export default function Dashboard() {
             <div className="header-title">Lantern</div>
             <div className="header-subtitle">Bandit Dashboard</div>
           </div>
+          <ApiEnvBadge />
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
           {(["map", "overview", "vps", "arms", "tracks", "bandwidth", "proxy", "admin"] as const).map((tab) => (
