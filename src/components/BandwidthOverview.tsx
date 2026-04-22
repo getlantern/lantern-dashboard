@@ -278,7 +278,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
         </div>
         <div style={card}>
           <div style={cardLabel}>Tracks seen</div>
-          <div style={{ ...cardValue, color: "#a0c8a0" }}>{trackKeys.length}</div>
+          <div style={{ ...cardValue, color: "#a0c8a0" }}>{effectiveSelectedTrack ? 1 : trackKeys.length}</div>
         </div>
       </div>
 
@@ -341,18 +341,49 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                   formatter={(v, name) => [formatBytesPerSec(Number(v)), name as string]}
                 />
                 <Legend
-                  wrapperStyle={{ fontSize: "0.6rem", fontFamily: "var(--font-mono)", cursor: "pointer" }}
-                  onClick={(payload) => {
-                    const key = (payload as { dataKey?: string; value?: string })?.dataKey
-                             ?? (payload as { value?: string })?.value;
-                    if (typeof key !== "string") return;
-                    setSelectedTrack((prev) => (prev === key ? null : key));
-                  }}
-                  formatter={(value) =>
-                    effectiveSelectedTrack && value === effectiveSelectedTrack
-                      ? <span style={{ color: "#00e5c8" }}>{value}</span>
-                      : <span>{value}</span>
-                  }
+                  wrapperStyle={{ fontSize: "0.6rem", fontFamily: "var(--font-mono)" }}
+                  content={({ payload }) => (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", padding: "0.25rem 0" }}>
+                      {(payload ?? []).map((entry, index) => {
+                        const raw = (entry as { dataKey?: string; value?: string });
+                        const key = raw.dataKey ?? raw.value;
+                        if (typeof key !== "string") return null;
+                        const isSelected = effectiveSelectedTrack === key;
+                        return (
+                          <button
+                            key={`${key}-${index}`}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => setSelectedTrack((prev) => (prev === key ? null : key))}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              border: `1px solid ${isSelected ? "#00e5c8" : "#ffffff22"}`,
+                              background: isSelected ? "#00e5c81a" : "transparent",
+                              color: isSelected ? "#00e5c8" : "#c7d0dd",
+                              cursor: "pointer",
+                              font: "inherit",
+                            }}
+                          >
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: "50%",
+                                background: (entry as { color?: string }).color ?? trackColor[key],
+                                display: "inline-block",
+                              }}
+                            />
+                            <span>{key}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 />
                 {trackKeys.map((k) => (
                   <Area
