@@ -356,7 +356,7 @@ export interface TrackMetrics {
 // BandwidthFilters drives queries on the Bandwidth tab.
 // Any field left undefined/empty means "no filter on this dimension".
 export interface BandwidthFilters {
-  country?: string;           // ISO-2, matches `country` attribute on proxy.io
+  country?: string;           // ISO-2, matches `geo.country.iso_code` attribute on proxy.io
   tier?: "pro" | "free";      // maps to client.is_pro = true|false
   protocol?: string;          // matches `proxy.protocol` resource attribute
 }
@@ -366,7 +366,8 @@ function filterItems(f: BandwidthFilters): object[] {
     { key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: "transmit" },
   ];
   if (f.country) {
-    items.push({ key: { key: "country", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.country });
+    // lantern-box emits country via semconv.GeoCountryISOCodeKey on every proxy.io data point.
+    items.push({ key: { key: "geo.country.iso_code", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.country });
   }
   if (f.tier) {
     items.push({ key: { key: "client.is_pro", dataType: "bool", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.tier === "pro" });
