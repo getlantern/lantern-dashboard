@@ -1,4 +1,81 @@
-const API_URL = import.meta.env.VITE_API_URL || "https://api.iantem.io";
+// Environment selection
+//
+// Two canonical environments for the lantern-cloud API:
+//   - prod:    https://api.iantem.io
+//   - staging: https://api.staging.iantem.io
+//
+// An operator can override via the Admin panel (see setApiEnv below);
+// the choice persists in localStorage per-browser. If nothing is set,
+// we fall back to VITE_API_URL (build-time default for local dev) and
+// finally to prod.
+//
+// Callers should NEVER capture API_URL at import time — use getApiUrl()
+// so a post-toggle reload hits the new endpoint.
+export const API_ENV_STORAGE_KEY = "lantern-dashboard-api-env";
+
+// "custom" is reported when VITE_API_URL is set to a non-canonical URL
+// (typically a local-dev tunnel) and no operator override is stored —
+// makes the badge say "custom" instead of lying with "prod" while
+// actually talking to something else.
+export type ApiEnv = "prod" | "staging" | "custom";
+
+const API_URLS: Record<Exclude<ApiEnv, "custom">, string> = {
+  prod: "https://api.iantem.io",
+  staging: "https://api.staging.iantem.io",
+};
+
+function getStoredApiEnv(): Exclude<ApiEnv, "custom"> | null {
+  try {
+    const v = localStorage.getItem(API_ENV_STORAGE_KEY);
+    if (v === "prod" || v === "staging") return v;
+  } catch {
+    // localStorage unavailable (private tab, etc.) — fall through.
+  }
+  return null;
+}
+
+export function getApiEnv(): ApiEnv {
+  const stored = getStoredApiEnv();
+  if (stored) return stored;
+
+  // Build-time VITE_API_URL takes effect only when no explicit override:
+  // lets local dev point at anything (including a tunnel) without the
+  // toggle UI fighting the build config.
+  const built = import.meta.env.VITE_API_URL;
+  if (built === API_URLS.staging) return "staging";
+  if (built === API_URLS.prod) return "prod";
+  if (built) return "custom";
+  return "prod";
+}
+
+export function getApiUrl(): string {
+  // If a build-time URL was set AND no explicit override is stored,
+  // honor it (supports local dev against a non-canonical tunnel).
+  const stored = getStoredApiEnv();
+  if (!stored) {
+    const built = import.meta.env.VITE_API_URL;
+    if (built) return built;
+  }
+  const env = getApiEnv();
+  if (env === "staging") return API_URLS.staging;
+  return API_URLS.prod;
+}
+
+// setApiEnv writes the operator's choice to localStorage and reloads
+// the page. Reload is the simplest way to propagate the change: every
+// in-flight hook tears down, and the next render reads the new URL
+// via getApiUrl(). Anything cached in module-scope closures (e.g.
+// auth handlers that snapshotted the URL) also resets.
+export function setApiEnv(env: ApiEnv): void {
+  try {
+    localStorage.setItem(API_ENV_STORAGE_KEY, env);
+  } catch {
+    // If localStorage is unavailable we can't persist — but still
+    // reload, since a transient override via setting window.location
+    // would be confusing.
+  }
+  window.location.reload();
+}
 
 let authToken: string | null = null;
 let onAuthExpired: (() => Promise<string | null>) | null = null;
@@ -12,7 +89,7 @@ export function setOnAuthExpired(handler: () => Promise<string | null>) {
 }
 
 async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(`${API_URL}/v1/dashboard${path}`);
+  const url = new URL(`${getApiUrl()}/v1/dashboard${path}`);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
@@ -289,7 +366,7 @@ export function fetchTracks(): Promise<DashboardTracksResponse> {
 // Posts a SigNoz v5 builder query to the API's /proxy/metrics endpoint.
 // Returns the raw SigNoz response (caller must parse the result structure).
 export async function fetchSigNozMetrics(body: object): Promise<any> {
-  const url = `${API_URL}/v1/dashboard/metrics`;
+  const url = `${getApiUrl()}/v1/dashboard/metrics`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
@@ -425,7 +502,7 @@ export interface BanditResetResponse {
 }
 
 export async function resetBanditData(): Promise<BanditResetResponse> {
-  const url = `${API_URL}/v1/dashboard/bandit/reset`;
+  const url = `${getApiUrl()}/v1/dashboard/bandit/reset`;
   const headers: Record<string, string> = {};
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const res = await fetch(url, { method: "POST", headers });
@@ -438,7 +515,7 @@ export async function resetBanditData(): Promise<BanditResetResponse> {
 }
 
 export function getStreamURL(): string {
-  const url = new URL(`${API_URL}/v1/dashboard/stream`);
+  const url = new URL(`${getApiUrl()}/v1/dashboard/stream`);
   if (authToken) url.searchParams.set("token", authToken);
   return url.toString();
 }

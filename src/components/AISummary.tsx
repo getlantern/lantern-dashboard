@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://api.iantem.io";
+import { getApiUrl } from "../api/client";
 
 interface SummaryData {
   text: string;
@@ -50,7 +50,7 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
     if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
     try {
-      const res = await fetch(`${API_URL}/v1/dashboard/ai-summary`, { headers });
+      const res = await fetch(`${getApiUrl()}/v1/dashboard/ai-summary`, { headers });
 
       if (res.ok) {
         const data = await res.json();
@@ -82,7 +82,7 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
     setState("streaming");
     setSummary({ text: "", generatedAt: "", model: "", cached: false });
 
-    const url = `${API_URL}/v1/dashboard/ai-summary/stream`;
+    const url = `${getApiUrl()}/v1/dashboard/ai-summary/stream`;
     const es = new EventSource(`${url}?token=${authToken}`);
 
     es.addEventListener("summary", (e) => {
