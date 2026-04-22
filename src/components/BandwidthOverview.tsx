@@ -165,19 +165,24 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     return banditSeries.filter((s) => s.key === effectiveSelectedTrack);
   }, [banditSeries, effectiveSelectedTrack]);
 
-  // Stable color + gradient id per track, keyed off the full bandit set so the
-  // per-track table (which always shows every track) never hits an undefined
-  // color lookup when only one track is selected for the chart.
+  // Stable color + gradient id per track. Keyed off the /tracks list when
+  // available so a given track keeps its color across window/filter changes
+  // (banditSeries alone is keyed off which tracks happen to have samples in
+  // the current response, so sort order — and thus color assignment — would
+  // shift when tracks drop out). Falls back to banditSeries when /tracks is
+  // unavailable.
   const { trackColor, trackGradientId } = useMemo(() => {
-    const allKeys = banditSeries.map((s) => s.key).sort();
+    const keys = tracksReady && !tracksError && tracks.length > 0
+      ? tracks.map((t) => t.name).sort()
+      : banditSeries.map((s) => s.key).sort();
     const colorMap: Record<string, string> = {};
     const gradientIdMap: Record<string, string> = {};
-    allKeys.forEach((k, i) => {
+    keys.forEach((k, i) => {
       colorMap[k] = COLORS[i % COLORS.length];
       gradientIdMap[k] = `bw-${i}`;
     });
     return { trackColor: colorMap, trackGradientId: gradientIdMap };
-  }, [banditSeries]);
+  }, [tracks, tracksReady, tracksError, banditSeries]);
 
   // Merge display series into wide-format rows for the area chart.
   const { chartData, trackKeys } = useMemo(() => {
@@ -354,7 +359,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                   dataKey="ts"
                   type="number"
                   domain={["dataMin", "dataMax"]}
-                  tickFormatter={(ts: number) => new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" })}
+                  tickFormatter={(ts: number) => formatAxisTick(ts, activeWindow.minutes)}
                   tick={{ fontSize: 10, fill: "#667080" }}
                   axisLine={false}
                   tickLine={false}
@@ -405,34 +410,48 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
         ) : (
           trackTotals.map((t) => {
             const isSelected = effectiveSelectedTrack === t.key;
-            const rowBg = isSelected ? "rgba(0,229,200,0.08)" : undefined;
+            const rowBg = isSelected ? "rgba(0,229,200,0.08)" : "transparent";
             const rowBorder = isSelected ? "1px solid #00e5c850" : trackRowStyle.borderBottom;
             return (
-              <div
+              <button
                 key={t.key}
-                role="button"
-                tabIndex={0}
+                type="button"
+                aria-pressed={isSelected}
                 title={isSelected ? "Click to clear selection" : "Click to scope chart and summary to this track"}
                 onClick={() => setSelectedTrack(isSelected ? null : t.key)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSelectedTrack(isSelected ? null : t.key);
-                  }
+                style={{
+                  ...trackRowStyle,
+                  width: "100%",
+                  cursor: "pointer",
+                  background: rowBg,
+                  border: "none",
+                  borderBottom: rowBorder,
+                  textAlign: "left",
+                  font: "inherit",
+                  color: "inherit",
                 }}
-                style={{ ...trackRowStyle, cursor: "pointer", background: rowBg, borderBottom: rowBorder, outline: "none" }}
               >
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: trackColor[t.key] ?? "#667080", boxShadow: `0 0 5px ${trackColor[t.key] ?? "#667080"}60` }} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isSelected ? "#00e5c8" : undefined }}>{t.key}</span>
                 <span style={{ textAlign: "right", color: "#a0a8b8" }}>{formatBytesPerSec(t.avgBytesPerSec)}</span>
                 <span style={{ textAlign: "right" }}>{formatBytes(t.totalBytes)}</span>
-              </div>
+              </button>
             );
           })
         )}
       </div>
     </div>
   );
+}
+
+// formatAxisTick picks an X-axis label granularity based on the active window.
+// Sub-day windows show HH:MM; multi-day windows show month + day.
+function formatAxisTick(ts: number, windowMinutes: number): string {
+  const d = new Date(ts);
+  if (windowMinutes < 24 * 60) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function formatBytesPerSec(bytesPerSec: number): string {
