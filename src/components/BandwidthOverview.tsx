@@ -124,10 +124,14 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
   }, [tracks]);
 
   // Merge per-track time series into wide-format rows for the stacked area chart.
-  const { chartData, trackKeys, trackColor } = useMemo(() => {
+  const { chartData, trackKeys, trackColor, trackGradientId } = useMemo(() => {
     const keys = (data?.byTrack ?? []).map((s) => s.key).sort();
     const colorMap: Record<string, string> = {};
-    keys.forEach((k, i) => { colorMap[k] = COLORS[i % COLORS.length]; });
+    const gradientIdMap: Record<string, string> = {};
+    keys.forEach((k, i) => {
+      colorMap[k] = COLORS[i % COLORS.length];
+      gradientIdMap[k] = `bw-${i}`;
+    });
 
     const byTs = new Map<number, Record<string, number>>();
     for (const s of data?.byTrack ?? []) {
@@ -139,7 +143,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     const rows = Array.from(byTs.values())
       .map((r) => ({ ...r, ts: Number(r.ts) }))
       .sort((a, b) => a.ts - b.ts);
-    return { chartData: rows, trackKeys: keys, trackColor: colorMap };
+    return { chartData: rows, trackKeys: keys, trackColor: colorMap, trackGradientId: gradientIdMap };
   }, [data]);
 
   const trackTotals = useMemo(() => {
@@ -147,35 +151,18 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     const windowSec = windowDays * 86400;
     return (data.byTrack ?? [])
       .map((s) => {
-        let totalBytes = 0;
-        let maxBps = 0;
-        for (let i = 0; i < s.points.length; i++) {
-          const p = s.points[i];
-          const next = s.points[i + 1];
-          const dt = next ? (next.ts - p.ts) / 1000 : 0;
-          if (dt > 0) totalBytes += p.value * dt;
-          if (p.value > maxBps) maxBps = p.value;
-        }
-        const avgBps = windowSec > 0 ? totalBytes / windowSec : 0;
-        return { key: s.key, totalBytes, avgBps, maxBps };
+        const { totalBytes, maxBytesPerSec } = integrateRate(s.points);
+        const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
+        return { key: s.key, totalBytes, avgBytesPerSec, maxBytesPerSec };
       })
       .sort((a, b) => b.totalBytes - a.totalBytes);
   }, [data, windowDays]);
 
   const aggregate = useMemo(() => {
-    const points = data?.total?.points ?? [];
-    let totalBytes = 0;
-    let maxBps = 0;
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
-      const next = points[i + 1];
-      const dt = next ? (next.ts - p.ts) / 1000 : 0;
-      if (dt > 0) totalBytes += p.value * dt;
-      if (p.value > maxBps) maxBps = p.value;
-    }
+    const { totalBytes, maxBytesPerSec } = integrateRate(data?.total?.points ?? []);
     const windowSec = windowDays * 86400;
-    const avgBps = totalBytes / windowSec;
-    return { totalBytes, avgBps, maxBps };
+    const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
+    return { totalBytes, avgBytesPerSec, maxBytesPerSec };
   }, [data, windowDays]);
 
   const hasSelectedFilters = !!(country || tier || protocol);
@@ -247,11 +234,11 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
         <div style={card}>
           <div style={cardLabel}>Avg bandwidth</div>
-          <div style={{ ...cardValue, color: "#00e5c8" }}>{formatBps(aggregate.avgBps)}</div>
+          <div style={{ ...cardValue, color: "#00e5c8" }}>{formatBytesPerSec(aggregate.avgBytesPerSec)}</div>
         </div>
         <div style={card}>
           <div style={cardLabel}>Peak bandwidth</div>
-          <div style={{ ...cardValue, color: "#80b0e0" }}>{formatBps(aggregate.maxBps)}</div>
+          <div style={{ ...cardValue, color: "#80b0e0" }}>{formatBytesPerSec(aggregate.maxBytesPerSec)}</div>
         </div>
         <div style={card}>
           <div style={cardLabel}>Total egress</div>
@@ -286,7 +273,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
               <AreaChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
                 <defs>
                   {trackKeys.map((k) => (
-                    <linearGradient key={k} id={`bw-${k}`} x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient key={k} id={trackGradientId[k]} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={trackColor[k]} stopOpacity={0.55} />
                       <stop offset="95%" stopColor={trackColor[k]} stopOpacity={0.05} />
                     </linearGradient>
@@ -307,12 +294,12 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                   axisLine={false}
                   tickLine={false}
                   width={64}
-                  tickFormatter={(v: number) => formatBps(v)}
+                  tickFormatter={(v: number) => formatBytesPerSec(v)}
                 />
                 <Tooltip
                   contentStyle={{ background: "#1a2030", border: "1px solid #ffffff10", borderRadius: 6, fontSize: "0.65rem", fontFamily: "var(--font-mono)" }}
                   labelFormatter={(ts) => new Date(Number(ts)).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  formatter={(v, name) => [formatBps(Number(v)), name as string]}
+                  formatter={(v, name) => [formatBytesPerSec(Number(v)), name as string]}
                 />
                 <Legend wrapperStyle={{ fontSize: "0.6rem", fontFamily: "var(--font-mono)" }} />
                 {trackKeys.map((k) => (
@@ -323,7 +310,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                     stackId="1"
                     stroke={trackColor[k]}
                     strokeWidth={1}
-                    fill={`url(#bw-${k})`}
+                    fill={`url(#${trackGradientId[k]})`}
                     dot={false}
                     isAnimationActive={false}
                   />
@@ -350,7 +337,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
             <div key={t.key} style={trackRowStyle}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: trackColor[t.key] ?? "#667080", boxShadow: `0 0 5px ${trackColor[t.key] ?? "#667080"}60` }} />
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.key}</span>
-              <span style={{ textAlign: "right", color: "#a0a8b8" }}>{formatBps(t.avgBps)}</span>
+              <span style={{ textAlign: "right", color: "#a0a8b8" }}>{formatBytesPerSec(t.avgBytesPerSec)}</span>
               <span style={{ textAlign: "right" }}>{formatBytes(t.totalBytes)}</span>
             </div>
           ))
@@ -360,13 +347,39 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
   );
 }
 
-function formatBps(bps: number): string {
-  if (!Number.isFinite(bps) || bps <= 0) return "0 B/s";
+function formatBytesPerSec(bytesPerSec: number): string {
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return "0 B/s";
   const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
-  let v = bps;
+  let v = bytesPerSec;
   let i = 0;
   while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
   return `${v.toFixed(v < 10 ? 2 : v < 100 ? 1 : 0)} ${units[i]}`;
+}
+
+// integrateRate converts rate samples (bytes/sec, timestamp in ms) into total bytes
+// over the observed window. Uses the step size inferred from sample gaps to credit
+// the final sample with a full bucket's worth of time (otherwise the last bucket is
+// dropped and egress/avg are systematically low).
+function integrateRate(points: Array<{ ts: number; value: number }>): { totalBytes: number; maxBytesPerSec: number } {
+  if (points.length === 0) return { totalBytes: 0, maxBytesPerSec: 0 };
+  // Median gap as the assumed step; falls back to the first gap if <3 points.
+  let step = 0;
+  if (points.length >= 2) {
+    const gaps: number[] = [];
+    for (let i = 1; i < points.length; i++) gaps.push((points[i].ts - points[i - 1].ts) / 1000);
+    gaps.sort((a, b) => a - b);
+    step = gaps[Math.floor(gaps.length / 2)] || 0;
+  }
+  let totalBytes = 0;
+  let maxBytesPerSec = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const next = points[i + 1];
+    const dt = next ? (next.ts - p.ts) / 1000 : step;
+    if (dt > 0) totalBytes += p.value * dt;
+    if (p.value > maxBytesPerSec) maxBytesPerSec = p.value;
+  }
+  return { totalBytes, maxBytesPerSec };
 }
 
 function formatBytes(bytes: number): string {
