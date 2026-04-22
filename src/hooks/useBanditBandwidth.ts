@@ -61,7 +61,10 @@ function extractSeries(resp: unknown): BandwidthSeries[] {
   const results = r?.data?.result ?? [];
   for (const qr of results) {
     for (const s of qr.series ?? []) {
-      const label = s.labels?.["proxy.track"] || s.labels?.track || "total";
+      // The query always groups by proxy.track. Drop series without a track label
+      // so downstream bandit-track filtering can't silently produce an orphan "total".
+      const label = s.labels?.["proxy.track"] || s.labels?.track;
+      if (!label) continue;
       const points = (s.values ?? [])
         .map((v) => ({ ts: Number(v.timestamp) || 0, value: Number(v.value) || 0 }))
         .filter((p) => p.ts > 0)

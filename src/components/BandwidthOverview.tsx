@@ -99,13 +99,23 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
   const [protocol, setProtocol] = useState("");
   const [windowDays, setWindowDays] = useState(7);
   const [tracks, setTracks] = useState<DashboardTrackDetail[]>([]);
+  const [tracksReady, setTracksReady] = useState(false);
+  const [tracksError, setTracksError] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     fetchTracks()
-      .then((resp) => { if (!cancelled) setTracks(resp.tracks ?? []); })
-      .catch(() => { /* protocol filter stays empty */ });
+      .then((resp) => {
+        if (cancelled) return;
+        setTracks(resp.tracks ?? []);
+        setTracksReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTracksReady(true);
+        setTracksError(true);
+      });
     return () => { cancelled = true; };
   }, [enabled]);
 
@@ -124,12 +134,15 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
   }, [tracks]);
 
   // Restrict every view to bandit-managed tracks (names the lantern-cloud /tracks
-  // endpoint returns). Before tracks load, show nothing rather than all traffic.
+  // endpoint returns). Fall back to unfiltered if /tracks failed outright so a
+  // transient tracks-API outage doesn't blank the whole view.
   const banditSeries = useMemo(() => {
-    if (tracks.length === 0) return [];
+    const all = data?.byTrack ?? [];
+    if (tracksError) return all;
+    if (!tracksReady) return all;
     const names = new Set(tracks.map((t) => t.name));
-    return (data?.byTrack ?? []).filter((s) => names.has(s.key));
-  }, [data, tracks]);
+    return all.filter((s) => names.has(s.key));
+  }, [data, tracks, tracksReady, tracksError]);
 
   // Merge per-track time series into wide-format rows for the stacked area chart.
   const { chartData, trackKeys, trackColor, trackGradientId } = useMemo(() => {
@@ -244,6 +257,11 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
       {error && (
         <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#e0606012", border: "1px solid #e0606030", color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
           {error}
+        </div>
+      )}
+      {tracksError && (
+        <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#f0a03012", border: "1px solid #f0a03030", color: "#f0a030", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
+          Track list unavailable — showing all tracks (including non-bandit).
         </div>
       )}
 
