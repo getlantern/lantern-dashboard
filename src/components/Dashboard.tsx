@@ -12,6 +12,7 @@ import VPSOverview from "./VPSOverview";
 import BanditArmsOverview, { BanditHowItWorks } from "./BanditArmsOverview";
 import TracksOverview from "./TracksOverview";
 import BandwidthOverview from "./BandwidthOverview";
+import ReleaseSkewOverview from "./ReleaseSkewOverview";
 import AISummary from "./AISummary";
 import AdminPanel from "./AdminPanel";
 import type { GlobalStats } from "../data/mock";
@@ -35,18 +36,19 @@ function LanternLogo() {
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
-  const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'tracks' | 'bandwidth' | 'proxy' | 'admin'>(() => {
+  const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'tracks' | 'bandwidth' | 'releases' | 'proxy' | 'admin'>(() => {
     const hash = window.location.hash;
     if (hash === '#overview') return 'overview';
     if (hash === '#vps') return 'vps';
     if (hash === '#arms') return 'arms';
     if (hash === '#tracks') return 'tracks';
     if (hash === '#bandwidth') return 'bandwidth';
+    if (hash === '#releases') return 'releases';
     if (hash === '#proxy') return 'proxy';
     if (hash === '#admin') return 'admin';
     return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'overview' | 'vps' | 'arms' | 'tracks' | 'bandwidth' | 'proxy' | 'admin') => {
+  const switchTab = useCallback((tab: 'map' | 'overview' | 'vps' | 'arms' | 'tracks' | 'bandwidth' | 'releases' | 'proxy' | 'admin') => {
     setActiveTab(tab);
     window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
@@ -123,7 +125,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "overview", "vps", "arms", "tracks", "bandwidth", "proxy", "admin"] as const).map((tab) => (
+          {(["map", "overview", "vps", "arms", "tracks", "bandwidth", "releases", "proxy", "admin"] as const).map((tab) => (
             <div
               key={tab}
               onClick={() => switchTab(tab)}
@@ -141,7 +143,7 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {{ map: "Map", overview: "Overview", vps: "VPS Fleet", arms: "Bandit Arms", tracks: "Tracks", bandwidth: "Bandwidth", proxy: "Share Proxy", admin: "Admin" }[tab]}
+              {{ map: "Map", overview: "Overview", vps: "VPS Fleet", arms: "Bandit Arms", tracks: "Tracks", bandwidth: "Bandwidth", releases: "Releases", proxy: "Share Proxy", admin: "Admin" }[tab]}
             </div>
           ))}
         </div>
@@ -231,6 +233,8 @@ export default function Dashboard() {
           <TracksOverview />
         ) : activeTab === "bandwidth" ? (
           <BandwidthOverview enabled={activeTab === "bandwidth"} countries={globalStats.countries} />
+        ) : activeTab === "releases" ? (
+          <ReleaseSkewOverview />
         ) : activeTab === "proxy" ? (
           <div style={{ flex: 1, padding: "1rem" }}>
             <ProxyWidget {...proxy} />

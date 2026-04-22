@@ -284,6 +284,37 @@ export function fetchTracks(): Promise<DashboardTracksResponse> {
   return apiFetch("/tracks");
 }
 
+// ── Release skew (bandit VPS central-update orchestration) ──
+// Mirrors dashboardReleaseSkewResponse in cmd/api/dashboard_handler.go.
+// Powered by GetBanditVPSImageSkew + ListBanditVPSImageTargets.
+
+export interface ReleaseSkewBucket {
+  targetTag: string;
+  currentTag: string;
+  routeCount: number;
+  oldestCreated: string;
+  matched: boolean;
+}
+
+export interface ReleaseSkewTrack {
+  trackId: number;
+  trackName: string;
+  targetTag?: string; // per-track override; empty means "inherit fleet default"
+  buckets: ReleaseSkewBucket[];
+  totalRunning: number;
+  lagOldest?: string;
+}
+
+export interface ReleaseSkewResponse {
+  tracks: ReleaseSkewTrack[];
+  fleetDefault: string;
+  autoreplaceActive: boolean;
+}
+
+export function fetchReleaseSkew(): Promise<ReleaseSkewResponse> {
+  return apiFetch("/release-skew");
+}
+
 // ── SigNoz metrics proxy ──
 
 // Posts a SigNoz v5 builder query to the API's /proxy/metrics endpoint.
