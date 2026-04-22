@@ -222,7 +222,7 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
     );
   }
 
-  if (error) {
+  if (error && routes.length === 0) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
         {error}
@@ -240,6 +240,11 @@ function VPSOverview({ routes, summary, isLoading, error }: VPSOverviewProps) {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem" }}>
+      {error && (
+        <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#e0606012", border: "1px solid #e0606030", color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
+          Refresh failed: {error}
+        </div>
+      )}
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
         <div style={card}>

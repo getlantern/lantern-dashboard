@@ -12,15 +12,18 @@ export function useVPSData(enabled: boolean) {
   useEffect(() => {
     if (!enabled || !isAuthenticated) return;
     let cancelled = false;
+    let isFirst = true;
 
     const refresh = async () => {
-      setIsLoading(true);
+      if (isFirst) setIsLoading(true);
       try {
         const data = await fetchInfrastructure(true);
         if (cancelled) return;
         if (!data.vpsRoutes) {
-          setRoutes([]);
-          setSummary(null);
+          if (isFirst) {
+            setRoutes([]);
+            setSummary(null);
+          }
           setError("VPS route data unavailable");
           return;
         }
@@ -30,7 +33,8 @@ export function useVPSData(enabled: boolean) {
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load VPS data");
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled && isFirst) setIsLoading(false);
+        isFirst = false;
       }
     };
 
