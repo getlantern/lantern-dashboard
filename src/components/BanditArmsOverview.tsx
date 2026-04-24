@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, memo, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
 import type {
   DashboardCountry,
   DashboardASN,
@@ -11,6 +11,13 @@ interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
   dataCenters?: DashboardDataCenter[];
   isLive?: boolean;
+  // Permalink hooks: on mount, auto-expand this country (fetching its ASN
+  // list) and — once the list loads — auto-expand the named ASN and scroll
+  // it into view. Lets a URL like /?country=RU&asn=12389#arms deep-link
+  // straight to Rostelecom's arms view. Consumed once on mount; subsequent
+  // interactions are user-driven.
+  initialCountry?: string | null;
+  initialAsn?: string | null;
 }
 
 // Lazy-loaded ASN → org name database (121K entries, ~1.5MB gzipped)
@@ -560,7 +567,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   const showFullLoadButton = expanded && allArms === null && hasMoreBeyondSnapshot;
 
   return (
-    <div>
+    <div id={`isp-${key}`}>
       <div
         style={{ ...ispRowStyle, background: severityBg[severity], borderLeft: severityBorder[severity] }}
         onClick={() => toggleASN(key)}
@@ -929,7 +936,7 @@ function CountryRow({
   );
 }
 
-function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
+function BanditArmsOverview({ countries, dataCenters, isLive, initialCountry, initialAsn }: BanditArmsOverviewProps) {
   const regionToCity = useMemo(() => {
     const map = new Map<string, string>();
     if (dataCenters) {
@@ -940,7 +947,9 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
     return map;
   }, [dataCenters]);
   const asnDB = useASNNames();
-  const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
+  const [expandedCountries, setExpandedCountries] = useState<Set<string>>(
+    () => (initialCountry ? new Set([initialCountry]) : new Set()),
+  );
   const [expandedASNs, setExpandedASNs] = useState<Set<string>>(new Set());
   const [asnCache, setAsnCache] = useState<Map<string, DashboardASN[]>>(new Map());
   const [loadingCountries, setLoadingCountries] = useState<Set<string>>(new Set());
@@ -1090,6 +1099,31 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
       return next;
     });
   }, []);
+
+  // Permalink expansion: the background refresh effect below populates
+  // asnCache for every country. Once the initial country's entry lands
+  // we match the permalink ASN (stripping/adding "AS" since the API keys
+  // may be in either form), expand that ISPSection, and scroll it into
+  // view. Guarded by a ref so it only fires once per mount — if the user
+  // collapses the section afterwards we don't re-expand on re-render.
+  const permalinkAppliedRef = useRef(false);
+  useEffect(() => {
+    if (permalinkAppliedRef.current) return;
+    if (!initialCountry) return;
+    const asns = asnCache.get(initialCountry);
+    if (!asns) return;
+    permalinkAppliedRef.current = true;
+    if (!initialAsn) return;
+    const naked = initialAsn.replace(/^AS/i, "");
+    const match = asns.find((a) => a.asn === initialAsn || a.asn === naked || a.asn === `AS${naked}`);
+    if (!match) return;
+    const key = `${initialCountry}-${match.asn}`;
+    setExpandedASNs((prev) => new Set(prev).add(key));
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`isp-${key}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [asnCache, initialCountry, initialAsn]);
 
   if (countries.length === 0) {
     return (
