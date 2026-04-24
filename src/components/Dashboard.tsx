@@ -302,7 +302,13 @@ export default function Dashboard() {
             error={vpsData.error}
           />
         ) : activeTab === "arms" ? (
-          <BanditArmsOverview countries={globalStats.countries} dataCenters={dataCenters} isLive={isLive} />
+          <BanditArmsOverview
+            countries={globalStats.countries}
+            dataCenters={dataCenters}
+            isLive={isLive}
+            initialCountry={initialMapCountry}
+            initialAsn={initialMapAsn}
+          />
         ) : activeTab === "tracks" ? (
           <TracksOverview />
         ) : activeTab === "bandwidth" ? (

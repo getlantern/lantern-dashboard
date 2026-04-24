@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, memo, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
 import type {
   DashboardCountry,
   DashboardASN,
@@ -11,6 +11,13 @@ interface BanditArmsOverviewProps {
   countries: DashboardCountry[];
   dataCenters?: DashboardDataCenter[];
   isLive?: boolean;
+  // Permalink hooks: on mount, auto-expand this country (fetching its ASN
+  // list) and — once the list loads — auto-expand the named ASN and scroll
+  // it into view. Lets a URL like /?country=RU&asn=12389#arms deep-link
+  // straight to Rostelecom's arms view. Consumed once on mount; subsequent
+  // interactions are user-driven.
+  initialCountry?: string | null;
+  initialAsn?: string | null;
 }
 
 // Lazy-loaded ASN → org name database (121K entries, ~1.5MB gzipped)
@@ -560,7 +567,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   const showFullLoadButton = expanded && allArms === null && hasMoreBeyondSnapshot;
 
   return (
-    <div>
+    <div id={`isp-${key}`}>
       <div
         style={{ ...ispRowStyle, background: severityBg[severity], borderLeft: severityBorder[severity] }}
         onClick={() => toggleASN(key)}
@@ -929,7 +936,7 @@ function CountryRow({
   );
 }
 
-function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOverviewProps) {
+function BanditArmsOverview({ countries, dataCenters, isLive, initialCountry, initialAsn }: BanditArmsOverviewProps) {
   const regionToCity = useMemo(() => {
     const map = new Map<string, string>();
     if (dataCenters) {
@@ -1090,6 +1097,62 @@ function BanditArmsOverview({ countries, dataCenters, isLive }: BanditArmsOvervi
       return next;
     });
   }, []);
+
+  // Permalink expansion runs in two phases:
+  //
+  //   Phase 1 (mount): call toggleCountry(initialCountry) so the country
+  //   both expands AND gets loadingCountries + an immediate fetch — without
+  //   this the pre-expanded body renders blank until the 30s refreshAll
+  //   effect happens to populate asnCache, which is the exact "blank arms
+  //   page" symptom the permalink is supposed to fix.
+  //
+  //   Phase 2 (asnCache update): once the initial country's ASN list lands
+  //   we match the permalink ASN (stripping/adding "AS" since API keys may
+  //   be in either form), expand the ISPSection, and scroll it into view.
+  //   The ref flips to true only when we've actually succeeded (country-
+  //   only permalink → flip after first fetch; ASN permalink → flip after
+  //   scrollIntoView finds the DOM node). A match miss leaves the ref
+  //   unset so a later refresh can retry, but in practice fetchASNs
+  //   returns the full list so a miss is definitive.
+  const permalinkAppliedRef = useRef(false);
+  const mountTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (mountTriggeredRef.current) return;
+    if (!initialCountry) return;
+    mountTriggeredRef.current = true;
+    void toggleCountry(initialCountry);
+  }, [initialCountry, toggleCountry]);
+
+  useEffect(() => {
+    if (permalinkAppliedRef.current) return;
+    if (!initialCountry) return;
+    const asns = asnCache.get(initialCountry);
+    if (!asns) return;
+    if (!initialAsn) {
+      // Country-only permalink — the toggleCountry above already expanded it.
+      permalinkAppliedRef.current = true;
+      return;
+    }
+    const naked = initialAsn.replace(/^AS/i, "");
+    const match = asns.find((a) => a.asn === initialAsn || a.asn === naked || a.asn === `AS${naked}`);
+    if (!match) return;
+    const key = `${initialCountry}-${match.asn}`;
+    setExpandedASNs((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    // CountryRow → ISPSection hasn't mounted on this frame yet. Retry on
+    // successive animation frames; flip the ref only after scroll succeeds
+    // so we don't declare victory too early and lock out later updates.
+    let frames = 0;
+    const tryScroll = () => {
+      const el = document.getElementById(`isp-${key}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        permalinkAppliedRef.current = true;
+        return;
+      }
+      if (++frames < 10) requestAnimationFrame(tryScroll);
+    };
+    requestAnimationFrame(tryScroll);
+  }, [asnCache, initialCountry, initialAsn]);
 
   if (countries.length === 0) {
     return (
