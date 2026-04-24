@@ -197,6 +197,11 @@ interface WorldMapProps {
   myProxyView?: boolean;
   myGeo?: GeoResult | null;
   peerGeos?: GeoResult[];
+  // Seed the internal selection on mount so permalinks like
+  // ?country=CN&asn=AS4134 can deep-link into a specific ASN.
+  // Consumed only at mount; later selection is driven by user clicks.
+  initialCountry?: string | null;
+  initialAsn?: string | null;
 }
 
 // Provider colors — each cloud provider gets a distinct hue
@@ -990,13 +995,25 @@ const PeerMarker = memo(function PeerMarker({ geo, index }: { geo: GeoResult; in
   );
 });
 
-function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange, myProxyView, myGeo, peerGeos }: WorldMapProps) {
+function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange, myProxyView, myGeo, peerGeos, initialCountry, initialAsn }: WorldMapProps) {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [projectionFn, setProjectionFn] = useState<((c: [number, number]) => [number, number] | null) | null>(null);
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(initialCountry ?? null);
   const [selectedASN, setSelectedASN] = useState<string | null>(null);
   const [countryASNs, setCountryASNs] = useState<DashboardASN[]>([]);
   const [asnLoading, setAsnLoading] = useState(false);
+  // pendingAsnRef holds the ASN from a permalink (?country=CN&asn=AS4134)
+  // until the async ASN fetch resolves. A ref avoids retriggering the fetch
+  // effect when we consume it. One-shot: consumed on the next fetch completion.
+  const pendingAsnRef = useRef<string | null>(initialAsn ?? null);
+  // initialAsnPending gates onSelectionChange so the parent doesn't clobber
+  // the ?asn= URL param during the async restore window. Flipped to false
+  // once the fetch effect has either applied the pending ASN or determined
+  // there's nothing to apply. Only true if we actually have a permalink ASN
+  // paired with a country to look it up against.
+  const [initialAsnPending, setInitialAsnPending] = useState(
+    initialCountry != null && initialAsn != null,
+  );
 
   // Compute proxy nodes from real DC data, falling back to hardcoded
   // Split each DC into one node per provider, offset slightly so they don't stack
@@ -1034,15 +1051,18 @@ function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange,
     return PROXY_NODES.map((n) => ({ ...n, dc: null, color: "#00e5c8" }));
   }, [dataCenters]);
 
-  // Notify parent of selection changes
+  // Notify parent of selection changes. Suppressed during the initial
+  // permalink-restore window so Dashboard's URL mirror doesn't strip the
+  // ?asn= param before we've had a chance to apply it from pendingAsnRef.
   useEffect(() => {
+    if (initialAsnPending) return;
     onSelectionChange?.({
       country: selectedCountry,
       asn: selectedASN,
       asnName: selectedASN ? asnDisplayName(selectedASN) : null,
       countryASNs,
     });
-  }, [selectedCountry, selectedASN, countryASNs, onSelectionChange]);
+  }, [selectedCountry, selectedASN, countryASNs, onSelectionChange, initialAsnPending]);
   const hasLiveData = liveCountries && liveCountries.length > 0;
 
   // Pre-compute set for O(1) lookups in geography render loop
@@ -1069,20 +1089,44 @@ function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange,
     if (!selectedCountry) {
       setCountryASNs([]);
       setSelectedASN(null);
+      pendingAsnRef.current = null;
+      setInitialAsnPending(false);
       return;
     }
-    setSelectedASN(null);
+    // setSelectedASN(null) is NOT called here — pendingAsnRef handles the
+    // permalink-restore case (initial mount), and handleGeoClick already
+    // clears selectedASN when the user switches to a different country.
     setAsnLoading(true);
+    // cancelled guards against a second click (country A → B) landing A's
+    // resolved promise after B's fetch has already started. Without this,
+    // A's ASNs would overwrite B's in countryASNs.
+    let cancelled = false;
 
     fetchASNs(selectedCountry)
       .then((asns) => {
-        setCountryASNs(asns.length > 0 ? asns : (MOCK_ISPS[selectedCountry] ?? []));
+        if (cancelled) return;
+        const resolved = asns.length > 0 ? asns : (MOCK_ISPS[selectedCountry] ?? []);
+        setCountryASNs(resolved);
         setAsnLoading(false);
+        // Apply permalink ASN only if it actually exists in the fetched list.
+        const pending = pendingAsnRef.current;
+        pendingAsnRef.current = null;
+        if (pending && resolved.some((a) => a.asn === pending)) {
+          setSelectedASN(pending);
+        }
+        setInitialAsnPending(false);
       })
       .catch(() => {
+        if (cancelled) return;
         setCountryASNs(MOCK_ISPS[selectedCountry] ?? []);
         setAsnLoading(false);
+        pendingAsnRef.current = null;
+        setInitialAsnPending(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedCountry]);
 
   // Build "My Proxy" arcs from self → each peer
@@ -1114,8 +1158,15 @@ function WorldMap({ liveCountries, dataCenters, trafficFlows, onSelectionChange,
   }, [hasLiveData, liveCountries]);
 
   const handleGeoClick = useCallback((iso: string) => {
-    setSelectedCountry((prev) => (prev === iso ? null : iso));
-  }, []);
+    if (selectedCountry === iso) {
+      setSelectedCountry(null);
+      return;
+    }
+    // Switching to a different country: drop any prior ASN selection so
+    // we don't carry CN's AS4134 over while the new country's list loads.
+    setSelectedCountry(iso);
+    setSelectedASN(null);
+  }, [selectedCountry]);
 
   const handleClearSelection = useCallback(() => {
     setSelectedCountry(null);

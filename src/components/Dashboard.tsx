@@ -105,8 +105,37 @@ export default function Dashboard() {
   );
   const { self: myGeo, peers: peerGeos } = useGeoLookup(connectionAddrs, proxy.isRunning);
   const [mapSelection, setMapSelection] = useState<MapSelection>({ country: null, asn: null, asnName: null, countryASNs: [] });
+  // Read initial map selection from ?country=XX&asn=YYYY so the URL is
+  // shareable. Captured once at mount; subsequent changes are pushed back
+  // into the URL via handleSelectionChange below. Normalize & validate here
+  // so a permalink like ?country=cn&asn=as4134 — or the naked variant
+  // ?country=cn&asn=4134 — restores correctly. Map data is keyed by
+  // uppercase ISO country codes and ASNs with the "AS" prefix.
+  const [initialMapCountry, initialMapAsn] = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const country = params.get("country")?.trim().toUpperCase() ?? "";
+    const rawAsn = params.get("asn")?.trim().toUpperCase() ?? "";
+    const asnMatch = rawAsn.match(/^(?:AS)?(\d+)$/);
+    return [
+      /^[A-Z]{2}$/.test(country) ? country : null,
+      asnMatch ? `AS${asnMatch[1]}` : null,
+    ] as const;
+  }, []);
   const handleSelectionChange = useCallback((sel: MapSelection) => {
     setMapSelection(sel);
+    // Mirror the current selection into the URL so users can share a link.
+    // replaceState (not pushState) keeps the back button sane — selecting an
+    // ASN shouldn't add history entries.
+    const params = new URLSearchParams(window.location.search);
+    if (sel.country) params.set("country", sel.country);
+    else params.delete("country");
+    if (sel.asn) params.set("asn", sel.asn);
+    else params.delete("asn");
+    const query = params.toString();
+    const next = `${window.location.pathname}${query ? "?" + query : ""}${window.location.hash}`;
+    if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history.replaceState(null, "", next);
+    }
   }, []);
 
   // Compute filtered stats based on map selection
@@ -302,6 +331,8 @@ export default function Dashboard() {
             myProxyView={myProxyView}
             myGeo={myGeo}
             peerGeos={peerGeos}
+            initialCountry={initialMapCountry}
+            initialAsn={initialMapAsn}
           />
           <div className="map-legend">
             {proxy.isRunning && (
