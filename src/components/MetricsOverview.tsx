@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useBanditBandwidth } from "../hooks/useBanditBandwidth";
-import { fetchTracks, type DashboardCountry, type DashboardTrackDetail, type BandwidthFilters } from "../api/client";
+import { useConnectionDuration } from "../hooks/useConnectionDuration";
+import { fetchTracks, type DashboardCountry, type DashboardTrackDetail, type MetricsFilters } from "../api/client";
 
-interface BandwidthOverviewProps {
+type MetricKind = "bandwidth" | "connection_duration";
+
+// Hard-coded for now — sing-box's client.platform values. Could be derived from
+// /tracks or /globalStats later if more platforms appear.
+const PLATFORMS = ["android", "ios", "windows", "darwin", "linux"] as const;
+
+interface MetricsOverviewProps {
   enabled: boolean;
   countries: DashboardCountry[];
 }
@@ -79,10 +86,13 @@ const chartCard: CSSProperties = {
   padding: "1rem 1.1rem",
 };
 
-export default function BandwidthOverview({ enabled, countries }: BandwidthOverviewProps) {
+export default function MetricsOverview({ enabled, countries }: MetricsOverviewProps) {
+  const [metric, setMetric] = useState<MetricKind>("bandwidth");
   const [country, setCountry] = useState("");
   const [tier, setTier] = useState<"" | "pro" | "free">("");
   const [protocol, setProtocol] = useState("");
+  const [version, setVersion] = useState("");
+  const [platform, setPlatform] = useState("");
   const [windowMinutes, setWindowMinutes] = useState(10080); // 7d default
   const [selectedTrack, setSelectedTrack] = useState<string | null>(null);
   const activeWindow = WINDOW_OPTIONS.find((w) => w.minutes === windowMinutes) ?? WINDOW_OPTIONS[WINDOW_OPTIONS.length - 1];
@@ -107,13 +117,28 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
     return () => { cancelled = true; };
   }, [enabled]);
 
-  const filters: BandwidthFilters = useMemo(() => ({
+  const filters: MetricsFilters = useMemo(() => ({
     country: country || undefined,
     tier: tier || undefined,
     protocol: protocol || undefined,
-  }), [country, tier, protocol]);
+    version: version || undefined,
+    platform: platform || undefined,
+  }), [country, tier, protocol, version, platform]);
 
-  const { data, isLoading, error } = useBanditBandwidth(enabled, filters, activeWindow.minutes, activeWindow.stepSeconds);
+  // Both metrics share filters + window. Each hook returns its own series in a
+  // common {key, points: [{ts, value}]} shape, which the chart then renders
+  // identically — only the formatter and axis label differ.
+  const isBandwidth = metric === "bandwidth";
+  const bandwidth = useBanditBandwidth(enabled && isBandwidth, filters, activeWindow.minutes, activeWindow.stepSeconds);
+  const duration  = useConnectionDuration(enabled && !isBandwidth, filters, activeWindow.minutes, activeWindow.stepSeconds);
+  // Memoize the unified {byTrack} shape so a fresh ternary doesn't churn the
+  // dependency arrays of the downstream useMemos every render.
+  const data = useMemo(() => {
+    if (isBandwidth) return bandwidth.data ? { byTrack: bandwidth.data.byTrack } : null;
+    return duration.data ? { byTrack: duration.data.byGroup } : null;
+  }, [isBandwidth, bandwidth.data, duration.data]);
+  const isLoading = isBandwidth ? bandwidth.isLoading : duration.isLoading;
+  const error     = isBandwidth ? bandwidth.error     : duration.error;
 
   const protocols = useMemo(() => {
     const set = new Set<string>();
@@ -174,29 +199,59 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
   }, [banditSeries]);
 
   // Aggregate scopes to the selected track when one is picked, so the summary
-  // cards agree with what the chart shows. Summed across all tracks otherwise.
+  // cards agree with what the chart shows. For bandwidth: rates summed across
+  // tracks at each timestamp, then integrated over the window for total egress.
+  // For connection duration: per-track means averaged across timestamps and
+  // tracks (a sum across tracks of mean-durations is meaningless), with the
+  // peak capturing the worst single (track, ts) sample.
   const aggregate = useMemo(() => {
     const series = effectiveSelectedTrack
       ? banditSeries.filter((s) => s.key === effectiveSelectedTrack)
       : banditSeries;
-    const summed = new Map<number, number>();
-    for (const s of series) {
-      for (const p of s.points) summed.set(p.ts, (summed.get(p.ts) ?? 0) + p.value);
-    }
-    const points = Array.from(summed.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([ts, value]) => ({ ts, value }));
-    const { totalBytes, maxBytesPerSec } = integrateRate(points);
-    const windowSec = windowMinutes * 60;
-    const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
-    return { totalBytes, avgBytesPerSec, maxBytesPerSec };
-  }, [banditSeries, effectiveSelectedTrack, windowMinutes]);
 
-  const hasSelectedFilters = !!(country || tier || protocol);
+    if (isBandwidth) {
+      const summed = new Map<number, number>();
+      for (const s of series) {
+        for (const p of s.points) summed.set(p.ts, (summed.get(p.ts) ?? 0) + p.value);
+      }
+      const points = Array.from(summed.entries()).sort((a, b) => a[0] - b[0]).map(([ts, value]) => ({ ts, value }));
+      const { totalBytes, maxBytesPerSec } = integrateRate(points);
+      const windowSec = windowMinutes * 60;
+      const avgBytesPerSec = windowSec > 0 ? totalBytes / windowSec : 0;
+      return { totalBytes, avgBytesPerSec, maxBytesPerSec, meanDuration: 0, peakDuration: 0 };
+    }
+
+    let total = 0;
+    let n = 0;
+    let peak = 0;
+    for (const s of series) {
+      for (const p of s.points) {
+        total += p.value;
+        n++;
+        if (p.value > peak) peak = p.value;
+      }
+    }
+    return {
+      totalBytes: 0,
+      avgBytesPerSec: 0,
+      maxBytesPerSec: 0,
+      meanDuration: n > 0 ? total / n : 0,
+      peakDuration: peak,
+    };
+  }, [banditSeries, effectiveSelectedTrack, windowMinutes, isBandwidth]);
+
+  const hasSelectedFilters = !!(country || tier || protocol || version || platform);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", padding: "0.75rem" }}>
       <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 160 }}>
+          <span style={filterLabel}>Metric</span>
+          <select style={filterSelect} value={metric} onChange={(e) => setMetric(e.target.value as MetricKind)}>
+            <option value="bandwidth">Bandwidth</option>
+            <option value="connection_duration">Connection duration</option>
+          </select>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 140 }}>
           <span style={filterLabel}>Country</span>
           <select style={filterSelect} value={country} onChange={(e) => setCountry(e.target.value)}>
@@ -224,6 +279,25 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
           </select>
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
+          <span style={filterLabel}>Platform</span>
+          <select style={filterSelect} value={platform} onChange={(e) => setPlatform(e.target.value)}>
+            <option value="">All</option>
+            {PLATFORMS.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
+          <span style={filterLabel}>Version</span>
+          <input
+            style={{ ...filterSelect, cursor: "text" }}
+            type="text"
+            placeholder="e.g. 9.0.25"
+            value={version}
+            onChange={(e) => setVersion(e.target.value.trim())}
+          />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
           <span style={filterLabel}>Window</span>
           <select style={filterSelect} value={windowMinutes} onChange={(e) => setWindowMinutes(Number(e.target.value))}>
             {WINDOW_OPTIONS.map((w) => (
@@ -234,7 +308,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
         {hasSelectedFilters && (
           <button
             type="button"
-            onClick={() => { setCountry(""); setTier(""); setProtocol(""); }}
+            onClick={() => { setCountry(""); setTier(""); setProtocol(""); setVersion(""); setPlatform(""); }}
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: "0.6rem",
@@ -264,18 +338,33 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
       )}
 
       <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
-        <div style={card}>
-          <div style={cardLabel}>Avg bandwidth</div>
-          <div style={{ ...cardValue, color: "#00e5c8" }}>{formatBytesPerSec(aggregate.avgBytesPerSec)}</div>
-        </div>
-        <div style={card}>
-          <div style={cardLabel}>Peak bandwidth</div>
-          <div style={{ ...cardValue, color: "#80b0e0" }}>{formatBytesPerSec(aggregate.maxBytesPerSec)}</div>
-        </div>
-        <div style={card}>
-          <div style={cardLabel}>Total egress</div>
-          <div style={{ ...cardValue, color: "#c0c8d4" }}>{formatBytes(aggregate.totalBytes)}</div>
-        </div>
+        {isBandwidth ? (
+          <>
+            <div style={card}>
+              <div style={cardLabel}>Avg bandwidth</div>
+              <div style={{ ...cardValue, color: "#00e5c8" }}>{formatBytesPerSec(aggregate.avgBytesPerSec)}</div>
+            </div>
+            <div style={card}>
+              <div style={cardLabel}>Peak bandwidth</div>
+              <div style={{ ...cardValue, color: "#80b0e0" }}>{formatBytesPerSec(aggregate.maxBytesPerSec)}</div>
+            </div>
+            <div style={card}>
+              <div style={cardLabel}>Total egress</div>
+              <div style={{ ...cardValue, color: "#c0c8d4" }}>{formatBytes(aggregate.totalBytes)}</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={card}>
+              <div style={cardLabel}>Mean duration</div>
+              <div style={{ ...cardValue, color: "#00e5c8" }}>{formatDuration(aggregate.meanDuration)}</div>
+            </div>
+            <div style={card}>
+              <div style={cardLabel}>Peak duration</div>
+              <div style={{ ...cardValue, color: "#80b0e0" }}>{formatDuration(aggregate.peakDuration)}</div>
+            </div>
+          </>
+        )}
         <div style={card}>
           <div style={cardLabel}>Tracks seen</div>
           <div style={{ ...cardValue, color: "#a0c8a0" }}>{effectiveSelectedTrack ? 1 : trackKeys.length}</div>
@@ -286,7 +375,9 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.5rem" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, color: "#d0d8e4" }}>
-              {effectiveSelectedTrack ? "Bandwidth" : "Bandwidth by track"}
+              {effectiveSelectedTrack
+                ? (isBandwidth ? "Bandwidth" : "Connection duration")
+                : (isBandwidth ? "Bandwidth by track" : "Connection duration by track")}
             </div>
             {effectiveSelectedTrack && (
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "#00e5c8" }}>
@@ -295,7 +386,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
             )}
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#667080" }}>
-            {activeWindow.label} · {effectiveSelectedTrack ? "single track" : "stacked"} · bytes/sec
+            {activeWindow.label} · {effectiveSelectedTrack ? "single track" : (isBandwidth ? "stacked" : "overlay")} · {isBandwidth ? "bytes/sec" : "duration"}
           </div>
         </div>
         <div style={{ height: 320 }}>
@@ -305,7 +396,7 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
             </div>
           ) : chartData.length === 0 ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#667080", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
-              No bandwidth samples for this filter combination
+              No {isBandwidth ? "bandwidth" : "connection-duration"} samples for this filter combination
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -333,12 +424,12 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                   axisLine={false}
                   tickLine={false}
                   width={64}
-                  tickFormatter={(v: number) => formatBytesPerSec(v)}
+                  tickFormatter={(v: number) => isBandwidth ? formatBytesPerSec(v) : formatDuration(v)}
                 />
                 <Tooltip
                   contentStyle={{ background: "#1a2030", border: "1px solid #ffffff10", borderRadius: 6, fontSize: "0.65rem", fontFamily: "var(--font-mono)" }}
                   labelFormatter={(ts) => new Date(Number(ts)).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  formatter={(v, name) => [formatBytesPerSec(Number(v)), name as string]}
+                  formatter={(v, name) => [isBandwidth ? formatBytesPerSec(Number(v)) : formatDuration(Number(v)), name as string]}
                 />
                 <Legend
                   wrapperStyle={{ fontSize: "0.6rem", fontFamily: "var(--font-mono)" }}
@@ -390,10 +481,14 @@ export default function BandwidthOverview({ enabled, countries }: BandwidthOverv
                     key={k}
                     type="monotone"
                     dataKey={k}
-                    stackId="1"
+                    // Stack only for bandwidth — summing mean-durations across
+                    // tracks would be meaningless. Connection-duration renders
+                    // as overlapping series instead.
+                    stackId={isBandwidth ? "1" : undefined}
                     stroke={trackColor[k]}
                     strokeWidth={1}
                     fill={`url(#${trackGradientId[k]})`}
+                    fillOpacity={isBandwidth ? 1 : 0.2}
                     dot={false}
                     isAnimationActive={false}
                     hide={effectiveSelectedTrack !== null && effectiveSelectedTrack !== k}
@@ -461,4 +556,17 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(2)} MB`;
   if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(2)} KB`;
   return `${bytes.toFixed(0)} B`;
+}
+
+// formatDuration renders sing.connection_duration values, which sing-box
+// emits in the metric's native unit (nanoseconds, per OTel semconv 1.34+).
+// Auto-scales to ns / µs / ms / s. We deliberately avoid hard-coding a unit
+// in the assumption that an upstream sing-box version could change it; the
+// magnitude-based scale stays correct either way.
+function formatDuration(ns: number): string {
+  if (!Number.isFinite(ns) || ns <= 0) return "0 ns";
+  if (ns >= 1e9) return `${(ns / 1e9).toFixed(ns >= 1e10 ? 1 : 2)} s`;
+  if (ns >= 1e6) return `${(ns / 1e6).toFixed(ns >= 1e7 ? 1 : 2)} ms`;
+  if (ns >= 1e3) return `${(ns / 1e3).toFixed(ns >= 1e4 ? 1 : 2)} µs`;
+  return `${ns.toFixed(0)} ns`;
 }

@@ -28,7 +28,7 @@ export function useBanditBandwidth(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const key = `${enabled}|${filters.country ?? ""}|${filters.tier ?? ""}|${filters.protocol ?? ""}|${windowMinutes}|${stepSeconds}`;
+  const key = `${enabled}|${filters.country ?? ""}|${filters.tier ?? ""}|${filters.protocol ?? ""}|${filters.version ?? ""}|${filters.platform ?? ""}|${windowMinutes}|${stepSeconds}`;
 
   useEffect(() => {
     if (!enabled || !isAuthenticated) return;
