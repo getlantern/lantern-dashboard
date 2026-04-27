@@ -74,9 +74,17 @@ function extractSeries(resp: unknown, groupKey: string): ConnectionDurationSerie
   for (const s of formula.series ?? []) {
     const label = s.labels?.[groupKey];
     if (!label) continue;
+    // Coerce ts/value first, then drop non-finite — `Number(NaN) || 0` would
+    // silently turn a NaN value (which the A/B formula produces when count=0
+    // in a step) into a real 0ms data point. Parse, validate, then keep.
     const points = (s.values ?? [])
-      .map((v) => ({ ts: Number(v.timestamp) || 0, value: Number(v.value) || 0 }))
-      .filter((p) => p.ts > 0 && Number.isFinite(p.value))
+      .map((v) => {
+        const ts = Number(v.timestamp);
+        const value = Number(v.value);
+        if (!Number.isFinite(ts) || !Number.isFinite(value)) return null;
+        return { ts, value };
+      })
+      .filter((p): p is { ts: number; value: number } => p !== null && p.ts > 0)
       .sort((a, b) => a.ts - b.ts);
     if (points.length > 0) out.push({ key: label, points });
   }
