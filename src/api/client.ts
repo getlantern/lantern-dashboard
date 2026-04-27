@@ -430,20 +430,26 @@ export interface TrackMetrics {
   selections: Record<string, number>;        // track name → selection count
 }
 
-// BandwidthFilters drives queries on the Bandwidth tab.
-// Any field left undefined/empty means "no filter on this dimension".
-export interface BandwidthFilters {
-  country?: string;           // ISO-2, matches `geo.country.iso_code` attribute on proxy.io
+// MetricsFilters drives queries on the Metrics tab. Any field left
+// undefined/empty means "no filter on this dimension". Filters apply to both
+// the bandwidth (proxy.io) and connection-duration (sing.connection_duration)
+// queries — a non-applicable filter is just a no-op for queries that don't
+// carry that label.
+export interface MetricsFilters {
+  country?: string;           // ISO-2, matches `geo.country.iso_code`
   tier?: "pro" | "free";      // maps to client.is_pro = true|false
-  protocol?: string;          // matches `proxy.protocol` resource attribute
+  protocol?: string;          // matches `proxy.protocol`
+  version?: string;           // matches `client.version` (e.g. "9.0.25")
+  platform?: string;          // matches `client.platform` (e.g. "android", "ios")
 }
 
-function filterItems(f: BandwidthFilters): object[] {
-  const items: object[] = [
-    { key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: "transmit" },
-  ];
+// BandwidthFilters is preserved as an alias for any external caller that
+// imports the old name. New code should use MetricsFilters directly.
+export type BandwidthFilters = MetricsFilters;
+
+function filterItems(f: MetricsFilters): object[] {
+  const items: object[] = [];
   if (f.country) {
-    // lantern-box emits country via semconv.GeoCountryISOCodeKey on every proxy.io data point.
     items.push({ key: { key: "geo.country.iso_code", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.country });
   }
   if (f.tier) {
@@ -452,17 +458,30 @@ function filterItems(f: BandwidthFilters): object[] {
   if (f.protocol) {
     items.push({ key: { key: "proxy.protocol", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.protocol });
   }
+  if (f.version) {
+    items.push({ key: { key: "client.version", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.version });
+  }
+  if (f.platform) {
+    items.push({ key: { key: "client.platform", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: f.platform });
+  }
   return items;
 }
 
 // Build a SigNoz query for proxy.io as bytes/sec, optionally grouped by `proxy.track`.
 export function buildBandwidthQuery(opts: {
-  filters: BandwidthFilters;
+  filters: MetricsFilters;
   groupByTrack: boolean;
   startMs: number;
   endMs: number;
   stepSeconds: number;
 }): object {
+  // proxy.io carries a network.io.direction tag (transmit | receive); we only
+  // care about transmit (egress to the user). Inject here rather than in
+  // filterItems because other metrics on this tab don't have that tag.
+  const items = [
+    { key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "=", value: "transmit" },
+    ...filterItems(opts.filters),
+  ];
   return {
     start: opts.startMs,
     end: opts.endMs,
@@ -476,7 +495,7 @@ export function buildBandwidthQuery(opts: {
           aggregateAttribute: { key: "proxy.io", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
           timeAggregation: "rate",
           spaceAggregation: "sum",
-          filters: { items: filterItems(opts.filters), op: "AND" },
+          filters: { items, op: "AND" },
           expression: "A",
           disabled: false,
           groupBy: opts.groupByTrack
@@ -488,6 +507,77 @@ export function buildBandwidthQuery(opts: {
           orderBy: [],
           reduceTo: "avg",
           stepInterval: opts.stepSeconds,
+        },
+      },
+    },
+  };
+}
+
+// Build a SigNoz query for mean sing.connection_duration per group (= sum/count
+// of the histogram, in the metric's native unit). The result is a "C" formula
+// series whose value is the average duration of connections seen in each step.
+// Group-by is "track" (sing-box's `track` resource attribute) by default, since
+// that's how clients organize outbounds.
+export function buildConnectionDurationQuery(opts: {
+  filters: MetricsFilters;
+  groupBy?: string;          // resource/tag key to group by; defaults to "track"
+  startMs: number;
+  endMs: number;
+  stepSeconds: number;
+}): object {
+  const groupKey = opts.groupBy || "track";
+  const items = filterItems(opts.filters);
+  const filterBlock = { items, op: "AND" };
+  const groupBy = [{ key: groupKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }];
+  return {
+    start: opts.startMs,
+    end: opts.endMs,
+    compositeQuery: {
+      queryType: "builder",
+      panelType: "graph",
+      builderQueries: {
+        // A = total connection-time per step (sum of the histogram, rate over time)
+        A: {
+          dataSource: "metrics",
+          queryName: "A",
+          aggregateAttribute: { key: "sing.connection_duration.sum", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+          timeAggregation: "rate",
+          spaceAggregation: "sum",
+          filters: filterBlock,
+          expression: "A",
+          disabled: true,    // disabled: not rendered on its own; only used in formula C
+          groupBy,
+          legend: "",
+          having: [],
+          limit: null,
+          orderBy: [],
+          reduceTo: "avg",
+          stepInterval: opts.stepSeconds,
+        },
+        // B = number of connections per step (count of the histogram, rate over time)
+        B: {
+          dataSource: "metrics",
+          queryName: "B",
+          aggregateAttribute: { key: "sing.connection_duration.count", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+          timeAggregation: "rate",
+          spaceAggregation: "sum",
+          filters: filterBlock,
+          expression: "B",
+          disabled: true,
+          groupBy,
+          legend: "",
+          having: [],
+          limit: null,
+          orderBy: [],
+          reduceTo: "avg",
+          stepInterval: opts.stepSeconds,
+        },
+        // C = mean connection duration = A/B
+        C: {
+          queryName: "C",
+          expression: "A/B",
+          disabled: false,
+          legend: `{{${groupKey}}}`,
         },
       },
     },
