@@ -343,7 +343,12 @@ function TracksOverview() {
     const startMs = endMs - (rangeMs[metricsTimeRange] || 21600000);
 
     // SigNoz v5 builder format — matches the existing "Track Performance Overview" dashboard panels.
-    const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, _filterExpr: string, groupByKey: string) => ({
+    type FilterItem = {
+      key: { key: string; dataType: string; type: string; isColumn: boolean; isJSON: boolean };
+      op: string;
+      value: string | number | boolean;
+    };
+    const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterItems: FilterItem[], groupByKey: string) => ({
       start: startMs,
       end: endMs,
       compositeQuery: {
@@ -356,7 +361,7 @@ function TracksOverview() {
             aggregateAttribute: { key: metricName, dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
             timeAggregation: timeAgg,
             spaceAggregation: spaceAgg,
-            filters: { items: [], op: "AND" },
+            filters: { items: filterItems, op: "AND" },
             expression: "A",
             disabled: false,
             groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }],
@@ -371,11 +376,20 @@ function TracksOverview() {
       },
     });
 
+    // proxy.io carries direction tags (transmit | receive). Filtering to transmit
+    // matches the egress-bandwidth semantics shown elsewhere on the dashboard;
+    // without it, throughputBps would silently double-count both directions.
+    const transmitOnly: FilterItem[] = [{
+      key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false },
+      op: "=",
+      value: "transmit",
+    }];
+
     const queries = [
-      { key: "throughputBps" as const, query: buildQuery("proxy.io", "rate", "sum", "network.io.direction = 'transmit'", "proxy.track") },
-      { key: "connections" as const, query: buildQuery("proxy.connections", "increase", "sum", "", "proxy.track") },
-      { key: "callbacks" as const, query: buildQuery("bandit.callbacks", "increase", "sum", "", "proxy.track") },
-      { key: "selections" as const, query: buildQuery("bandit.selections", "increase", "sum", "", "proxy.track") },
+      { key: "throughputBps" as const, query: buildQuery("proxy.io", "rate", "sum", transmitOnly, "proxy.track") },
+      { key: "connections" as const, query: buildQuery("proxy.connections", "increase", "sum", [], "proxy.track") },
+      { key: "callbacks" as const, query: buildQuery("bandit.callbacks", "increase", "sum", [], "proxy.track") },
+      { key: "selections" as const, query: buildQuery("bandit.selections", "increase", "sum", [], "proxy.track") },
     ];
 
     const result: TrackMetrics = { throughputBps: {}, connections: {}, callbacks: {}, selections: {} };
