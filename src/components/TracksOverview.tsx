@@ -346,7 +346,7 @@ function TracksOverview() {
     type FilterItem = {
       key: { key: string; dataType: string; type: string; isColumn: boolean; isJSON: boolean };
       op: string;
-      value: string;
+      value: string | number | boolean;
     };
     const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterItems: FilterItem[], groupByKey: string) => ({
       start: startMs,
