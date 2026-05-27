@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { setAuthToken, setOnAuthExpired } from "../api/client";
 
 declare global {
@@ -7,12 +7,31 @@ declare global {
       accounts: {
         id: {
           initialize: (config: Record<string, unknown>) => void;
-          prompt: (callback?: (notification: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean; getMomentType: () => string }) => void) => void;
+          // prompt still accepts an optional moment-listener in the GIS API; we
+          // don't use it (the FedCM migration removed the moment status
+          // methods), but keep the parameter optional to avoid conflicting with
+          // broader upstream declarations. cancel is optional for older builds.
+          prompt: (momentListener?: (notification: unknown) => void) => void;
+          cancel?: () => void;
         };
       };
     };
   }
 }
+
+// Google ID tokens carry a fixed ~1h expiry that we can't extend. To keep the
+// session continuous we silently re-request a fresh credential shortly before
+// the current one expires (REFRESH_BUFFER_SECONDS), rather than waiting for a
+// request to 401. A silent refresh that produces no credential within
+// SILENT_REFRESH_TIMEOUT_MS resolves null; the proactive scheduler treats that
+// as a no-op (the current token rides until it actually expires), while the
+// 401 fallback treats it as a hard failure and logs out.
+const REFRESH_BUFFER_SECONDS = 5 * 60;
+const SILENT_REFRESH_TIMEOUT_MS = 10_000;
+// If a proactive refresh comes back empty (GIS momentarily unavailable), retry
+// on this interval until the token actually expires, rather than waiting for a
+// request to 401.
+const SILENT_REFRESH_RETRY_MS = 30_000;
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -36,16 +55,24 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   return JSON.parse(atob(base64));
 }
 
-function isTokenExpired(token: string): boolean {
+// tokenExpirySeconds returns the JWT `exp` claim (seconds since epoch), or null
+// if the token is malformed / has no expiry.
+function tokenExpirySeconds(token: string): number | null {
   try {
-    const payload = decodeJwtPayload(token);
-    const exp = payload.exp as number;
-    if (!exp) return true;
-    // Consider expired 60s before actual expiry
-    return Date.now() / 1000 > exp - 60;
+    const exp = decodeJwtPayload(token).exp;
+    // Guard against missing / non-numeric / NaN exp so callers don't treat an
+    // invalid token as non-expired or schedule a tight refresh loop on NaN.
+    return typeof exp === "number" && Number.isFinite(exp) && exp > 0 ? exp : null;
   } catch {
-    return true;
+    return null;
   }
+}
+
+function isTokenExpired(token: string): boolean {
+  const exp = tokenExpirySeconds(token);
+  if (!exp) return true;
+  // Consider expired 60s before actual expiry.
+  return Date.now() / 1000 > exp - 60;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -69,6 +96,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return t && !isTokenExpired(t) ? t : null;
   });
 
+  // authActiveRef tracks whether the user intends to be signed in. It gates
+  // silent refresh so that a refresh STARTED after an explicit logout (e.g. a
+  // late 401 from an in-flight request) can't re-authenticate them — the epoch
+  // guard only catches a logout that lands mid-refresh, not one before it.
+  // Initialized from the stored session so a page reload keeps refreshing.
+  const authActiveRef = useRef(token !== null);
+
   const applyCredential = useCallback((credential: string) => {
     const payload = decodeJwtPayload(credential);
     const hd = payload.hd as string | undefined;
@@ -76,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (hd !== "getlantern.org") {
       return false;
     }
+
+    authActiveRef.current = true;
 
     const userData = {
       name: (payload.name as string) || "Unknown",
@@ -100,7 +136,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [applyCredential]);
 
+  // sessionEpochRef increments on every logout. A silent refresh captures the
+  // epoch when it starts; if it changes before the GIS callback fires, the
+  // user logged out in the meantime and the arriving credential must be
+  // discarded rather than silently re-authenticating them.
+  const sessionEpochRef = useRef(0);
+  // Shared in-flight refresh promise (see requestSilentCredential) — declared
+  // here so logout can drop it.
+  const inFlightRef = useRef<Promise<string | null> | null>(null);
+
   const logout = useCallback(() => {
+    authActiveRef.current = false;
+    sessionEpochRef.current += 1;
+    // Drop the shared in-flight refresh so a fresh login doesn't dedupe onto a
+    // pre-logout refresh (which now resolves null on the epoch mismatch and
+    // could spuriously trip the new session's 401 logout fallback).
+    inFlightRef.current = null;
+    // Cancel any in-flight One Tap UI so a stale prompt can't re-auth us after
+    // an explicit logout.
+    window.google?.accounts?.id?.cancel?.();
     setUser(null);
     setToken(null);
     setAuthToken(null);
@@ -108,44 +162,149 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("dashboard_token");
   }, []);
 
-  // Register the 401 handler that silently refreshes the token
-  useEffect(() => {
+  // requestSilentCredential asks Google for a fresh ID token without showing a
+  // sign-in screen. With auto_select + an existing getlantern.org session this
+  // returns a new credential and the GIS UI never appears. We resolve(null) on
+  // timeout because, under the FedCM migration, the One Tap moment-notification
+  // methods (isNotDisplayed/isSkippedMoment) were removed — there is no callback
+  // for "the prompt was suppressed", so a timeout is the only reliable signal
+  // that no silent credential is coming.
+  //
+  // A single in-flight refresh is shared across callers (inFlightRef): a
+  // scheduled refresh overlapping one or more 401-driven refreshes must not
+  // fire concurrent initialize/prompt calls and race applyCredential.
+  const requestSilentCredential = useCallback((): Promise<string | null> => {
+    // No silent refresh once the user has explicitly logged out.
+    if (!authActiveRef.current) return Promise.resolve(null);
+    if (inFlightRef.current) return inFlightRef.current;
+
+    const epoch = sessionEpochRef.current;
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) return;
+    const refresh = new Promise<string | null>((resolve) => {
+      if (!clientId || !window.google?.accounts?.id) {
+        resolve(null);
+        return;
+      }
 
-    setOnAuthExpired(() => {
-      return new Promise<string | null>((resolve) => {
-        if (!window.google?.accounts?.id) {
-          logout();
-          resolve(null);
-          return;
-        }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const settle = (value: string | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        // Dismiss any pending One Tap so a credential can't arrive after we've
+        // already given up (and possibly logged out) on timeout.
+        window.google?.accounts?.id?.cancel?.();
+        resolve(value);
+      };
 
-        // Set up a one-time callback for the silent refresh
+      timer = setTimeout(() => settle(null), SILENT_REFRESH_TIMEOUT_MS);
+
+      // initialize/prompt can throw synchronously if GIS isn't ready or is
+      // blocked; settle(null) rather than letting the Promise reject, so
+      // callers always get a resolved string | null and the logout fallback
+      // still runs.
+      try {
         window.google.accounts.id.initialize({
           client_id: clientId,
           callback: (response: { credential?: string }) => {
-            if (response.credential && applyCredential(response.credential)) {
-              resolve(response.credential);
-            } else {
-              logout();
-              resolve(null);
+            // A late callback (after the timeout already resolved null, and the
+            // 401 path may have logged out) must not re-apply a credential.
+            // The epoch check also catches an explicit logout that happened
+            // while this refresh was in flight — discard the credential.
+            if (settled || sessionEpochRef.current !== epoch) {
+              settle(null);
+              return;
+            }
+            try {
+              // applyCredential decodes the JWT and can throw on a malformed
+              // token; settle(null) on error so refresh stays deterministic
+              // instead of hanging until the timeout.
+              if (response.credential && applyCredential(response.credential)) {
+                settle(response.credential);
+              } else {
+                settle(null);
+              }
+            } catch {
+              settle(null);
             }
           },
           auto_select: true,
+          use_fedcm_for_prompt: true,
         });
-
-        // Prompt for silent re-auth (One Tap)
-        window.google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // Silent refresh failed — force re-login
-            logout();
-            resolve(null);
-          }
-        });
-      });
+        window.google.accounts.id.prompt();
+      } catch {
+        settle(null);
+      }
     });
-  }, [applyCredential, logout]);
+
+    // Clear the shared slot once settled so the next refresh starts fresh —
+    // but only if it still points at this promise, so a refresh that logout
+    // already dropped (and a new one replaced) can't null out its successor.
+    const tracked = refresh.finally(() => {
+      if (inFlightRef.current === tracked) inFlightRef.current = null;
+    });
+    inFlightRef.current = tracked;
+    return tracked;
+  }, [applyCredential]);
+
+  // Register the 401 fallback: if a request is rejected, try one silent refresh
+  // and, only if that fails, log out. The proactive scheduler below should
+  // normally renew the token before this ever fires.
+  useEffect(() => {
+    setOnAuthExpired(async () => {
+      // Already logged out — don't refresh or re-trigger logout.
+      if (!authActiveRef.current) return null;
+      const credential = await requestSilentCredential();
+      if (!credential) logout();
+      return credential;
+    });
+  }, [requestSilentCredential, logout]);
+
+  // Proactively refresh shortly before the current token expires so the session
+  // never lapses mid-use. Reschedules whenever the token changes (a successful
+  // refresh swaps the token, which re-runs this effect). requestSilentCredential
+  // is stable (applyCredential has empty deps), so this effect only re-fires on
+  // token change.
+  useEffect(() => {
+    if (!token) return;
+    const exp = tokenExpirySeconds(token);
+    if (!exp) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = (delayMs: number) => {
+      timer = setTimeout(attempt, Math.max(0, delayMs));
+    };
+
+    const attempt = async () => {
+      if (cancelled) return;
+      const credential = await requestSilentCredential();
+      if (cancelled) return;
+      // Success swaps the token, which re-runs this effect with the new expiry.
+      if (credential) return;
+      const msUntilExpiry = exp * 1000 - Date.now();
+      if (msUntilExpiry > 0) {
+        // Transient failure: keep retrying until the token actually expires.
+        // Clamp the delay to the time left so a retry near expiry still fires
+        // just before (not after) the token lapses; floor at 1s so a refresh
+        // that resolves null instantly (e.g. GIS not loaded) can't spin.
+        schedule(Math.max(1_000, Math.min(SILENT_REFRESH_RETRY_MS, msUntilExpiry)));
+      } else {
+        // Silent refresh has failed for the whole pre-expiry window and the
+        // token is now dead. Log out rather than leaving a zombie authenticated
+        // UI behind an expired token waiting for a 401 that may never fire on
+        // an idle or non-polling view.
+        logout();
+      }
+    };
+
+    schedule((exp - REFRESH_BUFFER_SECONDS) * 1000 - Date.now());
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [token, requestSilentCredential, logout]);
 
   return (
     <AuthContext.Provider
