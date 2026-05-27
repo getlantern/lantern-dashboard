@@ -7,8 +7,12 @@ declare global {
       accounts: {
         id: {
           initialize: (config: Record<string, unknown>) => void;
-          prompt: () => void;
-          cancel: () => void;
+          // prompt still accepts an optional moment-listener in the GIS API; we
+          // don't use it (the FedCM migration removed the moment status
+          // methods), but keep the parameter optional to avoid conflicting with
+          // broader upstream declarations. cancel is optional for older builds.
+          prompt: (momentListener?: (notification: unknown) => void) => void;
+          cancel?: () => void;
         };
       };
     };
@@ -166,29 +170,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       timer = setTimeout(() => settle(null), SILENT_REFRESH_TIMEOUT_MS);
 
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (response: { credential?: string }) => {
-          // A late callback (after the timeout already resolved null, and the
-          // 401 path may have logged out) must not re-apply a credential.
-          if (settled) return;
-          try {
-            // applyCredential decodes the JWT and can throw on a malformed
-            // token; settle(null) on error so refresh stays deterministic
-            // instead of hanging until the timeout.
-            if (response.credential && applyCredential(response.credential)) {
-              settle(response.credential);
-            } else {
+      // initialize/prompt can throw synchronously if GIS isn't ready or is
+      // blocked; settle(null) rather than letting the Promise reject, so
+      // callers always get a resolved string | null and the logout fallback
+      // still runs.
+      try {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (response: { credential?: string }) => {
+            // A late callback (after the timeout already resolved null, and the
+            // 401 path may have logged out) must not re-apply a credential.
+            if (settled) return;
+            try {
+              // applyCredential decodes the JWT and can throw on a malformed
+              // token; settle(null) on error so refresh stays deterministic
+              // instead of hanging until the timeout.
+              if (response.credential && applyCredential(response.credential)) {
+                settle(response.credential);
+              } else {
+                settle(null);
+              }
+            } catch {
               settle(null);
             }
-          } catch {
-            settle(null);
-          }
-        },
-        auto_select: true,
-        use_fedcm_for_prompt: true,
-      });
-      window.google.accounts.id.prompt();
+          },
+          auto_select: true,
+          use_fedcm_for_prompt: true,
+        });
+        window.google.accounts.id.prompt();
+      } catch {
+        settle(null);
+      }
     });
 
     // Clear the shared slot once settled so the next refresh starts fresh.
