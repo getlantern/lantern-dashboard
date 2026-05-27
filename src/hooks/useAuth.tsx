@@ -49,8 +49,10 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
 // if the token is malformed / has no expiry.
 function tokenExpirySeconds(token: string): number | null {
   try {
-    const exp = decodeJwtPayload(token).exp as number | undefined;
-    return exp || null;
+    const exp = decodeJwtPayload(token).exp;
+    // Guard against missing / non-numeric / NaN exp so callers don't treat an
+    // invalid token as non-expired or schedule a tight refresh loop on NaN.
+    return typeof exp === "number" && Number.isFinite(exp) && exp > 0 ? exp : null;
   } catch {
     return null;
   }
@@ -133,23 +135,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // methods (isNotDisplayed/isSkippedMoment) were removed — there is no callback
   // for "the prompt was suppressed", so a timeout is the only reliable signal
   // that no silent credential is coming.
+  //
+  // A single in-flight refresh is shared across callers (inFlightRef): a
+  // scheduled refresh overlapping one or more 401-driven refreshes must not
+  // fire concurrent initialize/prompt calls and race applyCredential.
+  const inFlightRef = useRef<Promise<string | null> | null>(null);
   const requestSilentCredential = useCallback((): Promise<string | null> => {
+    if (inFlightRef.current) return inFlightRef.current;
+
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    return new Promise<string | null>((resolve) => {
+    const refresh = new Promise<string | null>((resolve) => {
       if (!clientId || !window.google?.accounts?.id) {
         resolve(null);
         return;
       }
 
+      let timer: ReturnType<typeof setTimeout> | undefined;
       let settled = false;
       const settle = (value: string | null) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (timer !== undefined) clearTimeout(timer);
         resolve(value);
       };
 
-      const timer = setTimeout(() => settle(null), SILENT_REFRESH_TIMEOUT_MS);
+      timer = setTimeout(() => settle(null), SILENT_REFRESH_TIMEOUT_MS);
 
       window.google.accounts.id.initialize({
         client_id: clientId,
@@ -165,6 +175,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       window.google.accounts.id.prompt();
     });
+
+    // Clear the shared slot once settled so the next refresh starts fresh.
+    inFlightRef.current = refresh.finally(() => {
+      inFlightRef.current = null;
+    });
+    return inFlightRef.current;
   }, [applyCredential]);
 
   // Register the 401 fallback: if a request is rejected, try one silent refresh
