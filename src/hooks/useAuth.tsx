@@ -28,6 +28,10 @@ declare global {
 // 401 fallback treats it as a hard failure and logs out.
 const REFRESH_BUFFER_SECONDS = 5 * 60;
 const SILENT_REFRESH_TIMEOUT_MS = 10_000;
+// If a proactive refresh comes back empty (GIS momentarily unavailable), retry
+// on this interval until the token actually expires, rather than waiting for a
+// request to 401.
+const SILENT_REFRESH_RETRY_MS = 30_000;
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -92,6 +96,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return t && !isTokenExpired(t) ? t : null;
   });
 
+  // authActiveRef tracks whether the user intends to be signed in. It gates
+  // silent refresh so that a refresh STARTED after an explicit logout (e.g. a
+  // late 401 from an in-flight request) can't re-authenticate them — the epoch
+  // guard only catches a logout that lands mid-refresh, not one before it.
+  // Initialized from the stored session so a page reload keeps refreshing.
+  const authActiveRef = useRef(token !== null);
+
   const applyCredential = useCallback((credential: string) => {
     const payload = decodeJwtPayload(credential);
     const hd = payload.hd as string | undefined;
@@ -99,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (hd !== "getlantern.org") {
       return false;
     }
+
+    authActiveRef.current = true;
 
     const userData = {
       name: (payload.name as string) || "Unknown",
@@ -123,7 +136,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [applyCredential]);
 
+  // sessionEpochRef increments on every logout. A silent refresh captures the
+  // epoch when it starts; if it changes before the GIS callback fires, the
+  // user logged out in the meantime and the arriving credential must be
+  // discarded rather than silently re-authenticating them.
+  const sessionEpochRef = useRef(0);
+  // Shared in-flight refresh promise (see requestSilentCredential) — declared
+  // here so logout can drop it.
+  const inFlightRef = useRef<Promise<string | null> | null>(null);
+
   const logout = useCallback(() => {
+    authActiveRef.current = false;
+    sessionEpochRef.current += 1;
+    // Drop the shared in-flight refresh so a fresh login doesn't dedupe onto a
+    // pre-logout refresh (which now resolves null on the epoch mismatch and
+    // could spuriously trip the new session's 401 logout fallback).
+    inFlightRef.current = null;
     // Cancel any in-flight One Tap UI so a stale prompt can't re-auth us after
     // an explicit logout.
     window.google?.accounts?.id?.cancel?.();
@@ -145,10 +173,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // A single in-flight refresh is shared across callers (inFlightRef): a
   // scheduled refresh overlapping one or more 401-driven refreshes must not
   // fire concurrent initialize/prompt calls and race applyCredential.
-  const inFlightRef = useRef<Promise<string | null> | null>(null);
   const requestSilentCredential = useCallback((): Promise<string | null> => {
+    // No silent refresh once the user has explicitly logged out.
+    if (!authActiveRef.current) return Promise.resolve(null);
     if (inFlightRef.current) return inFlightRef.current;
 
+    const epoch = sessionEpochRef.current;
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     const refresh = new Promise<string | null>((resolve) => {
       if (!clientId || !window.google?.accounts?.id) {
@@ -180,7 +210,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           callback: (response: { credential?: string }) => {
             // A late callback (after the timeout already resolved null, and the
             // 401 path may have logged out) must not re-apply a credential.
-            if (settled) return;
+            // The epoch check also catches an explicit logout that happened
+            // while this refresh was in flight — discard the credential.
+            if (settled || sessionEpochRef.current !== epoch) {
+              settle(null);
+              return;
+            }
             try {
               // applyCredential decodes the JWT and can throw on a malformed
               // token; settle(null) on error so refresh stays deterministic
@@ -203,11 +238,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Clear the shared slot once settled so the next refresh starts fresh.
-    inFlightRef.current = refresh.finally(() => {
-      inFlightRef.current = null;
+    // Clear the shared slot once settled so the next refresh starts fresh —
+    // but only if it still points at this promise, so a refresh that logout
+    // already dropped (and a new one replaced) can't null out its successor.
+    const tracked = refresh.finally(() => {
+      if (inFlightRef.current === tracked) inFlightRef.current = null;
     });
-    return inFlightRef.current;
+    inFlightRef.current = tracked;
+    return tracked;
   }, [applyCredential]);
 
   // Register the 401 fallback: if a request is rejected, try one silent refresh
@@ -215,6 +253,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // normally renew the token before this ever fires.
   useEffect(() => {
     setOnAuthExpired(async () => {
+      // Already logged out — don't refresh or re-trigger logout.
+      if (!authActiveRef.current) return null;
       const credential = await requestSilentCredential();
       if (!credential) logout();
       return credential;
@@ -231,14 +271,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const exp = tokenExpirySeconds(token);
     if (!exp) return;
 
-    const refreshAtMs = (exp - REFRESH_BUFFER_SECONDS) * 1000;
-    const delay = Math.max(0, refreshAtMs - Date.now());
-    const timer = setTimeout(() => {
-      // A null result here leaves the existing token in place; the 401 handler
-      // will make a final attempt (and log out) once it actually expires.
-      void refreshRef.current();
-    }, delay);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = (delayMs: number) => {
+      timer = setTimeout(attempt, Math.max(0, delayMs));
+    };
+
+    const attempt = async () => {
+      if (cancelled) return;
+      const credential = await refreshRef.current();
+      if (cancelled) return;
+      // Success swaps the token, which re-runs this effect with the new expiry.
+      if (credential) return;
+      // Transient failure: keep retrying until the token actually expires, at
+      // which point the 401 handler makes the final attempt and logs out.
+      // Clamp the delay to the time left so a retry near expiry still fires
+      // just before (not after) the token lapses.
+      const msUntilExpiry = exp * 1000 - Date.now();
+      if (msUntilExpiry > 0) {
+        // Floor at 1s so a refresh that resolves null instantly (e.g. GIS not
+        // loaded) can't spin in a tight loop through the final window.
+        schedule(Math.max(1_000, Math.min(SILENT_REFRESH_RETRY_MS, msUntilExpiry)));
+      }
+    };
+
+    schedule((exp - REFRESH_BUFFER_SECONDS) * 1000 - Date.now());
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [token]);
 
   return (
