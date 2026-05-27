@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { setAuthToken, setOnAuthExpired } from "../api/client";
 
 declare global {
@@ -7,12 +7,21 @@ declare global {
       accounts: {
         id: {
           initialize: (config: Record<string, unknown>) => void;
-          prompt: (callback?: (notification: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean; getMomentType: () => string }) => void) => void;
+          prompt: () => void;
+          cancel: () => void;
         };
       };
     };
   }
 }
+
+// Google ID tokens carry a fixed ~1h expiry that we can't extend. To keep the
+// session continuous we silently re-request a fresh credential shortly before
+// the current one expires (REFRESH_BUFFER_SECONDS), rather than waiting for a
+// request to 401. A silent refresh that doesn't produce a credential within
+// this window is treated as failed.
+const REFRESH_BUFFER_SECONDS = 5 * 60;
+const SILENT_REFRESH_TIMEOUT_MS = 10_000;
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -36,16 +45,22 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   return JSON.parse(atob(base64));
 }
 
-function isTokenExpired(token: string): boolean {
+// tokenExpirySeconds returns the JWT `exp` claim (seconds since epoch), or null
+// if the token is malformed / has no expiry.
+function tokenExpirySeconds(token: string): number | null {
   try {
-    const payload = decodeJwtPayload(token);
-    const exp = payload.exp as number;
-    if (!exp) return true;
-    // Consider expired 60s before actual expiry
-    return Date.now() / 1000 > exp - 60;
+    const exp = decodeJwtPayload(token).exp as number | undefined;
+    return exp || null;
   } catch {
-    return true;
+    return null;
   }
+}
+
+function isTokenExpired(token: string): boolean {
+  const exp = tokenExpirySeconds(token);
+  if (!exp) return true;
+  // Consider expired 60s before actual expiry.
+  return Date.now() / 1000 > exp - 60;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -101,6 +116,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyCredential]);
 
   const logout = useCallback(() => {
+    // Cancel any in-flight One Tap UI so a stale prompt can't re-auth us after
+    // an explicit logout.
+    window.google?.accounts?.id?.cancel?.();
     setUser(null);
     setToken(null);
     setAuthToken(null);
@@ -108,44 +126,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("dashboard_token");
   }, []);
 
-  // Register the 401 handler that silently refreshes the token
-  useEffect(() => {
+  // requestSilentCredential asks Google for a fresh ID token without showing a
+  // sign-in screen. With auto_select + an existing getlantern.org session this
+  // returns a new credential and the GIS UI never appears. We resolve(null) on
+  // timeout because, under the FedCM migration, the One Tap moment-notification
+  // methods (isNotDisplayed/isSkippedMoment) were removed — there is no callback
+  // for "the prompt was suppressed", so a timeout is the only reliable signal
+  // that no silent credential is coming.
+  const requestSilentCredential = useCallback((): Promise<string | null> => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) return;
+    return new Promise<string | null>((resolve) => {
+      if (!clientId || !window.google?.accounts?.id) {
+        resolve(null);
+        return;
+      }
 
-    setOnAuthExpired(() => {
-      return new Promise<string | null>((resolve) => {
-        if (!window.google?.accounts?.id) {
-          logout();
-          resolve(null);
-          return;
-        }
+      let settled = false;
+      const settle = (value: string | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
 
-        // Set up a one-time callback for the silent refresh
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: (response: { credential?: string }) => {
-            if (response.credential && applyCredential(response.credential)) {
-              resolve(response.credential);
-            } else {
-              logout();
-              resolve(null);
-            }
-          },
-          auto_select: true,
-        });
+      const timer = setTimeout(() => settle(null), SILENT_REFRESH_TIMEOUT_MS);
 
-        // Prompt for silent re-auth (One Tap)
-        window.google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // Silent refresh failed — force re-login
-            logout();
-            resolve(null);
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response: { credential?: string }) => {
+          if (response.credential && applyCredential(response.credential)) {
+            settle(response.credential);
+          } else {
+            settle(null);
           }
-        });
+        },
+        auto_select: true,
+        use_fedcm_for_prompt: true,
       });
+      window.google.accounts.id.prompt();
     });
-  }, [applyCredential, logout]);
+  }, [applyCredential]);
+
+  // Register the 401 fallback: if a request is rejected, try one silent refresh
+  // and, only if that fails, log out. The proactive scheduler below should
+  // normally renew the token before this ever fires.
+  useEffect(() => {
+    setOnAuthExpired(async () => {
+      const credential = await requestSilentCredential();
+      if (!credential) logout();
+      return credential;
+    });
+  }, [requestSilentCredential, logout]);
+
+  // Proactively refresh shortly before the current token expires so the session
+  // never lapses mid-use. Reschedules whenever the token changes (a successful
+  // refresh swaps the token, which re-runs this effect).
+  const refreshRef = useRef(requestSilentCredential);
+  refreshRef.current = requestSilentCredential;
+  useEffect(() => {
+    if (!token) return;
+    const exp = tokenExpirySeconds(token);
+    if (!exp) return;
+
+    const refreshAtMs = (exp - REFRESH_BUFFER_SECONDS) * 1000;
+    const delay = Math.max(0, refreshAtMs - Date.now());
+    const timer = setTimeout(() => {
+      // A null result here leaves the existing token in place; the 401 handler
+      // will make a final attempt (and log out) once it actually expires.
+      void refreshRef.current();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [token]);
 
   return (
     <AuthContext.Provider
