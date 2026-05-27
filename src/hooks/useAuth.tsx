@@ -18,8 +18,10 @@ declare global {
 // Google ID tokens carry a fixed ~1h expiry that we can't extend. To keep the
 // session continuous we silently re-request a fresh credential shortly before
 // the current one expires (REFRESH_BUFFER_SECONDS), rather than waiting for a
-// request to 401. A silent refresh that doesn't produce a credential within
-// this window is treated as failed.
+// request to 401. A silent refresh that produces no credential within
+// SILENT_REFRESH_TIMEOUT_MS resolves null; the proactive scheduler treats that
+// as a no-op (the current token rides until it actually expires), while the
+// 401 fallback treats it as a hard failure and logs out.
 const REFRESH_BUFFER_SECONDS = 5 * 60;
 const SILENT_REFRESH_TIMEOUT_MS = 10_000;
 
@@ -156,6 +158,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
+        // Dismiss any pending One Tap so a credential can't arrive after we've
+        // already given up (and possibly logged out) on timeout.
+        window.google?.accounts?.id?.cancel?.();
         resolve(value);
       };
 
@@ -164,6 +169,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: (response: { credential?: string }) => {
+          // A late callback (after the timeout already resolved null, and the
+          // 401 path may have logged out) must not re-apply a credential.
+          if (settled) return;
           if (response.credential && applyCredential(response.credential)) {
             settle(response.credential);
           } else {
