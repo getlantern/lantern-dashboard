@@ -263,9 +263,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Proactively refresh shortly before the current token expires so the session
   // never lapses mid-use. Reschedules whenever the token changes (a successful
-  // refresh swaps the token, which re-runs this effect).
-  const refreshRef = useRef(requestSilentCredential);
-  refreshRef.current = requestSilentCredential;
+  // refresh swaps the token, which re-runs this effect). requestSilentCredential
+  // is stable (applyCredential has empty deps), so this effect only re-fires on
+  // token change.
   useEffect(() => {
     if (!token) return;
     const exp = tokenExpirySeconds(token);
@@ -279,19 +279,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const attempt = async () => {
       if (cancelled) return;
-      const credential = await refreshRef.current();
+      const credential = await requestSilentCredential();
       if (cancelled) return;
       // Success swaps the token, which re-runs this effect with the new expiry.
       if (credential) return;
-      // Transient failure: keep retrying until the token actually expires, at
-      // which point the 401 handler makes the final attempt and logs out.
-      // Clamp the delay to the time left so a retry near expiry still fires
-      // just before (not after) the token lapses.
       const msUntilExpiry = exp * 1000 - Date.now();
       if (msUntilExpiry > 0) {
-        // Floor at 1s so a refresh that resolves null instantly (e.g. GIS not
-        // loaded) can't spin in a tight loop through the final window.
+        // Transient failure: keep retrying until the token actually expires.
+        // Clamp the delay to the time left so a retry near expiry still fires
+        // just before (not after) the token lapses; floor at 1s so a refresh
+        // that resolves null instantly (e.g. GIS not loaded) can't spin.
         schedule(Math.max(1_000, Math.min(SILENT_REFRESH_RETRY_MS, msUntilExpiry)));
+      } else {
+        // Silent refresh has failed for the whole pre-expiry window and the
+        // token is now dead. Log out rather than leaving a zombie authenticated
+        // UI behind an expired token waiting for a 401 that may never fire on
+        // an idle or non-polling view.
+        logout();
       }
     };
 
@@ -300,7 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [token]);
+  }, [token, requestSilentCredential, logout]);
 
   return (
     <AuthContext.Provider
