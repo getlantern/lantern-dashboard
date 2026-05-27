@@ -172,9 +172,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // A late callback (after the timeout already resolved null, and the
           // 401 path may have logged out) must not re-apply a credential.
           if (settled) return;
-          if (response.credential && applyCredential(response.credential)) {
-            settle(response.credential);
-          } else {
+          try {
+            // applyCredential decodes the JWT and can throw on a malformed
+            // token; settle(null) on error so refresh stays deterministic
+            // instead of hanging until the timeout.
+            if (response.credential && applyCredential(response.credential)) {
+              settle(response.credential);
+            } else {
+              settle(null);
+            }
+          } catch {
             settle(null);
           }
         },
