@@ -128,6 +128,47 @@ const ASN_NAMES: Record<string, string> = {
   AS2856: "BT", AS6461: "Zayo", AS174: "Cogent",
 };
 
+// Hosting / VPN / cloud provider ASNs. When a client connects to Lantern via
+// another VPN, Lantern sees the connection coming from that VPN's egress ASN
+// rather than a residential ISP. These ASNs show up with high error rates
+// that don't reflect real Lantern connectivity — most visible in DE/UK/NL.
+// Treat them as a separate category in the UI.
+const VPN_ORIGIN_ASNS = new Set([
+  // CDN / hyperscalers
+  "AS13335",  // Cloudflare
+  "AS15169",  // Google
+  "AS16509",  // Amazon AWS
+  "AS14618",  // Amazon AWS
+  "AS8075",   // Microsoft (Azure)
+  "AS32934",  // Facebook
+  "AS15133",  // Edgecast
+  "AS54113",  // Fastly
+  "AS20940",  // Akamai
+  // Hosting providers common for self-hosted VPNs
+  "AS24940",  // Hetzner
+  "AS14061",  // DigitalOcean
+  "AS16276",  // OVH
+  "AS63949",  // Linode / Akamai Connected Cloud
+  "AS20473",  // Choopa / Vultr
+  "AS9009",   // M247
+  "AS29802",  // HVC (Choopa)
+  "AS46606",  // Unified Layer
+  "AS36351",  // SoftLayer / IBM
+  "AS26496",  // GoDaddy
+  // Commercial VPN-associated
+  "AS62240",  // Clouvider (used by Mullvad, others)
+  "AS16125",  // UAB Cherry Servers
+  "AS202425", // IP Volume inc (used by Mullvad)
+  "AS51167",  // Contabo
+  "AS8560",   // IONOS
+]);
+
+function isVPNOriginASN(asn: string): boolean {
+  if (VPN_ORIGIN_ASNS.has(asn)) return true;
+  const withPrefix = asn.startsWith("AS") ? asn : `AS${asn}`;
+  return VPN_ORIGIN_ASNS.has(withPrefix);
+}
+
 function asnDisplayName(asn: string, db: Record<string, string> | null): string {
   // The inline map uses "AS44244" keys
   if (ASN_NAMES[asn]) return ASN_NAMES[asn];
@@ -487,6 +528,7 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   const expanded = expandedASNs.has(key);
   const name = asnDisplayName(asn.asn, asnDB);
   const blockedColor = asn.numBlocked > 0 ? "#e06060" : "#667080";
+  const isVPNOrigin = isVPNOriginASN(asn.asn);
 
   // Severity combines two independent signals:
   //   • Error rate: from Redis ASN signals (1-hour window). Requires ≥20
@@ -509,6 +551,11 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   } else if (blockFrac > 0.2) {
     severity = "warning";
   }
+  // VPN-origin ASNs get capped severity — high error rates here usually
+  // reflect double-VPN breakage, not censorship, and shouldn't trigger the
+  // same visual alarm as real ISP blocking.
+  if (isVPNOrigin && severity === "critical") severity = "warning";
+  if (isVPNOrigin && severity === "warning") severity = "caution";
   const severityBg: Record<typeof severity, string> = {
     critical: "rgba(224,96,96,0.08)",
     warning:  "rgba(224,160,128,0.07)",
@@ -577,6 +624,19 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
         <span style={chevronStyle(expanded)}>&#9662;</span>
         <span style={{ fontWeight: 600, color: nameColor }}>{name}</span>
         <span style={{ fontSize: "0.65rem", color: "#667080" }}>{name !== asn.asn ? asn.asn : ""}</span>
+        {isVPNOrigin && (
+          <Tip text="This is a hosting/VPN provider ASN. Connections from here are almost certainly users running Lantern on top of another VPN. High error rates usually reflect the double-VPN setup, not censorship.">
+            <span style={{
+              fontSize: "0.55rem", color: "#8890a0",
+              background: "rgba(136,144,160,0.12)",
+              border: "1px solid rgba(136,144,160,0.25)",
+              borderRadius: "3px", padding: "0.05rem 0.3rem",
+              letterSpacing: "0.04em", fontWeight: 600,
+            }}>
+              VPN ORIGIN
+            </span>
+          </Tip>
+        )}
         <span style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <span style={chipStyle}>
             {asn.numArms} arms{allArms ? ` (all shown, live)` : asn.topArms.length < asn.numArms ? ` (top ${asn.topArms.length} shown)` : ""}
@@ -835,9 +895,24 @@ function CountryRow({
     if (!PRIMARY_COUNTRIES.has(c.country) || !asns) return [];
     return asns
       .filter((a) => a.totalTests != null && a.totalTests >= 20 && a.errorRate != null)
+      .filter((a) => !isVPNOriginASN(a.asn)) // VPN-origin ASNs are double-VPN users, not censorship signal
       .sort((a, b) => (b.errorRate ?? 0) - (a.errorRate ?? 0))
       .slice(0, 3);
   }, [c.country, asns]);
+
+  // Split ASNs into residential (real ISPs) and VPN-origin (Cloudflare,
+  // Hetzner, DO etc. — mostly double-VPN users whose error rates don't
+  // reflect real Lantern connectivity).
+  const { residentialASNs, vpnOriginASNs } = useMemo(() => {
+    const residential: DashboardASN[] = [];
+    const vpnOrigin: DashboardASN[] = [];
+    for (const a of asns ?? []) {
+      if (isVPNOriginASN(a.asn)) vpnOrigin.push(a);
+      else residential.push(a);
+    }
+    return { residentialASNs: residential, vpnOriginASNs: vpnOrigin };
+  }, [asns]);
+  const [showVPNOrigin, setShowVPNOrigin] = useState(false);
 
   return (
     <div>
@@ -917,7 +992,7 @@ function CountryRow({
               No ASN data
             </div>
           )}
-          {!loading && asns && asns.map((asn) => (
+          {!loading && residentialASNs.map((asn) => (
             <ISPSection
               key={asn.asn}
               asn={asn}
@@ -930,6 +1005,44 @@ function CountryRow({
               onLiveArmsLoaded={handleLiveArmsLoaded}
             />
           ))}
+          {!loading && vpnOriginASNs.length > 0 && (
+            <>
+              <div
+                onClick={() => setShowVPNOrigin((v) => !v)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "0.5rem",
+                  padding: "0.4rem 1.5rem", cursor: "pointer", userSelect: "none",
+                  borderTop: "1px solid #ffffff06", borderBottom: showVPNOrigin ? "1px solid #ffffff06" : "none",
+                  background: "rgba(255,255,255,0.008)",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.02)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.008)"; }}
+              >
+                <span style={chevronStyle(showVPNOrigin)}>&#9662;</span>
+                <Tip text="These ASNs (Cloudflare, Hetzner, DigitalOcean, OVH, Linode, AWS, Azure, etc.) are hosting/VPN providers. Connections appearing from these ASNs are almost certainly users running Lantern on top of another VPN. Their high error rates don't reflect real Lantern connectivity — the double-VPN setup is the likely cause, not censorship or infrastructure.">
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "#8890a0", letterSpacing: "0.03em" }}>
+                    VPN-origin ASNs ({vpnOriginASNs.length}) <InfoIcon />
+                  </span>
+                </Tip>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#556070", fontStyle: "italic", marginLeft: "0.5rem" }}>
+                  likely double-VPN users, not censorship signal
+                </span>
+              </div>
+              {showVPNOrigin && vpnOriginASNs.map((asn) => (
+                <ISPSection
+                  key={asn.asn}
+                  asn={asn}
+                  country={c.country}
+                  expandedASNs={expandedASNs}
+                  toggleASN={toggleASN}
+                  asnDB={asnDB}
+                  regionToCity={regionToCity}
+                  filters={armFilters}
+                  onLiveArmsLoaded={handleLiveArmsLoaded}
+                />
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
