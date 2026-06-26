@@ -609,3 +609,196 @@ export function getStreamURL(): string {
   if (authToken) url.searchParams.set("token", authToken);
   return url.toString();
 }
+
+// ── Bandit experiments ──
+// Types mirror cmd/api/dashboard_experiments_handler.go.
+
+export interface ExperimentSummary {
+  id: number;
+  status: string;
+  regionId: number;
+  regionName: string;
+  locationName: string;
+  providerName: string;
+  protocolName: string;
+  challengerTrackId?: number;
+  challengerTrackName?: string;
+  controlTrackId?: number;
+  controlTrackName?: string;
+  decision?: string;
+  decisionReason?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  gatheringSince?: string;
+  decidedAt?: string;
+  gatheringHours?: number;
+  config?: unknown;
+}
+
+export interface ExperimentPipeline {
+  counts: Record<string, number>;
+  order: string[];
+}
+
+export interface ExperimentsResponse {
+  experiments: ExperimentSummary[];
+  pipeline: ExperimentPipeline;
+}
+
+export interface ExperimentStratum {
+  country: string;
+  challengerGoodput: number;
+  controlGoodput: number;
+  challengerSamples: number;
+  controlSamples: number;
+  challengerSuccessRate: number;
+  controlSuccessRate: number;
+  challengerAttempts: number;
+  controlAttempts: number;
+  qualifies: boolean;
+}
+
+export interface ExperimentDecisionPreview {
+  verdict: string;          // "promote" | "retire" | "hold"
+  reason: string;
+  qualifyingStrata: number;
+  wins: number;
+  losses: number;
+  minStrata: number;
+  winMargin: number;        // fraction, e.g. 0.40
+  minSamplesPerArm: number;
+}
+
+export interface ExperimentGuardrails {
+  blockingOk: boolean;
+  blockingReason?: string;
+  blockedRoutes: number;
+  totalRoutes: number;
+  maxBlockedFraction: number;
+  successOk: boolean;
+  successReason?: string;
+}
+
+export interface ExperimentDetail extends ExperimentSummary {
+  windowStart: string;
+  windowEnd: string;
+  strata: ExperimentStratum[] | null;
+  decisionPreview: ExperimentDecisionPreview;
+  guardrails: ExperimentGuardrails;
+  statsError?: string;
+}
+
+export interface ExperimentSetting {
+  key: string;
+  type: "bool" | "int" | "string";
+  label: string;
+  description: string;
+  default: boolean | number | string;
+  value: boolean | number | string;
+}
+
+export interface ExperimentConstant {
+  label: string;
+  value: string;
+  description: string;
+}
+
+export interface ExperimentSettingsResponse {
+  editable: ExperimentSetting[];
+  readOnly: ExperimentConstant[];
+  applyDelaySeconds: number;
+}
+
+export function fetchExperiments(): Promise<ExperimentsResponse> {
+  return apiFetch("/experiments");
+}
+
+export function fetchExperimentDetail(id: number): Promise<ExperimentDetail> {
+  return apiFetch("/experiments/detail", { id: String(id) });
+}
+
+export function fetchExperimentSettings(): Promise<ExperimentSettingsResponse> {
+  return apiFetch("/experiments/settings");
+}
+
+// updateExperimentSetting POSTs a single knob change. Mirrors resetBanditData's
+// non-GET style (apiFetch is GET-only) and reuses the 401 retry handler manually.
+export async function updateExperimentSetting(
+  key: string,
+  value: boolean | number | string,
+): Promise<ExperimentSetting> {
+  const url = `${getApiUrl()}/v1/dashboard/experiments/settings`;
+  const send = (token: string | null) => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(url, { method: "POST", headers, body: JSON.stringify({ key, value }) });
+  };
+  let res = await send(authToken);
+  if (res.status === 401 && onAuthExpired) {
+    const newToken = await onAuthExpired();
+    if (newToken) {
+      authToken = newToken;
+      res = await send(newToken);
+    }
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Update setting failed: ${res.status} ${body}`);
+  }
+  return res.json();
+}
+
+// buildExperimentTrackQuery builds a SigNoz v5 builder query for a metric grouped
+// by track, filtered to a set of track names — used to chart a single experiment's
+// challenger vs control over time. trackKey differs by metric: the bandit probe
+// counters (bandit.callbacks/bandit.probes_expired) and the goodput histogram tag
+// `track`, while proxy.io tags `proxy.track`.
+export function buildExperimentTrackQuery(opts: {
+  metricName: string;
+  trackNames: string[];
+  trackKey?: string;            // defaults to "track"
+  timeAggregation: string;      // e.g. "rate" | "increase"
+  spaceAggregation: string;     // e.g. "sum" | "p50"
+  startMs: number;
+  endMs: number;
+  stepSeconds: number;
+  extraFilters?: { key: string; dataType: string; op: string; value: unknown }[];
+}): object {
+  const trackKey = opts.trackKey || "track";
+  const items: object[] = [
+    { key: { key: trackKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }, op: "in", value: opts.trackNames },
+    ...(opts.extraFilters || []).map((f) => ({
+      key: { key: f.key, dataType: f.dataType, type: "tag", isColumn: false, isJSON: false },
+      op: f.op,
+      value: f.value,
+    })),
+  ];
+  return {
+    start: opts.startMs,
+    end: opts.endMs,
+    compositeQuery: {
+      queryType: "builder",
+      panelType: "graph",
+      builderQueries: {
+        A: {
+          dataSource: "metrics",
+          queryName: "A",
+          aggregateAttribute: { key: opts.metricName, dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+          timeAggregation: opts.timeAggregation,
+          spaceAggregation: opts.spaceAggregation,
+          filters: { items, op: "AND" },
+          expression: "A",
+          disabled: false,
+          groupBy: [{ key: trackKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }],
+          legend: `{{${trackKey}}}`,
+          having: [],
+          limit: null,
+          orderBy: [],
+          reduceTo: "avg",
+          stepInterval: opts.stepSeconds,
+        },
+      },
+    },
+  };
+}
