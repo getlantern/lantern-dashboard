@@ -799,6 +799,94 @@ function BanditHowItWorksContent() {
 
             <p style={{ marginTop: "0.35rem", color: "#667080" }}>Together: the pool worker ensures enough capacity exists (supply side), while EXP3.S distributes traffic optimally across available capacity (demand side). Neither mechanism alone is sufficient — the pool worker can't react faster than its 30-minute cycle, and EXP3.S can't create new infrastructure.</p>
           </div>
+
+          {/* Automatic Experiments Section */}
+          <div style={{ marginTop: "0.75rem", paddingTop: "0.6rem", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <p style={{ fontWeight: 600, color: "#c0c8d4", fontSize: "0.75rem", marginBottom: "0.35rem" }}>Automatic experiments: testing new proxy configurations</p>
+
+            <p>The bandit can only choose among arms that already exist. <strong>Experiments</strong> are how new arms get created and proven: an automated A/B loop that proposes a fresh proxy configuration, runs it against the incumbent in a censored market, and promotes it only if it's measurably better — or retires it if it isn't.</p>
+
+            <svg viewBox="0 0 720 320" style={{ width: "100%", maxWidth: "720px", margin: "0.6rem 0" }}>
+              <defs>
+                <marker id="arrow-exp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#00e5c8" /></marker>
+                <marker id="arrow-exp-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#50c878" /></marker>
+                <marker id="arrow-exp-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ff5050" /></marker>
+                <marker id="arrow-exp-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a07820" /></marker>
+              </defs>
+
+              {/* Lifecycle row: Proposer → Realizer → Gathering → Evaluator */}
+              <rect x="8" y="24" width="150" height="54" rx="8" fill="rgba(100,180,255,0.1)" stroke="#64b4ff" strokeWidth="1.5" />
+              <text x="83" y="45" textAnchor="middle" fill="#64b4ff" fontSize="11" fontWeight="600">Proposer</text>
+              <text x="83" y="60" textAnchor="middle" fill="#8090a0" fontSize="8.5">untried region × DC ×</text>
+              <text x="83" y="71" textAnchor="middle" fill="#8090a0" fontSize="8.5">protocol (censored only)</text>
+
+              <rect x="190" y="24" width="150" height="54" rx="8" fill="rgba(100,180,255,0.1)" stroke="#64b4ff" strokeWidth="1.5" />
+              <text x="265" y="45" textAnchor="middle" fill="#64b4ff" fontSize="11" fontWeight="600">Realizer</text>
+              <text x="265" y="60" textAnchor="middle" fill="#8090a0" fontSize="8.5">spins up challenger track</text>
+              <text x="265" y="71" textAnchor="middle" fill="#8090a0" fontSize="8.5">1 VPS, ≤2% of free users</text>
+
+              <rect x="372" y="24" width="150" height="54" rx="8" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+              <text x="447" y="45" textAnchor="middle" fill="#00e5c8" fontSize="11" fontWeight="600">Gathering ≥ 24h</text>
+              <text x="447" y="60" textAnchor="middle" fill="#8090a0" fontSize="8.5">challenger vs control</text>
+              <text x="447" y="71" textAnchor="middle" fill="#8090a0" fontSize="8.5">traffic, per country</text>
+
+              <rect x="554" y="24" width="158" height="54" rx="8" fill="rgba(255,180,50,0.1)" stroke="#ffb432" strokeWidth="1.5" />
+              <text x="633" y="45" textAnchor="middle" fill="#ffb432" fontSize="11" fontWeight="600">Evaluator</text>
+              <text x="633" y="60" textAnchor="middle" fill="#8090a0" fontSize="8.5">compares median goodput</text>
+              <text x="633" y="71" textAnchor="middle" fill="#8090a0" fontSize="8.5">per-country strata</text>
+
+              <line x1="158" y1="51" x2="186" y2="51" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow-exp)" />
+              <line x1="340" y1="51" x2="368" y2="51" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow-exp)" />
+              <line x1="522" y1="51" x2="550" y2="51" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow-exp)" />
+
+              {/* Decision rule */}
+              <rect x="372" y="148" width="170" height="62" rx="8" fill="rgba(255,180,50,0.06)" stroke="#ffb432" strokeWidth="1" strokeDasharray="4,3" />
+              <text x="457" y="168" textAnchor="middle" fill="#ffb432" fontSize="10.5" fontWeight="600">Big-win decision</text>
+              <text x="457" y="183" textAnchor="middle" fill="#8090a0" fontSize="8.5">challenger ≥ 40% faster</text>
+              <text x="457" y="195" textAnchor="middle" fill="#8090a0" fontSize="8.5">in a majority of ≥ 6</text>
+              <text x="457" y="206" textAnchor="middle" fill="#8090a0" fontSize="8.5">qualifying countries</text>
+              <line x1="620" y1="78" x2="500" y2="145" stroke="#ffb432" strokeWidth="1.5" markerEnd="url(#arrow-exp)" />
+
+              {/* Guardrails veto */}
+              <rect x="556" y="148" width="156" height="62" rx="8" fill="rgba(255,80,80,0.06)" stroke="#ff5050" strokeWidth="1" strokeDasharray="4,3" />
+              <text x="634" y="168" textAnchor="middle" fill="#ff5050" fontSize="10.5" fontWeight="600">Guardrails (veto)</text>
+              <text x="634" y="183" textAnchor="middle" fill="#8090a0" fontSize="8.5">blocking &lt; 50% of routes</text>
+              <text x="634" y="195" textAnchor="middle" fill="#8090a0" fontSize="8.5">success ≥ control − 10pp</text>
+              <text x="634" y="206" textAnchor="middle" fill="#8090a0" fontSize="8.5">else downgrade to hold</text>
+              <line x1="556" y1="179" x2="544" y2="179" stroke="#a07820" strokeWidth="1.2" strokeDasharray="3,2" markerEnd="url(#arrow-exp-dim)" />
+
+              {/* Outcomes */}
+              <rect x="250" y="248" width="184" height="56" rx="8" fill="rgba(80,200,120,0.1)" stroke="#50c878" strokeWidth="1.5" />
+              <text x="342" y="269" textAnchor="middle" fill="#50c878" fontSize="11" fontWeight="600">Promote → staged ramp</text>
+              <text x="342" y="284" textAnchor="middle" fill="#8090a0" fontSize="8.5">10% → 50% → 100% of free users,</text>
+              <text x="342" y="295" textAnchor="middle" fill="#8090a0" fontSize="8.5">re-checking blocking at each step</text>
+
+              <rect x="470" y="248" width="150" height="56" rx="8" fill="rgba(255,80,80,0.1)" stroke="#ff5050" strokeWidth="1.5" />
+              <text x="545" y="269" textAnchor="middle" fill="#ff5050" fontSize="11" fontWeight="600">Retire</text>
+              <text x="545" y="284" textAnchor="middle" fill="#8090a0" fontSize="8.5">tear down, free the</text>
+              <text x="545" y="295" textAnchor="middle" fill="#8090a0" fontSize="8.5">experiment budget</text>
+
+              <line x1="430" y1="210" x2="360" y2="245" stroke="#50c878" strokeWidth="1.5" markerEnd="url(#arrow-exp-green)" />
+              <text x="360" y="232" textAnchor="middle" fill="#50c878" fontSize="8.5">win</text>
+              <line x1="492" y1="210" x2="528" y2="245" stroke="#ff5050" strokeWidth="1.5" markerEnd="url(#arrow-exp-red)" />
+              <text x="540" y="232" textAnchor="middle" fill="#ff5050" fontSize="8.5">loss / 14d timeout</text>
+
+              {/* Promote feeds back into the catalog */}
+              <line x1="250" y1="276" x2="83" y2="276" stroke="#50c878" strokeWidth="1" strokeDasharray="4,3" />
+              <line x1="83" y1="276" x2="83" y2="82" stroke="#50c878" strokeWidth="1" strokeDasharray="4,3" markerEnd="url(#arrow-exp-green)" />
+              <text x="150" y="270" textAnchor="middle" fill="#50c878" fontSize="8">promoted track becomes a normal arm</text>
+            </svg>
+
+            <p style={{ marginTop: "0.35rem" }}>A <strong>challenger</strong> is one new proxy configuration — a single region × datacenter × protocol — provisioned as a tiny track. It's measured against the <strong>control</strong>: the established track free users in that region already get. Experiments only run in <strong>censored markets</strong> (default CN, RU, IR, MM), where a better config matters most.</p>
+
+            <p style={{ marginTop: "0.35rem" }}>Three background workers drive the loop. The <strong>proposer</strong> enumerates untried combinations and launches a budgeted batch (capped by max-concurrent and per-region limits). The <strong>realizer</strong> turns a proposal into a live challenger track — one VPS serving at most ~2% of free clients, so a bad config can't hurt many people. The <strong>evaluator</strong>, after at least <strong>24 hours</strong> of gathering, compares the median download <strong>goodput</strong> of challenger vs control within each client country.</p>
+
+            <p style={{ marginTop: "0.35rem" }}>The decision rule optimizes for <strong>big wins</strong>: a challenger is promoted only if it beats the control by <strong>≥ 40%</strong> in a majority of qualifying country strata (each needs ≥ 6 strata with ≥ 50 sessions per arm). A symmetric loss — or an inconclusive result after <strong>14 days</strong> — retires it; anything in between holds for more data.</p>
+
+            <p style={{ marginTop: "0.35rem" }}>Two <strong>guardrails</strong> can veto a goodput win: a challenger whose routes are getting <strong>blocked</strong> (≥ 50%) or whose connect/<strong>success rate</strong> trails the control by more than 10 percentage points is downgraded to hold — a fast-but-flaky or already-detected config never wins on speed alone. A promotion then <strong>ramps in stages</strong> (10% → 50% → 100% of free users), re-checking the blocking guardrail at each step and rolling back if it regresses. Once at 100%, the challenger becomes an ordinary track in the catalog and the bandit takes over.</p>
+
+            <p style={{ marginTop: "0.35rem", color: "#667080" }}>Every stage is gated by settings and starts disabled. With <em>auto-act</em> off the evaluator only logs the recommendation it would make (recommend-only); turning it on lets it actually promote and retire. Watch the live pipeline, per-experiment stats, and tune these knobs on the <strong>Experiments</strong> tab.</p>
+          </div>
         </div>
   );
 }

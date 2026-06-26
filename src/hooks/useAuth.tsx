@@ -28,6 +28,17 @@ declare global {
 // 401 fallback treats it as a hard failure and logs out.
 const REFRESH_BUFFER_SECONDS = 5 * 60;
 const SILENT_REFRESH_TIMEOUT_MS = 10_000;
+
+// Dev-only auth bypass. When running the Vite dev server (import.meta.env.DEV)
+// with no Google client configured, there is no way to sign in — yet the data
+// hooks all gate on isAuthenticated, so the dashboard would render empty. In that
+// case we seed a throwaway dev session so the app behaves as authenticated. This
+// can never trigger in a production build (DEV is false) or whenever a real
+// VITE_GOOGLE_CLIENT_ID is set. The token is ignored by a local API run with
+// API_LOCAL=1 (which bypasses Google verification server-side).
+const DEV_AUTH_BYPASS = import.meta.env.DEV && !import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const DEV_USER = { name: "Local Dev", email: "dev@getlantern.org", picture: "" };
+const DEV_TOKEN = "dev-local-bypass";
 // If a proactive refresh comes back empty (GIS momentarily unavailable), retry
 // on this interval until the token actually expires, rather than waiting for a
 // request to 401.
@@ -77,6 +88,10 @@ function isTokenExpired(token: string): boolean {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthState["user"]>(() => {
+    if (DEV_AUTH_BYPASS) {
+      setAuthToken(DEV_TOKEN);
+      return DEV_USER;
+    }
     const saved = localStorage.getItem("dashboard_user");
     if (saved) {
       const token = localStorage.getItem("dashboard_token");
@@ -92,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [token, setToken] = useState<string | null>(() => {
+    if (DEV_AUTH_BYPASS) return DEV_TOKEN;
     const t = localStorage.getItem("dashboard_token");
     return t && !isTokenExpired(t) ? t : null;
   });
