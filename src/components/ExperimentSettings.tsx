@@ -52,12 +52,13 @@ const knobDesc: CSSProperties = {
   lineHeight: 1.35,
 };
 
-function Toggle({ on, disabled, onClick }: { on: boolean; disabled: boolean; onClick: () => void }) {
+function Toggle({ on, disabled, onClick, label }: { on: boolean; disabled: boolean; onClick: () => void; label?: string }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      aria-label={label}
       disabled={disabled}
       onClick={onClick}
       style={{
@@ -100,6 +101,13 @@ export default function ExperimentSettings({ settings, isLoading, error, onSaved
     setRowError((e) => ({ ...e, [key]: "" }));
     try {
       await updateExperimentSetting(key, value);
+      // Drop the local draft so the field falls back to the authoritative
+      // server value (normalized — e.g. an int shows 7, not the typed "007").
+      setDrafts((d) => {
+        const next = { ...d };
+        delete next[key];
+        return next;
+      });
       onSaved();
     } catch (err) {
       setRowError((e) => ({ ...e, [key]: err instanceof Error ? err.message : "save failed" }));
@@ -111,18 +119,20 @@ export default function ExperimentSettings({ settings, isLoading, error, onSaved
   const renderControl = (k: ExperimentSetting) => {
     const busy = !!saving[k.key];
     if (k.type === "bool") {
-      return <Toggle on={k.value === true} disabled={busy} onClick={() => save(k.key, !(k.value === true))} />;
+      return <Toggle on={k.value === true} disabled={busy} label={k.label} onClick={() => save(k.key, !(k.value === true))} />;
     }
     const draftKey = k.key;
     const current = drafts[draftKey] ?? String(k.value);
     const commit = () => {
       if (k.type === "int") {
-        const n = Number(current);
-        if (!Number.isFinite(n) || n < 0) {
-          setRowError((e) => ({ ...e, [k.key]: "must be a non-negative number" }));
+        // Treat blank as invalid rather than letting Number("") coerce to 0 and
+        // silently persist 0 on blur.
+        if (current.trim() === "" || !Number.isInteger(Number(current)) || Number(current) < 0) {
+          setRowError((e) => ({ ...e, [k.key]: "must be a non-negative integer" }));
           return;
         }
-        if (n !== k.value) save(k.key, Math.floor(n));
+        const n = Number(current);
+        if (n !== k.value) save(k.key, n);
       } else {
         if (current !== k.value) save(k.key, current);
       }

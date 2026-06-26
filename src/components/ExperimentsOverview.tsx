@@ -276,24 +276,35 @@ function ExperimentTimeSeries({ challenger, control, startMs, endMs }: { challen
         if (cancelled) return;
         const cb = extractTrackSeries(cbResp);
         const ex = extractTrackSeries(exResp);
-        // success rate per (track, ts) = callbacks / (callbacks + expired)
-        const expiredByTrackTs = new Map<string, Map<number, number>>();
-        for (const s of ex) {
-          const m = new Map<number, number>();
-          for (const p of s.points) m.set(p.ts, p.value);
-          expiredByTrackTs.set(s.key, m);
-        }
+        // success rate per (track, ts) = callbacks / (callbacks + expired).
+        // Index both series by track→ts→count and union them, so a track with
+        // only expired probes (zero successful callbacks) — the failing-challenger
+        // case the chart exists to surface — still renders a 0% line.
+        const index = (series: TrackSeries[]) => {
+          const m = new Map<string, Map<number, number>>();
+          for (const s of series) {
+            const ts = m.get(s.key) ?? new Map<number, number>();
+            for (const p of s.points) ts.set(p.ts, p.value);
+            m.set(s.key, ts);
+          }
+          return m;
+        };
+        const cbByTrackTs = index(cb);
+        const exByTrackTs = index(ex);
+        const seenKeys = new Set<string>([...cbByTrackTs.keys(), ...exByTrackTs.keys()]);
+
         const byTs = new Map<number, Record<string, number>>();
-        const seenKeys = new Set<string>();
-        for (const s of cb) {
-          seenKeys.add(s.key);
-          const exMap = expiredByTrackTs.get(s.key);
-          for (const p of s.points) {
-            const expired = exMap?.get(p.ts) ?? 0;
-            const denom = p.value + expired;
-            const rate = denom > 0 ? (p.value / denom) * 100 : 0;
-            if (!byTs.has(p.ts)) byTs.set(p.ts, { ts: p.ts });
-            byTs.get(p.ts)![s.key] = +rate.toFixed(1);
+        for (const key of seenKeys) {
+          const cbTs = cbByTrackTs.get(key);
+          const exTs = exByTrackTs.get(key);
+          const timestamps = new Set<number>([...(cbTs?.keys() ?? []), ...(exTs?.keys() ?? [])]);
+          for (const ts of timestamps) {
+            const callbacks = cbTs?.get(ts) ?? 0;
+            const expired = exTs?.get(ts) ?? 0;
+            const denom = callbacks + expired;
+            const rate = denom > 0 ? (callbacks / denom) * 100 : 0;
+            if (!byTs.has(ts)) byTs.set(ts, { ts });
+            byTs.get(ts)![key] = +rate.toFixed(1);
           }
         }
         setRows(Array.from(byTs.values()).sort((a, b) => a.ts - b.ts));

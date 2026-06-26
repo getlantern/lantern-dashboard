@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import mkcert from 'vite-plugin-mkcert'
 
@@ -13,19 +13,25 @@ import mkcert from 'vite-plugin-mkcert'
 //
 // In production the app talks directly to the real API (VITE_API_URL = the
 // canonical prod/staging host), so this proxy is dev-only and inert.
-const API_TARGET = process.env.VITE_DEV_API_TARGET || 'https://localhost:8080'
-
-export default defineConfig({
-  plugins: [mkcert(), react()],
-  server: {
-    proxy: {
-      // The dashboard backend lives under /v1; forward it (and the SSE stream)
-      // to the local API. `secure: false` accepts the API's self-signed cert.
-      '/v1': {
-        target: API_TARGET,
-        changeOrigin: true,
-        secure: false,
+//
+// Vite does not populate process.env from .env files when evaluating this config,
+// so read the optional override via loadEnv (which merges .env files + the real
+// environment) rather than process.env.
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const apiTarget = env.VITE_DEV_API_TARGET || 'https://localhost:8080'
+  return {
+    plugins: [mkcert(), react()],
+    server: {
+      proxy: {
+        // The dashboard backend lives under /v1; forward it (and the SSE stream)
+        // to the local API. `secure: false` accepts the API's self-signed cert.
+        '/v1': {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
-  },
+  }
 })
