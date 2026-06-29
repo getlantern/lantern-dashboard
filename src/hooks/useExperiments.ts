@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   fetchExperiments,
   fetchExperimentDetail,
@@ -20,34 +20,52 @@ export function useExperiments(enabled: boolean) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Monotonic request id: the poll and an on-demand refresh both write the same
+  // state, so without ordering a slow poll could land after a newer refresh and
+  // flip the UI back to the pre-action status. Only the latest request applies.
+  const reqSeq = useRef(0);
+
+  const load = useCallback(async () => {
+    const seq = ++reqSeq.current;
+    try {
+      const data = await fetchExperiments();
+      if (seq !== reqSeq.current) return; // superseded by a newer request
+      setExperiments(data.experiments ?? []);
+      setPipeline(data.pipeline ?? null);
+      setError(null);
+      setHasLoaded(true);
+    } catch (err) {
+      if (seq === reqSeq.current) setError(err instanceof Error ? err.message : "Failed to load experiments");
+    }
+  }, []);
+
+  // refresh re-fetches the list on demand (e.g. right after an abort/retire), so
+  // the operator doesn't wait out the 30s poll to see the new terminal status.
+  // Guarded on enabled/auth like the poll so it's a no-op for an inactive or
+  // logged-out tab.
+  const refresh = useCallback(async () => {
+    if (!enabled || !isAuthenticated) return;
+    await load();
+  }, [enabled, isAuthenticated, load]);
+
   useEffect(() => {
     if (!enabled || !isAuthenticated) return;
     let cancelled = false;
     let isFirst = true;
 
-    const refresh = async () => {
+    const tick = async () => {
       if (isFirst) setIsLoading(true);
-      try {
-        const data = await fetchExperiments();
-        if (cancelled) return;
-        setExperiments(data.experiments ?? []);
-        setPipeline(data.pipeline ?? null);
-        setError(null);
-        setHasLoaded(true);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load experiments");
-      } finally {
-        if (!cancelled && isFirst) setIsLoading(false);
-        isFirst = false;
-      }
+      await load();
+      if (!cancelled && isFirst) setIsLoading(false);
+      isFirst = false;
     };
 
-    refresh();
-    const interval = setInterval(refresh, 30000);
+    tick();
+    const interval = setInterval(tick, 30000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [enabled, isAuthenticated]);
+  }, [enabled, isAuthenticated, load]);
 
-  return { experiments, pipeline, isLoading, hasLoaded, error };
+  return { experiments, pipeline, isLoading, hasLoaded, error, refresh };
 }
 
 // useExperimentDetail fetches one experiment's full stats on demand (when a row is

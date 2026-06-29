@@ -12,8 +12,10 @@ import {
   YAxis,
 } from "recharts";
 import {
+  abortExperiment,
   buildExperimentTrackQuery,
   fetchSigNozMetrics,
+  retireExperiment,
   type ExperimentDetail,
   type ExperimentStratum,
   type ExperimentSummary,
@@ -44,6 +46,11 @@ const VERDICT_COLORS: Record<string, string> = {
   retire: "#ff4060",
   hold: "#8890a0",
 };
+
+// Terminal lifecycle states — an experiment here is already torn down (or
+// promoted), so the operator abort/retire actions are hidden. Mirrors the
+// experiment package's terminalStatuses.
+const TERMINAL_STATUSES = new Set(["promoted", "retired", "aborted"]);
 
 const card: CSSProperties = {
   background: "var(--bg-card)",
@@ -350,9 +357,62 @@ function ExperimentTimeSeries({ challenger, control, startMs, endMs }: { challen
   );
 }
 
+// ── Operator actions (abort / retire) ──
+
+function ExperimentActions({ id, status, onChanged }: { id: number; status: string; onChanged: () => void }) {
+  const [busy, setBusy] = useState<"abort" | "retire" | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Already terminal — nothing left to tear down.
+  if (TERMINAL_STATUSES.has(status)) return null;
+
+  const run = async (action: "abort" | "retire") => {
+    const reason = window.prompt(
+      `${action === "abort" ? "Abort" : "Retire"} experiment #${id}?\n\n` +
+        "This disables its challenger track, zeroes its VPS pool, and deprecates its routes.\n\n" +
+        "Optional reason (recorded as the experiment's decision reason). Click Cancel to back out.",
+      "",
+    );
+    if (reason === null) return; // operator cancelled
+    setBusy(action);
+    setErr(null);
+    setMsg(null);
+    try {
+      const updated = action === "abort" ? await abortExperiment(id, reason) : await retireExperiment(id, reason);
+      setMsg(`Experiment #${updated.id} is now ${updated.status}.`);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : `Failed to ${action}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const btn = (color: string): CSSProperties => ({
+    ...mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.05em",
+    padding: "0.3rem 0.8rem", borderRadius: "var(--radius-sm)", cursor: busy ? "default" : "pointer",
+    color, background: `${color}14`, border: `1px solid ${color}40`, opacity: busy ? 0.6 : 1,
+  });
+
+  return (
+    <div style={{ ...card, display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+      <div style={{ ...sectionLabel, marginBottom: 0 }}>Operator actions</div>
+      <button type="button" disabled={busy !== null} style={btn("#ff4060")} onClick={() => run("abort")}>
+        {busy === "abort" ? "Aborting…" : "Abort"}
+      </button>
+      <button type="button" disabled={busy !== null} style={btn("#e0a060")} onClick={() => run("retire")}>
+        {busy === "retire" ? "Retiring…" : "Retire"}
+      </button>
+      {msg && <span style={{ ...mono, fontSize: "0.6rem", color: "#20e070" }}>{msg}</span>}
+      {err && <span style={{ ...mono, fontSize: "0.6rem", color: "#ff4060" }}>{err}</span>}
+    </div>
+  );
+}
+
 // ── Detail panel (loaded on row expand) ──
 
-function ExperimentDetailPanel({ id }: { id: number }) {
+function ExperimentDetailPanel({ id, status, onChanged }: { id: number; status: string; onChanged: () => void }) {
   const { detail, isLoading, error } = useExperimentDetail(id);
 
   if (isLoading && !detail) return <div style={{ ...mono, color: "var(--text-muted)", padding: "0.75rem" }}>Loading stats…</div>;
@@ -364,8 +424,15 @@ function ExperimentDetailPanel({ id }: { id: number }) {
   const startMs = detail.windowStart ? Date.parse(detail.windowStart) : 0;
   const endMs = detail.windowEnd ? Date.parse(detail.windowEnd) : 0;
 
+  // useExperimentDetail isn't re-fetched after an action, so detail.status can
+  // lag behind the row's status prop (which onChanged() refreshes). Treat the
+  // experiment as terminal as soon as EITHER source says so, so the action bar
+  // disappears immediately after a successful abort/retire.
+  const actionStatus = TERMINAL_STATUSES.has(status) ? status : (detail.status || status);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem", padding: "0.75rem 0.25rem" }}>
+      <ExperimentActions id={id} status={actionStatus} onChanged={onChanged} />
       {detail.statsError && (
         <div style={{ ...mono, fontSize: "0.62rem", color: "#e0a060", background: "#f0a03012", border: "1px solid #f0a03030", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.7rem" }}>
           {detail.statsError}
@@ -393,8 +460,8 @@ function ExperimentDetailPanel({ id }: { id: number }) {
 
 const colTemplate = "3rem 7rem 1fr 1fr 0.8fr 1fr 0.8fr";
 
-function ExperimentsTable({ experiments, selectedId, onSelect }: {
-  experiments: ExperimentSummary[]; selectedId: number | null; onSelect: (id: number | null) => void;
+function ExperimentsTable({ experiments, selectedId, onSelect, onChanged }: {
+  experiments: ExperimentSummary[]; selectedId: number | null; onSelect: (id: number | null) => void; onChanged: () => void;
 }) {
   if (experiments.length === 0) {
     return <div style={{ ...mono, color: "var(--text-muted)", padding: "1rem" }}>No experiments yet.</div>;
@@ -440,7 +507,7 @@ function ExperimentsTable({ experiments, selectedId, onSelect }: {
               </div>
               <div style={{ color: "var(--text-secondary)" }}>{e.gatheringHours ? `${e.gatheringHours.toFixed(0)}h` : "—"}</div>
             </div>
-            {expanded && <ExperimentDetailPanel id={e.id} />}
+            {expanded && <ExperimentDetailPanel id={e.id} status={e.status} onChanged={onChanged} />}
           </div>
         );
       })}
@@ -453,7 +520,7 @@ function ExperimentsTable({ experiments, selectedId, onSelect }: {
 export default function ExperimentsOverview({ enabled }: { enabled: boolean }) {
   const [view, setView] = useState<"experiments" | "settings">("experiments");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const { experiments, pipeline, isLoading, hasLoaded, error } = useExperiments(enabled);
+  const { experiments, pipeline, isLoading, hasLoaded, error, refresh } = useExperiments(enabled);
   const settings = useExperimentSettings(enabled);
 
   // Surface a banner when the core automation workers are paused.
@@ -496,7 +563,7 @@ export default function ExperimentsOverview({ enabled }: { enabled: boolean }) {
           {isLoading && !hasLoaded ? (
             <div style={{ ...mono, color: "var(--text-muted)", padding: "1rem" }}>Loading experiments…</div>
           ) : (
-            <ExperimentsTable experiments={experiments} selectedId={selectedId} onSelect={setSelectedId} />
+            <ExperimentsTable experiments={experiments} selectedId={selectedId} onSelect={setSelectedId} onChanged={refresh} />
           )}
         </>
       )}

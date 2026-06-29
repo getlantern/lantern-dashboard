@@ -749,6 +749,44 @@ export async function updateExperimentSetting(
   return res.json();
 }
 
+// terminateExperiment POSTs an abort/retire action for one experiment. Like
+// updateExperimentSetting it can't use apiFetch (GET-only) and reuses the 401
+// retry handler manually. The backend drives experiment.TerminateByID — the same
+// teardown the `lc experiments` CLI uses — and returns the updated summary.
+async function terminateExperiment(
+  action: "abort" | "retire",
+  id: number,
+  reason: string,
+): Promise<ExperimentSummary> {
+  const url = `${getApiUrl()}/v1/dashboard/experiments/${action}`;
+  const send = (token: string | null) => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(url, { method: "POST", headers, body: JSON.stringify({ id, reason }) });
+  };
+  let res = await send(authToken);
+  if (res.status === 401 && onAuthExpired) {
+    const newToken = await onAuthExpired();
+    if (newToken) {
+      authToken = newToken;
+      res = await send(newToken);
+    }
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`${action} failed: ${res.status} ${body}`);
+  }
+  return res.json();
+}
+
+export function abortExperiment(id: number, reason: string): Promise<ExperimentSummary> {
+  return terminateExperiment("abort", id, reason);
+}
+
+export function retireExperiment(id: number, reason: string): Promise<ExperimentSummary> {
+  return terminateExperiment("retire", id, reason);
+}
+
 // buildExperimentTrackQuery builds a SigNoz v5 builder query for a metric grouped
 // by track, filtered to a set of track names — used to chart a single experiment's
 // challenger vs control over time. trackKey differs by metric: the bandit probe
