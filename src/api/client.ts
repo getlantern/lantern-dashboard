@@ -616,8 +616,9 @@ export function getStreamURL(): string {
 export interface ExperimentSummary {
   id: number;
   status: string;
-  regionId: number;
-  regionName: string;
+  // ISO-3166 alpha-2 client market the experiment serves (its identity).
+  targetCountry: string;
+  // The out-of-country serving datacenter the challenger is pinned to.
   locationName: string;
   providerName: string;
   protocolName: string;

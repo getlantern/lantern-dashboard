@@ -475,7 +475,7 @@ function ExperimentsTable({ experiments, selectedId, onSelect, onChanged }: {
     <div style={card}>
       <div style={sectionLabel}>Experiments</div>
       <div style={headerStyle}>
-        <div>ID</div><div>Status</div><div>Region / Location</div><div>Challenger → Control</div><div>Protocol</div><div>Decision</div><div>Gathering</div>
+        <div>ID</div><div>Status</div><div>Market / Serving DC</div><div>Challenger → Control</div><div>Protocol</div><div>Decision</div><div>Gathering</div>
       </div>
       {experiments.map((e) => {
         const expanded = selectedId === e.id;
@@ -493,7 +493,7 @@ function ExperimentsTable({ experiments, selectedId, onSelect, onChanged }: {
               <div style={{ color: "var(--text-muted)" }}>#{e.id}</div>
               <div><StatusBadge status={e.status} /></div>
               <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                <span style={{ color: "var(--text-primary)" }}>{e.regionName || `r${e.regionId}`}</span>
+                <span style={{ color: "var(--text-primary)" }}>{e.targetCountry || "—"}</span>
                 <span style={{ color: "var(--text-muted)" }}> / {e.locationName || "—"}{e.providerName ? ` (${e.providerName})` : ""}</span>
               </div>
               <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
