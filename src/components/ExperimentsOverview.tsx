@@ -424,9 +424,15 @@ function ExperimentDetailPanel({ id, status, onChanged }: { id: number; status: 
   const startMs = detail.windowStart ? Date.parse(detail.windowStart) : 0;
   const endMs = detail.windowEnd ? Date.parse(detail.windowEnd) : 0;
 
+  // useExperimentDetail isn't re-fetched after an action, so detail.status can
+  // lag behind the row's status prop (which onChanged() refreshes). Treat the
+  // experiment as terminal as soon as EITHER source says so, so the action bar
+  // disappears immediately after a successful abort/retire.
+  const actionStatus = TERMINAL_STATUSES.has(status) ? status : (detail.status || status);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem", padding: "0.75rem 0.25rem" }}>
-      <ExperimentActions id={id} status={detail.status || status} onChanged={onChanged} />
+      <ExperimentActions id={id} status={actionStatus} onChanged={onChanged} />
       {detail.statsError && (
         <div style={{ ...mono, fontSize: "0.62rem", color: "#e0a060", background: "#f0a03012", border: "1px solid #f0a03030", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.7rem" }}>
           {detail.statsError}
