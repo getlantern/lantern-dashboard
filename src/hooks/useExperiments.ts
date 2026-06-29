@@ -20,12 +20,26 @@ export function useExperiments(enabled: boolean) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // refresh re-fetches the list on demand (e.g. right after an abort/retire), so
+  // the operator doesn't wait out the 30s poll to see the new terminal status.
+  const refresh = useCallback(async () => {
+    try {
+      const data = await fetchExperiments();
+      setExperiments(data.experiments ?? []);
+      setPipeline(data.pipeline ?? null);
+      setError(null);
+      setHasLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load experiments");
+    }
+  }, []);
+
   useEffect(() => {
     if (!enabled || !isAuthenticated) return;
     let cancelled = false;
     let isFirst = true;
 
-    const refresh = async () => {
+    const tick = async () => {
       if (isFirst) setIsLoading(true);
       try {
         const data = await fetchExperiments();
@@ -42,12 +56,12 @@ export function useExperiments(enabled: boolean) {
       }
     };
 
-    refresh();
-    const interval = setInterval(refresh, 30000);
+    tick();
+    const interval = setInterval(tick, 30000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [enabled, isAuthenticated]);
 
-  return { experiments, pipeline, isLoading, hasLoaded, error };
+  return { experiments, pipeline, isLoading, hasLoaded, error, refresh };
 }
 
 // useExperimentDetail fetches one experiment's full stats on demand (when a row is
