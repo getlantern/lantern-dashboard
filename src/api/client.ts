@@ -832,6 +832,11 @@ export function buildExperimentTrackQuery(opts: {
   endMs: number;
   stepSeconds: number;
   extraFilters?: { key: string; dataType: string; op: string; value: unknown }[];
+  // Required for cumulative metrics (e.g. the proxy.session.goodput.* histogram
+  // streams): SigNoz v4 returns no series for rate/increase over a cumulative
+  // counter unless told it's "Cumulative". Delta metrics (proxy.io, bandit.*)
+  // omit it.
+  temporality?: string;
 }): object {
   const trackKey = opts.trackKey || "track";
   const items: object[] = [
@@ -853,6 +858,7 @@ export function buildExperimentTrackQuery(opts: {
           dataSource: "metrics",
           queryName: "A",
           aggregateAttribute: { key: opts.metricName, dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+          ...(opts.temporality ? { temporality: opts.temporality } : {}),
           timeAggregation: opts.timeAggregation,
           spaceAggregation: opts.spaceAggregation,
           filters: { items, op: "AND" },

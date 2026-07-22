@@ -791,6 +791,9 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
                 metricName, trackNames: names, trackKey: "track",
                 timeAggregation: "rate", spaceAggregation: "sum", startMs, endMs, stepSeconds,
                 extraFilters: [countryFilter(market)],
+                // goodput.* are cumulative histogram streams — v4 returns nothing
+                // for rate() over them without this.
+                temporality: "Cumulative",
               });
               const [sumResp, countResp] = await Promise.all([
                 fetchSigNozMetrics(mk("proxy.session.goodput.sum")),
