@@ -620,7 +620,9 @@ function avgGoodputByTrack(
     const pts: Array<{ ts: number; value: number }> = [];
     for (const ts of new Set([...(st?.keys() ?? []), ...(ct?.keys() ?? [])])) {
       const c = ct?.get(ts) ?? 0;
-      pts.push({ ts, value: c > 0 ? (st?.get(ts) ?? 0) / c : 0 });
+      // No sessions in this bucket ⇒ goodput is undefined, not 0. Omit the point
+      // so it renders as a gap ("no data"), never a misleading flat-0 line.
+      if (c > 0) pts.push({ ts, value: (st?.get(ts) ?? 0) / c });
     }
     pts.sort((a, b) => a.ts - b.ts);
     out.set(track, pts);
@@ -817,6 +819,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
 
   const hasFilters = Boolean(country || protocol || provider);
   const windowLabel = COMPARISON_WINDOWS.find((w) => w.hours === hours)?.label ?? `${hours}h`;
+  const metricNoun = metric === "goodput" ? "goodput" : "traffic";
 
   return (
     <div style={card}>
@@ -881,7 +884,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
       ) : (
         <>
           {trafficError && (
-            <div style={{ ...mono, fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>Traffic unavailable: {trafficError}</div>
+            <div style={{ ...mono, fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>{metricNoun === "goodput" ? "Goodput" : "Traffic"} unavailable: {trafficError}</div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(26rem, 1fr))", gap: "1rem" }}>
             {promotions.map((p) => (
@@ -889,7 +892,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
             ))}
           </div>
           <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-            {promotions.length} {promotions.length === 1 ? "promotion" : "promotions"}{trafficLoading ? " · loading traffic…" : ""}
+            {promotions.length} {promotions.length === 1 ? "promotion" : "promotions"}{trafficLoading ? ` · loading ${metricNoun}…` : ""}
           </div>
         </>
       )}
