@@ -833,7 +833,7 @@ export function buildExperimentTrackQuery(opts: {
   stepSeconds: number;
   extraFilters?: { key: string; dataType: string; op: string; value: unknown }[];
   // Required for cumulative metrics (e.g. the proxy.session.goodput.* histogram
-  // streams): SigNoz v4 returns no series for rate/increase over a cumulative
+  // streams): SigNoz returns no series for rate/increase over a cumulative
   // counter unless told it's "Cumulative". Delta metrics (proxy.io, bandit.*)
   // omit it.
   temporality?: string;
