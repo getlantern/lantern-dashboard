@@ -592,6 +592,42 @@ function trackCountryKey(track: string, country: string): string {
   return `${track}|${country}`;
 }
 
+// The two things a card can plot per track: total throughput (proxy.io bytes/s)
+// or mean per-session goodput (proxy.session.goodput sum/count) — goodput being
+// the metric the evaluator actually promotes on, so "quality" not just "volume".
+type TrafficMetric = "traffic" | "goodput";
+
+// avgGoodputByTrack turns the goodput sum + count series into mean per-session
+// goodput (bytes/sec) per track: rate(sum)/rate(count) at each step (time
+// cancels), the counter analog of the median the evaluator gates on.
+function avgGoodputByTrack(
+  sumSeries: Array<{ key: string; points: Array<{ ts: number; value: number }> }>,
+  countSeries: Array<{ key: string; points: Array<{ ts: number; value: number }> }>,
+): Map<string, Array<{ ts: number; value: number }>> {
+  const index = (series: typeof sumSeries) => {
+    const m = new Map<string, Map<number, number>>();
+    for (const s of series) {
+      const ts = m.get(s.key) ?? new Map<number, number>();
+      for (const p of s.points) ts.set(p.ts, p.value);
+      m.set(s.key, ts);
+    }
+    return m;
+  };
+  const sums = index(sumSeries), counts = index(countSeries);
+  const out = new Map<string, Array<{ ts: number; value: number }>>();
+  for (const track of new Set([...sums.keys(), ...counts.keys()])) {
+    const st = sums.get(track), ct = counts.get(track);
+    const pts: Array<{ ts: number; value: number }> = [];
+    for (const ts of new Set([...(st?.keys() ?? []), ...(ct?.keys() ?? [])])) {
+      const c = ct?.get(ts) ?? 0;
+      pts.push({ ts, value: c > 0 ? (st?.get(ts) ?? 0) / c : 0 });
+    }
+    pts.sort((a, b) => a.ts - b.ts);
+    out.set(track, pts);
+  }
+  return out;
+}
+
 // PromotionTrafficCard is one promotion's traffic chart: the promoted track's
 // line vs the original (control), both scoped to the experiment's target market,
 // over the shared window. A vertical marker at the promotion time (when it falls
@@ -627,7 +663,7 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
         <span style={{ color: CONTROL_COLOR }}>{point.originalTrackName}</span>
       </div>
       {!hasData ? (
-        <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", padding: "2.5rem 0", textAlign: "center" }}>No {point.targetCountry} traffic in this window.</div>
+        <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", padding: "2.5rem 0", textAlign: "center" }}>No {point.targetCountry} data in this window.</div>
       ) : (
         <ResponsiveContainer width="100%" height={170}>
           <LineChart data={rows} margin={{ top: 10, right: 10, bottom: 4, left: 4 }}>
@@ -663,6 +699,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   const { isAuthenticated } = useAuth();
   const [hours, setHours] = useState(168);
   const [logScale, setLogScale] = useState(true);
+  const [metric, setMetric] = useState<TrafficMetric>("traffic");
   const [country, setCountry] = useState("");
   const [protocol, setProtocol] = useState("");
   const [provider, setProvider] = useState("");
@@ -687,11 +724,10 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   const startMs = data?.windowStart ? Date.parse(data.windowStart) : 0;
   const endMs = data?.windowEnd ? Date.parse(data.windowEnd) : 0;
 
-  // Traffic is scoped to each promotion's target market: a control is often a
-  // multi-market incumbent, so its total traffic dwarfs a single-market
-  // challenger — only the target-market slice is a fair comparison. One
-  // proxy.io query per distinct market (filtered to that market, grouped by
-  // proxy.track), keyed by (track, market) for the cards to slice.
+  // Everything is scoped to each promotion's target market: a control is often a
+  // multi-market incumbent, so its total dwarfs a single-market challenger — only
+  // the target-market slice is a fair comparison. Queries run per distinct market
+  // (filtered to that market), keyed by (track, market) for the cards to slice.
   const byMarket = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const p of promotions) {
@@ -727,27 +763,48 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
       setTrafficError(null);
       const windowSec = (endMs - startMs) / 1000;
       const stepSeconds = Math.max(900, Math.round(windowSec / 168)); // ~a point/hour over a week
+      const countryFilter = (market: string) => ({ key: "geo.country.iso_code", dataType: "string", op: "=", value: market });
       try {
-        const results = await Promise.all(
-          [...byMarket.entries()].map(([market, names]) =>
-            fetchSigNozMetrics(buildExperimentTrackQuery({
-              metricName: "proxy.io", trackNames: names, trackKey: "proxy.track",
-              timeAggregation: "rate", spaceAggregation: "sum", startMs, endMs, stepSeconds,
-              extraFilters: [
-                { key: "network.io.direction", dataType: "string", op: "=", value: "transmit" },
-                { key: "geo.country.iso_code", dataType: "string", op: "=", value: market },
-              ],
-            })).then((resp) => ({ market, series: extractTrackSeries(resp) })),
-          ),
-        );
-        if (cancelled) return;
         const m = new Map<string, Array<{ ts: number; value: number }>>();
-        for (const { market, series } of results) {
-          for (const s of series) m.set(trackCountryKey(s.key, market), s.points);
+        if (metric === "traffic") {
+          // Total throughput: proxy.io (transmit) per market, tagged proxy.track.
+          const results = await Promise.all(
+            [...byMarket.entries()].map(([market, names]) =>
+              fetchSigNozMetrics(buildExperimentTrackQuery({
+                metricName: "proxy.io", trackNames: names, trackKey: "proxy.track",
+                timeAggregation: "rate", spaceAggregation: "sum", startMs, endMs, stepSeconds,
+                extraFilters: [{ key: "network.io.direction", dataType: "string", op: "=", value: "transmit" }, countryFilter(market)],
+              })).then((resp) => ({ market, series: extractTrackSeries(resp) })),
+            ),
+          );
+          if (cancelled) return;
+          for (const { market, series } of results) {
+            for (const s of series) m.set(trackCountryKey(s.key, market), s.points);
+          }
+        } else {
+          // Mean per-session goodput: sum/count per market, tagged track.
+          const results = await Promise.all(
+            [...byMarket.entries()].map(async ([market, names]) => {
+              const mk = (metricName: string) => buildExperimentTrackQuery({
+                metricName, trackNames: names, trackKey: "track",
+                timeAggregation: "rate", spaceAggregation: "sum", startMs, endMs, stepSeconds,
+                extraFilters: [countryFilter(market)],
+              });
+              const [sumResp, countResp] = await Promise.all([
+                fetchSigNozMetrics(mk("proxy.session.goodput.sum")),
+                fetchSigNozMetrics(mk("proxy.session.goodput.count")),
+              ]);
+              return { market, avg: avgGoodputByTrack(extractTrackSeries(sumResp), extractTrackSeries(countResp)) };
+            }),
+          );
+          if (cancelled) return;
+          for (const { market, avg } of results) {
+            for (const [track, points] of avg) m.set(trackCountryKey(track, market), points);
+          }
         }
         setSeriesByTrackCountry(m);
       } catch (err) {
-        if (!cancelled) setTrafficError(err instanceof Error ? err.message : "Failed to load traffic");
+        if (!cancelled) setTrafficError(err instanceof Error ? err.message : "Failed to load metrics");
       } finally {
         if (!cancelled) setTrafficLoading(false);
       }
@@ -756,7 +813,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
     return () => { cancelled = true; };
     // byMarket is captured but keyed on the stable marketsKey string.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marketsKey, startMs, endMs, isAuthenticated]);
+  }, [marketsKey, startMs, endMs, isAuthenticated, metric]);
 
   const hasFilters = Boolean(country || protocol || provider);
   const windowLabel = COMPARISON_WINDOWS.find((w) => w.hours === hours)?.label ?? `${hours}h`;
@@ -765,13 +822,18 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
     <div style={card}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
         <div>
-          <div style={{ ...sectionLabel, marginBottom: "0.15rem" }}>Promoted vs original — traffic over time</div>
+          <div style={{ ...sectionLabel, marginBottom: "0.15rem" }}>Promoted vs original — {metric === "goodput" ? "goodput over time" : "traffic over time"}</div>
           <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
-            One card per promotion over the last {windowLabel}, scoped to the experiment's target market: the <span style={{ color: CHALLENGER_COLOR }}>promoted</span> track's traffic vs the <span style={{ color: CONTROL_COLOR }}>original</span> (control). If the promotion is working, the promoted line climbs while the control's share of that market falls.
+            One card per promotion over the last {windowLabel}, scoped to the experiment's target market: the <span style={{ color: CHALLENGER_COLOR }}>promoted</span> track vs the <span style={{ color: CONTROL_COLOR }}>original</span> (control). {metric === "goodput"
+              ? "Goodput (mean bytes/sec per session) is the metric the evaluator promotes on — this shows whether the promoted track still wins on quality."
+              : "Traffic is total throughput; if the promotion is working the promoted line climbs while the control's share of that market falls."}
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.3rem", alignItems: "center", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => setLogScale((v) => !v)} style={chip(false)} title="Toggle log / linear traffic axis">
+          <button type="button" onClick={() => setMetric("traffic")} style={chip(metric === "traffic")} aria-pressed={metric === "traffic"}>traffic</button>
+          <button type="button" onClick={() => setMetric("goodput")} style={chip(metric === "goodput")} aria-pressed={metric === "goodput"}>goodput</button>
+          <span style={{ width: 1, height: "1rem", background: "#ffffff14", margin: "0 0.15rem" }} />
+          <button type="button" onClick={() => setLogScale((v) => !v)} style={chip(false)} title="Toggle log / linear axis">
             {logScale ? "log" : "linear"}
           </button>
           <span style={{ width: 1, height: "1rem", background: "#ffffff14", margin: "0 0.15rem" }} />
