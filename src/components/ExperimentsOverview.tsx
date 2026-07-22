@@ -8,12 +8,9 @@ import {
   LineChart,
   ReferenceLine,
   ResponsiveContainer,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from "recharts";
 import {
   abortExperiment,
@@ -32,12 +29,8 @@ import ExperimentSettings from "./ExperimentSettings";
 
 const CHALLENGER_COLOR = "#00e5c8";
 const CONTROL_COLOR = "#f0a030";
-// Promoted-vs-original scatter: a promotion still beating its original is a win
-// (green, matching the "promoted" lifecycle color), still trailing is a loss.
-const WIN_COLOR = "#20e070";
-const LOSS_COLOR = "#ff4060";
 
-// Selectable now-relative windows for the promoted-vs-original scatter.
+// Selectable now-relative windows for the promoted-vs-original traffic charts.
 const COMPARISON_WINDOWS: Array<{ label: string; hours: number }> = [
   { label: "6h", hours: 6 },
   { label: "24h", hours: 24 },
@@ -552,7 +545,7 @@ function ExperimentsTable({ experiments, selectedId, onSelect, onChanged }: {
   );
 }
 
-// ── Promoted vs original scatter ──
+// ── Promoted vs original — traffic over time ──
 
 const filterLabel: CSSProperties = {
   ...mono, fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em",
@@ -575,28 +568,97 @@ function chip(active: boolean): CSSProperties {
   };
 }
 
-function ComparisonTooltip({ active, payload }: {
-  active?: boolean;
-  payload?: Array<{ payload: PromotedComparisonPoint }>;
+// mergeTrafficRows folds the promoted and original per-track series into recharts
+// rows keyed by timestamp, so a single LineChart can draw both lines. On a log
+// axis a zero can't be plotted, so zeros become gaps (undefined) rather than
+// dropping the point to the axis floor.
+function mergeTrafficRows(
+  promoted: Array<{ ts: number; value: number }>,
+  original: Array<{ ts: number; value: number }>,
+  logScale: boolean,
+): Array<{ ts: number; promoted?: number; original?: number }> {
+  const coerce = (v: number) => (logScale && v <= 0 ? undefined : v);
+  const byTs = new Map<number, { ts: number; promoted?: number; original?: number }>();
+  for (const p of promoted) { const r = byTs.get(p.ts) ?? { ts: p.ts }; r.promoted = coerce(p.value); byTs.set(p.ts, r); }
+  for (const p of original) { const r = byTs.get(p.ts) ?? { ts: p.ts }; r.original = coerce(p.value); byTs.set(p.ts, r); }
+  return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+}
+
+// trackCountryKey keys the per-(track, market) series map; both arms of a
+// promotion are read at the experiment's target market, the stratum they share.
+function trackCountryKey(track: string, country: string): string {
+  return `${track} ${country}`;
+}
+
+// PromotionTrafficCard is one promotion's traffic chart: the promoted track's
+// line vs the original (control), both scoped to the experiment's target market,
+// over the shared window. A vertical marker at the promotion time (when it falls
+// in-window) shows the hand-off. If the promotion is working the promoted line
+// climbs while the control's share of this market falls.
+function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, logScale }: {
+  point: PromotedComparisonPoint;
+  seriesByTrackCountry: Map<string, Array<{ ts: number; value: number }>>;
+  startMs: number;
+  endMs: number;
+  logScale: boolean;
 }) {
-  if (!active || !payload || payload.length === 0) return null;
-  const p = payload[0].payload;
-  const delta = p.originalGoodput > 0 ? ((p.promotedGoodput - p.originalGoodput) / p.originalGoodput) * 100 : 0;
-  const deltaColor = delta >= 0 ? WIN_COLOR : LOSS_COLOR;
+  const rows = useMemo(
+    () => mergeTrafficRows(
+      seriesByTrackCountry.get(trackCountryKey(point.promotedTrackName, point.targetCountry)) ?? [],
+      seriesByTrackCountry.get(trackCountryKey(point.originalTrackName, point.targetCountry)) ?? [],
+      logScale,
+    ),
+    [seriesByTrackCountry, point.promotedTrackName, point.originalTrackName, point.targetCountry, logScale],
+  );
+  const promotedMs = point.promotedAt ? Date.parse(point.promotedAt) : NaN;
+  const showMarker = !Number.isNaN(promotedMs) && promotedMs >= startMs && promotedMs <= endMs;
+  const hasData = rows.some((r) => r.promoted !== undefined || r.original !== undefined);
+
   return (
-    <div style={{ ...mono, fontSize: "0.62rem", background: "var(--bg-secondary)", border: "1px solid #ffffff14", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.6rem", lineHeight: 1.5 }}>
-      <div style={{ color: "var(--text-muted)" }}>#{p.experimentId} · {p.targetCountry} · {p.protocolName || "—"}{p.providerName ? ` · ${p.providerName}` : ""}</div>
-      <div><span style={{ color: WIN_COLOR }}>{p.promotedTrackName}</span> <span style={{ color: "var(--text-muted)" }}>(promoted)</span></div>
-      <div><span style={{ color: CONTROL_COLOR }}>{p.originalTrackName}</span> <span style={{ color: "var(--text-muted)" }}>(original)</span></div>
-      <div style={{ marginTop: "0.25rem" }}>promoted: {formatBytesPerSec(p.promotedGoodput)} <span style={{ color: "var(--text-muted)" }}>({p.promotedSamples} sess)</span></div>
-      <div>original: {formatBytesPerSec(p.originalGoodput)} <span style={{ color: "var(--text-muted)" }}>({p.originalSamples} sess)</span></div>
-      <div style={{ color: deltaColor, marginTop: "0.15rem" }}>{delta >= 0 ? "+" : ""}{delta.toFixed(0)}% vs original</div>
+    <div style={{ border: "1px solid #ffffff0d", borderRadius: "var(--radius-sm)", padding: "0.6rem 0.7rem" }}>
+      <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>
+        #{point.experimentId} · {point.targetCountry} · {point.protocolName || "—"}{point.providerName ? ` · ${point.providerName}` : ""}
+      </div>
+      <div style={{ ...mono, fontSize: "0.62rem", marginBottom: "0.35rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ color: CHALLENGER_COLOR }}>{point.promotedTrackName}</span>
+        <span style={{ color: "var(--text-muted)" }}> vs </span>
+        <span style={{ color: CONTROL_COLOR }}>{point.originalTrackName}</span>
+      </div>
+      {!hasData ? (
+        <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", padding: "2.5rem 0", textAlign: "center" }}>No {point.targetCountry} traffic in this window.</div>
+      ) : (
+        <ResponsiveContainer width="100%" height={170}>
+          <LineChart data={rows} margin={{ top: 10, right: 10, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+            <XAxis dataKey="ts" type="number" domain={[startMs, endMs]} scale="time"
+              tickFormatter={(ts: number) => new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" })}
+              tick={{ fontSize: 9, fill: "#8890a0" }} />
+            <YAxis
+              scale={logScale ? "log" : "linear"}
+              domain={logScale ? [1, "auto"] : [0, "auto"]}
+              allowDataOverflow={logScale}
+              tickFormatter={formatBytesPerSec} tick={{ fontSize: 9, fill: "#8890a0" }} width={58} />
+            <Tooltip
+              formatter={(v, name) => [formatBytesPerSec(Number(v)), name === "promoted" ? "promoted" : "original"]}
+              labelFormatter={(ts) => new Date(Number(ts)).toLocaleString()}
+              contentStyle={{ background: "var(--bg-secondary)", border: "1px solid #ffffff14", fontSize: 11 }} />
+            {showMarker && (
+              <ReferenceLine x={promotedMs} stroke="#c090e0" strokeDasharray="4 3"
+                label={{ value: "promoted", position: "insideTopRight", fontSize: 9, fill: "#c090e0" }} />
+            )}
+            <Line type="monotone" dataKey="promoted" name="promoted" stroke={CHALLENGER_COLOR} dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+            <Line type="monotone" dataKey="original" name="original" stroke={CONTROL_COLOR} dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
 
-function PromotedComparison({ enabled }: { enabled: boolean }) {
+function PromotedTraffic({ enabled }: { enabled: boolean }) {
+  const { isAuthenticated } = useAuth();
   const [hours, setHours] = useState(168);
+  const [logScale, setLogScale] = useState(true);
   const [country, setCountry] = useState("");
   const [protocol, setProtocol] = useState("");
   const [provider, setProvider] = useState("");
@@ -604,7 +666,7 @@ function PromotedComparison({ enabled }: { enabled: boolean }) {
 
   const allPoints = useMemo(() => data?.points ?? [], [data]);
 
-  // Filter option lists come from all points (before country/protocol/provider
+  // Filter option lists come from all promotions (before country/protocol/provider
   // filtering) so choosing one filter never empties the others' dropdowns.
   const countries = useMemo(() => [...new Set(allPoints.map((p) => p.targetCountry).filter(Boolean))].sort(), [allPoints]);
   const protocols = useMemo(() => [...new Set(allPoints.map((p) => p.protocolName).filter(Boolean))].sort(), [allPoints]);
@@ -616,35 +678,92 @@ function PromotedComparison({ enabled }: { enabled: boolean }) {
     (!provider || p.providerName === provider),
   [country, protocol, provider]);
 
-  // A point is plottable only when both arms have live samples in the window;
-  // otherwise its goodput is a meaningless 0 that would pile on the origin.
-  const hasSamples = (p: PromotedComparisonPoint) => p.promotedSamples > 0 && p.originalSamples > 0;
-  const filtered = useMemo(() => allPoints.filter((p) => hasSamples(p) && matchesFilters(p)), [allPoints, matchesFilters]);
+  const promotions = useMemo(() => allPoints.filter(matchesFilters), [allPoints, matchesFilters]);
 
-  // Hidden = points matching the active filters but lacking live samples, so the
-  // "N hidden" note stays consistent with the filtered track count above it.
-  const hidden = useMemo(() => allPoints.filter((p) => matchesFilters(p) && !hasSamples(p)).length, [allPoints, matchesFilters]);
+  const startMs = data?.windowStart ? Date.parse(data.windowStart) : 0;
+  const endMs = data?.windowEnd ? Date.parse(data.windowEnd) : 0;
 
-  const wins = filtered.filter((p) => p.promotedGoodput >= p.originalGoodput);
-  const losses = filtered.filter((p) => p.promotedGoodput < p.originalGoodput);
-  const axisMax = useMemo(() => {
-    // reduce (not Math.max(...spread)) so any number of points is safe.
-    const m = filtered.reduce((acc, p) => Math.max(acc, p.promotedGoodput, p.originalGoodput), 0);
-    return m > 0 ? m * 1.08 : 1; // headroom so parity line + points aren't clipped
-  }, [filtered]);
+  // Traffic is scoped to each promotion's target market: a control is often a
+  // multi-market incumbent, so its total traffic dwarfs a single-market
+  // challenger — only the target-market slice is a fair comparison. One
+  // proxy.io query per distinct market (filtered to that market, grouped by
+  // proxy.track), keyed by (track, market) for the cards to slice.
+  const byMarket = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const p of promotions) {
+      const names = m.get(p.targetCountry) ?? [];
+      if (!names.includes(p.promotedTrackName)) names.push(p.promotedTrackName);
+      if (!names.includes(p.originalTrackName)) names.push(p.originalTrackName);
+      m.set(p.targetCountry, names);
+    }
+    return m;
+  }, [promotions]);
+  // Stable primitive dep for the fetch effect (byMarket is a fresh Map each render).
+  const marketsKey = useMemo(
+    () => [...byMarket.entries()].map(([c, ns]) => `${c}:${ns.join(",")}`).sort().join("|"),
+    [byMarket],
+  );
+
+  const [seriesByTrackCountry, setSeriesByTrackCountry] = useState<Map<string, Array<{ ts: number; value: number }>>>(new Map());
+  const [trafficLoading, setTrafficLoading] = useState(false);
+  const [trafficError, setTrafficError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || byMarket.size === 0 || !(endMs > startMs)) { setSeriesByTrackCountry(new Map()); return; }
+    let cancelled = false;
+    const run = async () => {
+      setTrafficLoading(true);
+      setTrafficError(null);
+      const windowSec = (endMs - startMs) / 1000;
+      const stepSeconds = Math.max(900, Math.round(windowSec / 168)); // ~a point/hour over a week
+      try {
+        const results = await Promise.all(
+          [...byMarket.entries()].map(([market, names]) =>
+            fetchSigNozMetrics(buildExperimentTrackQuery({
+              metricName: "proxy.io", trackNames: names, trackKey: "proxy.track",
+              timeAggregation: "rate", spaceAggregation: "sum", startMs, endMs, stepSeconds,
+              extraFilters: [
+                { key: "network.io.direction", dataType: "string", op: "=", value: "transmit" },
+                { key: "geo.country.iso_code", dataType: "string", op: "=", value: market },
+              ],
+            })).then((resp) => ({ market, series: extractTrackSeries(resp) })),
+          ),
+        );
+        if (cancelled) return;
+        const m = new Map<string, Array<{ ts: number; value: number }>>();
+        for (const { market, series } of results) {
+          for (const s of series) m.set(trackCountryKey(s.key, market), s.points);
+        }
+        setSeriesByTrackCountry(m);
+      } catch (err) {
+        if (!cancelled) setTrafficError(err instanceof Error ? err.message : "Failed to load traffic");
+      } finally {
+        if (!cancelled) setTrafficLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+    // byMarket is captured but keyed on the stable marketsKey string.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketsKey, startMs, endMs, isAuthenticated]);
 
   const hasFilters = Boolean(country || protocol || provider);
+  const windowLabel = COMPARISON_WINDOWS.find((w) => w.hours === hours)?.label ?? `${hours}h`;
 
   return (
     <div style={card}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
         <div>
-          <div style={{ ...sectionLabel, marginBottom: "0.15rem" }}>Promoted vs original — median goodput</div>
+          <div style={{ ...sectionLabel, marginBottom: "0.15rem" }}>Promoted vs original — traffic over time</div>
           <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
-            Each point is a promoted track vs the original it beat, over the last {COMPARISON_WINDOWS.find((w) => w.hours === hours)?.label ?? `${hours}h`}, in its target market. Above the parity line = promotion still winning.
+            One card per promotion over the last {windowLabel}, scoped to the experiment's target market: the <span style={{ color: CHALLENGER_COLOR }}>promoted</span> track's traffic vs the <span style={{ color: CONTROL_COLOR }}>original</span> (control). If the promotion is working, the promoted line climbs while the control's share of that market falls.
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.3rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button type="button" onClick={() => setLogScale((v) => !v)} style={chip(false)} title="Toggle log / linear traffic axis">
+            {logScale ? "log" : "linear"}
+          </button>
+          <span style={{ width: 1, height: "1rem", background: "#ffffff14", margin: "0 0.15rem" }} />
           {COMPARISON_WINDOWS.map((w) => (
             <button type="button" key={w.hours} onClick={() => setHours(w.hours)} style={chip(hours === w.hours)} aria-pressed={hours === w.hours}>{w.label}</button>
           ))}
@@ -680,45 +799,24 @@ function PromotedComparison({ enabled }: { enabled: boolean }) {
 
       {error ? (
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--accent-danger, #ff4060)" }}>{error}</div>
-      ) : data?.statsError ? (
-        <div style={{ ...mono, fontSize: "0.62rem", color: "#e0a060", background: "#f0a03012", border: "1px solid #f0a03030", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.7rem" }}>{data.statsError}</div>
-      ) : !data || (isLoading && filtered.length === 0) ? (
-        <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>Loading comparison…</div>
-      ) : filtered.length === 0 ? (
+      ) : !data || (isLoading && promotions.length === 0) ? (
+        <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>Loading promotions…</div>
+      ) : promotions.length === 0 ? (
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>
-          No promoted tracks with live samples in this window{hasFilters ? " for the selected filters" : ""}.
+          No promoted experiments{hasFilters ? " for the selected filters" : ""}.
         </div>
       ) : (
         <>
-          <ResponsiveContainer width="100%" height={340}>
-            <ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-              <XAxis
-                type="number" dataKey="originalGoodput" name="Original goodput"
-                domain={[0, axisMax]} tickFormatter={formatBytesPerSec}
-                tick={{ fontSize: 10, fill: "#8890a0" }}
-                label={{ value: "Original (control) goodput", position: "insideBottom", offset: -14, fontSize: 10, fill: "#8890a0" }}
-              />
-              <YAxis
-                type="number" dataKey="promotedGoodput" name="Promoted goodput"
-                domain={[0, axisMax]} tickFormatter={formatBytesPerSec} width={64}
-                tick={{ fontSize: 10, fill: "#8890a0" }}
-                label={{ value: "Promoted goodput", angle: -90, position: "insideLeft", fontSize: 10, fill: "#8890a0" }}
-              />
-              <ZAxis range={[60, 60]} />
-              <ReferenceLine
-                segment={[{ x: 0, y: 0 }, { x: axisMax, y: axisMax }]}
-                stroke="#8890a0" strokeDasharray="4 4" ifOverflow="hidden"
-              />
-              <Tooltip content={<ComparisonTooltip />} cursor={{ strokeDasharray: "3 3" }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Scatter name="Promotion winning" data={wins} fill={WIN_COLOR} />
-              <Scatter name="Promotion losing" data={losses} fill={LOSS_COLOR} />
-            </ScatterChart>
-          </ResponsiveContainer>
-          <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
-            {filtered.length} promoted {filtered.length === 1 ? "track" : "tracks"} · {wins.length} winning · {losses.length} losing
-            {hidden > 0 && ` · ${hidden} hidden (no live samples in window)`}
+          {trafficError && (
+            <div style={{ ...mono, fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>Traffic unavailable: {trafficError}</div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(26rem, 1fr))", gap: "1rem" }}>
+            {promotions.map((p) => (
+              <PromotionTrafficCard key={p.experimentId} point={p} seriesByTrackCountry={seriesByTrackCountry} startMs={startMs} endMs={endMs} logScale={logScale} />
+            ))}
+          </div>
+          <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+            {promotions.length} promoted {promotions.length === 1 ? "track" : "tracks"}{trafficLoading ? " · loading traffic…" : ""}
           </div>
         </>
       )}
@@ -787,7 +885,7 @@ export default function ExperimentsOverview({ enabled }: { enabled: boolean }) {
             <div style={{ ...mono, fontSize: "0.65rem", color: "var(--accent-danger, #ff4060)", background: "#ff406012", border: "1px solid #ff406030", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.75rem" }}>{error}</div>
           )}
           <PipelineStrip pipeline={pipeline} hiddenStatuses={hiddenStatuses} onToggle={toggleStatus} />
-          <PromotedComparison enabled={enabled && view === "experiments"} />
+          <PromotedTraffic enabled={enabled && view === "experiments"} />
           {isLoading && !hasLoaded ? (
             <div style={{ ...mono, color: "var(--text-muted)", padding: "1rem" }}>Loading experiments…</div>
           ) : (

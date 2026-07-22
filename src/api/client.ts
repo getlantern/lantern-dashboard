@@ -711,9 +711,9 @@ export interface ExperimentSettingsResponse {
   applyDelaySeconds: number;
 }
 
-// One promoted track (an experiment's challenger) paired with its original (the
-// control), both measured over the same now-relative window in the experiment's
-// target market. Backs the promoted-vs-original scatter.
+// One promoted experiment: its challenger (the promoted track) paired with its
+// control (the original), plus the metadata the dashboard needs to chart their
+// target-market traffic over time. Backs the promoted-vs-original traffic cards.
 export interface PromotedComparisonPoint {
   experimentId: number;
   targetCountry: string;
@@ -722,10 +722,6 @@ export interface PromotedComparisonPoint {
   locationName: string;
   promotedTrackName: string;
   originalTrackName: string;
-  promotedGoodput: number;   // median bytes/sec
-  originalGoodput: number;   // median bytes/sec
-  promotedSamples: number;
-  originalSamples: number;
   promotedAt?: string;       // decided_at (when the experiment was promoted)
 }
 
@@ -734,16 +730,16 @@ export interface PromotedComparisonResponse {
   windowStart: string;
   windowEnd: string;
   windowHours: number;
-  statsError?: string;
 }
 
 export function fetchExperiments(): Promise<ExperimentsResponse> {
   return apiFetch("/experiments");
 }
 
-// fetchPromotedComparison returns every promoted track vs its original over a
-// now-relative window (hours). Server-side single SigNoz query, so the whole
-// scatter loads in one round-trip.
+// fetchPromotedComparison lists every promoted experiment (challenger vs its
+// original) plus the now-relative window (hours) the dashboard charts
+// target-market traffic over. DB-only on the server; traffic series are fetched
+// client-side per market.
 export function fetchPromotedComparison(hours: number): Promise<PromotedComparisonResponse> {
   return apiFetch("/experiments/promoted-comparison", { hours: String(hours) });
 }
