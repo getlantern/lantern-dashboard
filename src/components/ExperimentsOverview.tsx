@@ -237,6 +237,39 @@ function GuardrailsCard({ detail }: { detail: ExperimentDetail }) {
   );
 }
 
+// RevalidationCard surfaces the post-promotion re-validation sweep
+// (eng#3719/#3742): only 'promoted' rows ever go through it, so a demoted
+// row's decision/decisionReason already tells that story. classifyOutcome is a
+// substring match, not an enum, because the backend records a free-form
+// sentence (see SetExperimentRevalidated) rather than a fixed outcome code.
+function classifyOutcome(outcome: string | undefined): { label: string; color: string } {
+  if (!outcome) return { label: "Concluded", color: "#8890a0" };
+  if (outcome.includes("aged out")) return { label: "Aged out", color: "#e0a060" };
+  if (outcome.includes("held")) return { label: "Held", color: "#20e070" };
+  if (outcome.includes("no longer live")) return { label: "Skipped", color: "#8890a0" };
+  return { label: "Concluded", color: "#8890a0" };
+}
+
+function RevalidationCard({ detail }: { detail: ExperimentDetail }) {
+  if (detail.status !== "promoted") return null;
+  const pending = !detail.revalidatedAt;
+  const { label, color } = pending ? { label: "Pending", color: "#8890a0" } : classifyOutcome(detail.revalidationOutcome);
+  return (
+    <div style={{ ...card, flex: "1 1 16rem" }}>
+      <div style={sectionLabel}>Re-validation</div>
+      <div style={{ ...mono, fontSize: "1.1rem", fontWeight: 600, color, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ ...mono, fontSize: "0.62rem", color: "var(--text-secondary)", marginTop: "0.25rem", lineHeight: 1.4 }}>
+        {pending ? "Awaiting the post-promotion re-check." : detail.revalidationOutcome || "—"}
+      </div>
+      {detail.revalidatedAt && (
+        <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
+          Concluded {new Date(detail.revalidatedAt).toLocaleString()}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GuardrailRow({ name, ok, detail, reason }: { name: string; ok: boolean; detail: string; reason?: string }) {
   const color = ok ? "#20e070" : "#ff4060";
   return (
@@ -471,6 +504,7 @@ function ExperimentDetailPanel({ id, status, onChanged }: { id: number; status: 
       <div style={{ display: "flex", gap: "0.9rem", flexWrap: "wrap" }}>
         <DecisionCard detail={detail} />
         <GuardrailsCard detail={detail} />
+        <RevalidationCard detail={detail} />
       </div>
       <div style={card}>
         <div style={sectionLabel}>Per-country strata — challenger vs control</div>

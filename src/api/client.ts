@@ -635,6 +635,11 @@ export interface ExperimentSummary {
   decidedAt?: string;
   gatheringHours?: number;
   config?: unknown;
+  // Post-promotion re-validation (eng#3719/#3742): set once a 'promoted' row's
+  // one-shot re-check concludes — held, control gone, or aged out of the sweep
+  // window before ever reaching a verdict. Empty while still pending.
+  revalidatedAt?: string;
+  revalidationOutcome?: string;
 }
 
 export interface ExperimentPipeline {
