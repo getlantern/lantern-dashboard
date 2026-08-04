@@ -636,8 +636,10 @@ export interface ExperimentSummary {
   gatheringHours?: number;
   config?: unknown;
   // Post-promotion re-validation (eng#3719/#3742): set once a 'promoted' row's
-  // one-shot re-check concludes — held, control gone, or aged out of the sweep
-  // window before ever reaching a verdict. Empty while still pending.
+  // one-shot re-check concludes. Outcome is one of lantern-cloud's
+  // experiment.RevalidationOutcome* tokens (held / control_missing /
+  // track_disabled / aged_out); empty while still pending, and on rows stamped
+  // before the outcome column existed.
   revalidatedAt?: string;
   revalidationOutcome?: string;
 }
