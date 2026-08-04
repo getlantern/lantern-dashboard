@@ -251,7 +251,9 @@ const REVALIDATION_OUTCOMES: Record<string, { label: string; color: string; deta
 };
 
 function classifyOutcome(outcome: string | undefined): { label: string; color: string; detail: string } {
-  if (outcome && REVALIDATION_OUTCOMES[outcome]) return REVALIDATION_OUTCOMES[outcome];
+  // Own-property check: the token comes from the backend, and a plain object
+  // lookup would resolve inherited keys ("toString", "constructor") to junk.
+  if (outcome && Object.prototype.hasOwnProperty.call(REVALIDATION_OUTCOMES, outcome)) return REVALIDATION_OUTCOMES[outcome];
   // An unknown token means the backend added an outcome this build doesn't
   // know yet — name it rather than hiding it (this is an operator debugging
   // surface); no token at all means the row predates the outcome column.
