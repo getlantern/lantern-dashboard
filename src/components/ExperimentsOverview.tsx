@@ -252,7 +252,11 @@ const REVALIDATION_OUTCOMES: Record<string, { label: string; color: string; deta
 
 function classifyOutcome(outcome: string | undefined): { label: string; color: string; detail: string } {
   if (outcome && REVALIDATION_OUTCOMES[outcome]) return REVALIDATION_OUTCOMES[outcome];
-  return { label: "Concluded", color: "#8890a0", detail: outcome || "Concluded before outcomes were recorded." };
+  // An unknown token means the backend added an outcome this build doesn't
+  // know yet — name it rather than hiding it (this is an operator debugging
+  // surface); no token at all means the row predates the outcome column.
+  if (outcome) return { label: "Concluded", color: "#8890a0", detail: `Unrecognized outcome token: ${outcome}` };
+  return { label: "Concluded", color: "#8890a0", detail: "Concluded before outcomes were recorded." };
 }
 
 function RevalidationCard({ detail }: { detail: ExperimentDetail }) {
