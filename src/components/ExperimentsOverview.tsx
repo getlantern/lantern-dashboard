@@ -246,7 +246,9 @@ function classifyOutcome(outcome: string | undefined): { label: string; color: s
   if (!outcome) return { label: "Concluded", color: "#8890a0" };
   if (outcome.includes("aged out")) return { label: "Aged out", color: "#e0a060" };
   if (outcome.includes("held")) return { label: "Held", color: "#20e070" };
-  if (outcome.includes("no longer live")) return { label: "Skipped", color: "#8890a0" };
+  // Both skip flavors: "control track no longer live; cannot re-validate" and
+  // "promoted track already disabled; nothing left to demote".
+  if (outcome.includes("no longer live") || outcome.includes("already disabled")) return { label: "Skipped", color: "#8890a0" };
   return { label: "Concluded", color: "#8890a0" };
 }
 
