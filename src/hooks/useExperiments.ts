@@ -4,11 +4,13 @@ import {
   fetchExperimentDetail,
   fetchExperimentSettings,
   fetchPromotedComparison,
+  fetchPromotionImpact,
   type ExperimentSummary,
   type ExperimentPipeline,
   type ExperimentDetail,
   type ExperimentSettingsResponse,
   type PromotedComparisonResponse,
+  type PromotionImpactResponse,
 } from "../api/client";
 import { useAuth } from "./useAuth";
 
@@ -134,6 +136,37 @@ export function usePromotedComparison(enabled: boolean, hours: number) {
     run();
     return () => { cancelled = true; };
   }, [enabled, isAuthenticated, hours]);
+
+  return { data, isLoading, error };
+}
+
+// usePromotionImpact loads the promotion impact ledger when the tab activates.
+// Rows are terminal (one per promotion, written by the backend's hourly
+// worker), so there's no poll — re-activating the tab refreshes.
+export function usePromotionImpact(enabled: boolean) {
+  const { isAuthenticated } = useAuth();
+  const [data, setData] = useState<PromotionImpactResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !isAuthenticated) return;
+    let cancelled = false;
+    const run = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const d = await fetchPromotionImpact();
+        if (!cancelled) setData(d);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load impact ledger");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [enabled, isAuthenticated]);
 
   return { data, isLoading, error };
 }

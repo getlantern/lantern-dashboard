@@ -26,6 +26,7 @@ import {
 import { useExperiments, useExperimentDetail, useExperimentSettings, usePromotedComparison } from "../hooks/useExperiments";
 import { useAuth } from "../hooks/useAuth";
 import ExperimentSettings from "./ExperimentSettings";
+import PromotionImpactLedger from "./PromotionImpactLedger";
 
 const CHALLENGER_COLOR = "#00e5c8";
 const CONTROL_COLOR = "#f0a030";
@@ -1011,6 +1012,7 @@ export default function ExperimentsOverview({ enabled }: { enabled: boolean }) {
             <div style={{ ...mono, fontSize: "0.65rem", color: "var(--accent-danger, #ff4060)", background: "#ff406012", border: "1px solid #ff406030", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.75rem" }}>{error}</div>
           )}
           <PipelineStrip pipeline={pipeline} hiddenStatuses={hiddenStatuses} onToggle={toggleStatus} />
+          <PromotionImpactLedger enabled={enabled && view === "experiments"} />
           <PromotedTraffic enabled={enabled && view === "experiments"} />
           {isLoading && !hasLoaded ? (
             <div style={{ ...mono, color: "var(--text-muted)", padding: "1rem" }}>Loading experiments…</div>

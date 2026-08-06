@@ -739,8 +739,80 @@ export interface PromotedComparisonResponse {
   windowHours: number;
 }
 
+// ── Promotion impact ledger ──
+// One terminal row per promotion recording whether it moved its target MARKET
+// (market-wide goodput p50 + probe ok-rate, before/after diff-in-diff against
+// non-target markets). Mirrors promotionImpactRow in
+// cmd/api/dashboard_experiments_handler.go.
+
+// One control market's contribution to the diff-in-diff counterfactual, from
+// the row's audit detail.
+export interface PromotionImpactBasketCountry {
+  country: string;
+  goodputP50Before?: number;
+  goodputP50After?: number;
+  goodputLogRatio?: number;
+  okRateBefore?: number;
+  okRateAfter?: number;
+  okRateDelta?: number;
+}
+
+export interface PromotionImpactDetail {
+  basket?: PromotionImpactBasketCountry[];
+  excluded?: string[];
+  // Present when the goodput axis was measured on sub-windows clamped to one
+  // bucket layout around the 2026-08-06 goodput histogram relayout.
+  goodputWindows?: { beforeStart: string; beforeEnd: string; afterStart: string; afterEnd: string };
+}
+
+export interface PromotionImpactRow {
+  experimentId: number;
+  experimentStatus: string;
+  targetCountry: string;
+  protocolName: string;
+  providerName: string;
+  locationName: string;
+  promotedTrackName?: string;
+  controlTrackName?: string;
+  promotedAt: string;
+  measuredAt: string;
+  beforeStart: string;
+  beforeEnd: string;
+  afterStart: string;
+  afterEnd: string;
+  // market_win | market_regression | no_market_effect | inconclusive | no_data
+  outcome: string;
+  reason: string;
+  // Diff-in-diff effects: goodput is a relative fraction (+0.47 = +47%),
+  // ok-rate is in rate points (+0.03 = +3pp). Absent when that axis didn't
+  // clear its sample floors.
+  goodputEffect?: number;
+  okRateEffect?: number;
+  tgtGoodputP50Before?: number;
+  tgtGoodputP50After?: number;
+  tgtOkRateBefore?: number;
+  tgtOkRateAfter?: number;
+  ctrlCountries: number;
+  ctrlGoodputLogRatio?: number;
+  ctrlOkRateDelta?: number;
+  detail?: PromotionImpactDetail;
+}
+
+export interface PromotionImpactResponse {
+  rows: PromotionImpactRow[];
+  totals: Record<string, number>;
+}
+
 export function fetchExperiments(): Promise<ExperimentsResponse> {
   return apiFetch("/experiments");
+}
+
+// fetchPromotionImpact lists the promotion impact ledger (newest promotion
+// first) plus per-outcome totals. Rows are terminal — written once per
+// promotion by the backend's hourly worker — so a single fetch per tab
+// activation is enough; no polling.
+export function fetchPromotionImpact(): Promise<PromotionImpactResponse> {
+  return apiFetch("/experiments/impact");
 }
 
 // fetchPromotedComparison lists every promoted experiment (challenger vs its
