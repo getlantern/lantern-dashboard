@@ -233,13 +233,16 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
             const expanded = expandedId === r.experimentId;
             return (
               <div key={r.experimentId}>
-                <div
+                <button
+                  type="button"
                   onClick={() => setExpandedId(expanded ? null : r.experimentId)}
+                  aria-expanded={expanded}
                   style={{
                     display: "grid", gridTemplateColumns: colTemplate, gap: "0.5rem", alignItems: "center",
-                    padding: "0.5rem 0.75rem", ...mono, fontSize: "0.65rem", cursor: "pointer",
+                    width: "100%", padding: "0.5rem 0.75rem", ...mono, fontSize: "0.65rem", cursor: "pointer",
+                    appearance: "none", textAlign: "left",
                     background: expanded ? "#ffffff08" : "transparent",
-                    borderBottom: "1px solid #ffffff08",
+                    border: 0, borderBottom: "1px solid #ffffff08",
                   }}
                 >
                   <div style={{ color: "var(--text-muted)" }}>#{r.experimentId}</div>
@@ -253,7 +256,7 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
                   <div style={{ color: effectColor(r.okRateEffect) }}>{formatEffect(r.okRateEffect, "pp")}</div>
                   <div style={{ color: "var(--text-secondary)" }}>{r.ctrlCountries}</div>
                   <div style={{ color: "var(--text-secondary)" }}>{new Date(r.promotedAt).toLocaleDateString([], { month: "short", day: "numeric" })}</div>
-                </div>
+                </button>
                 {expanded && <ImpactDetailPanel row={r} />}
               </div>
             );
