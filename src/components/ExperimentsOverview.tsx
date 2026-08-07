@@ -782,7 +782,13 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   const [trackDisabled, setTrackDisabled] = useState<Map<string, boolean> | null>(null);
   const [showCulled, setShowCulled] = useState(false);
   useEffect(() => {
-    if (!enabled || !isAuthenticated) return;
+    if (!enabled || !isAuthenticated) {
+      // Drop the map when the tab deactivates or auth lapses, mirroring the
+      // traffic effect's reset: a stale map must not keep hiding/badging cards
+      // when we can no longer (re)fetch liveness.
+      setTrackDisabled(null);
+      return;
+    }
     let cancelled = false;
     fetchTracks()
       .then((d) => {
