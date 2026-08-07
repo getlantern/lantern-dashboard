@@ -16,6 +16,7 @@ import {
   abortExperiment,
   buildExperimentTrackQuery,
   fetchSigNozMetrics,
+  fetchTracks,
   retireExperiment,
   type ExperimentDetail,
   type ExperimentStratum,
@@ -678,17 +679,28 @@ function avgGoodputByTrack(
   return out;
 }
 
+// deadBadge marks a track that is disabled in the tracks table — most commonly
+// culled by a later promotion in the same market — so a flat/absent line reads
+// as "torn down", never as a mysteriously silent live track.
+const deadBadge: CSSProperties = {
+  ...mono, fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em",
+  padding: "0.05rem 0.35rem", borderRadius: "3px",
+  color: "#ff4060", background: "#ff40601a", border: "1px solid #ff406040",
+};
+
 // PromotionTrafficCard is one promotion's traffic chart: the promoted track's
 // line vs the original (control), both scoped to the experiment's target market,
 // over the shared window. A vertical marker at the promotion time (when it falls
 // in-window) shows the hand-off. If the promotion is working the promoted line
 // climbs while the control's share of this market falls.
-function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, logScale }: {
+function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, logScale, promotedDisabled, originalDisabled }: {
   point: PromotedComparisonPoint;
   seriesByTrackCountry: Map<string, Array<{ ts: number; value: number }>>;
   startMs: number;
   endMs: number;
   logScale: boolean;
+  promotedDisabled: boolean;
+  originalDisabled: boolean;
 }) {
   const rows = useMemo(
     () => mergeTrafficRows(
@@ -704,8 +716,14 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
 
   return (
     <div style={{ border: "1px solid #ffffff0d", borderRadius: "var(--radius-sm)", padding: "0.6rem 0.7rem" }}>
-      <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>
-        #{point.experimentId} · {point.targetCountry} · {point.protocolName || "—"}{point.providerName ? ` · ${point.providerName}` : ""}
+      <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", marginBottom: "0.15rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <span>#{point.experimentId} · {point.targetCountry} · {point.protocolName || "—"}{point.providerName ? ` · ${point.providerName}` : ""}</span>
+        {promotedDisabled && (
+          <span style={deadBadge} title="The promoted track is disabled — most commonly culled by a later promotion in this market — so it carries no traffic. The experiment row still reads 'promoted'.">culled</span>
+        )}
+        {originalDisabled && (
+          <span style={{ ...deadBadge, color: "#8890a0", background: "#8890a01a", border: "1px solid #8890a040" }} title="The original (control) track is disabled; only the promoted line carries meaning in this window.">original disabled</span>
+        )}
       </div>
       <div style={{ ...mono, fontSize: "0.62rem", marginBottom: "0.35rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         <span style={{ color: CHALLENGER_COLOR }}>{point.promotedTrackName}</span>
@@ -755,6 +773,31 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   const [provider, setProvider] = useState("");
   const { data, isLoading, error } = usePromotedComparison(enabled, hours);
 
+  // Track liveness from the tracks endpoint (name → disabled), fetched once per
+  // activation. A promoted track can be culled by a LATER promotion in the same
+  // market while its experiment row stays 'promoted' forever, so without this
+  // cross-reference the section charts dead tracks as mysteriously silent live
+  // ones. A fetch failure leaves the map null: everything renders unbadged and
+  // unhidden rather than mislabeled.
+  const [trackDisabled, setTrackDisabled] = useState<Map<string, boolean> | null>(null);
+  const [showCulled, setShowCulled] = useState(false);
+  useEffect(() => {
+    if (!enabled || !isAuthenticated) return;
+    let cancelled = false;
+    fetchTracks()
+      .then((d) => {
+        if (cancelled) return;
+        const m = new Map<string, boolean>();
+        for (const t of d.tracks ?? []) m.set(t.name, t.disabled);
+        setTrackDisabled(m);
+      })
+      .catch(() => { if (!cancelled) setTrackDisabled(null); });
+    return () => { cancelled = true; };
+  }, [enabled, isAuthenticated]);
+  // Only an explicit disabled=true counts: a track missing from the map (or a
+  // failed fetch) is treated as live so an endpoint hiccup can't hide real cards.
+  const isTrackDisabled = useCallback((name: string) => trackDisabled?.get(name) === true, [trackDisabled]);
+
   const allPoints = useMemo(() => data?.points ?? [], [data]);
 
   // Filter option lists come from all promotions (before country/protocol/provider
@@ -769,7 +812,18 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
     (!provider || p.providerName === provider),
   [country, protocol, provider]);
 
-  const promotions = useMemo(() => allPoints.filter(matchesFilters), [allPoints, matchesFilters]);
+  const filteredPoints = useMemo(() => allPoints.filter(matchesFilters), [allPoints, matchesFilters]);
+  // Culled promotions (promoted track disabled) are hidden by default: they
+  // carry no traffic, so their cards are pure noise unless explicitly asked
+  // for. Hiding them BEFORE byMarket also skips their SigNoz traffic queries.
+  const culledCount = useMemo(
+    () => filteredPoints.filter((p) => isTrackDisabled(p.promotedTrackName)).length,
+    [filteredPoints, isTrackDisabled],
+  );
+  const promotions = useMemo(
+    () => (showCulled ? filteredPoints : filteredPoints.filter((p) => !isTrackDisabled(p.promotedTrackName))),
+    [filteredPoints, showCulled, isTrackDisabled],
+  );
 
   const startMs = data?.windowStart ? Date.parse(data.windowStart) : 0;
   const endMs = data?.windowEnd ? Date.parse(data.windowEnd) : 0;
@@ -919,6 +973,17 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
             {providers.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
+        {culledCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowCulled((v) => !v)}
+            style={chip(showCulled)}
+            aria-pressed={showCulled}
+            title="Promotions whose promoted track has since been disabled (most commonly culled by a later promotion in the same market). They carry no traffic, so their cards are hidden by default."
+          >
+            {showCulled ? `hide culled (${culledCount})` : `show culled (${culledCount})`}
+          </button>
+        )}
         {hasFilters && (
           <button type="button" onClick={() => { setCountry(""); setProtocol(""); setProvider(""); }} style={chip(false)}>Clear</button>
         )}
@@ -930,7 +995,8 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>Loading promotions…</div>
       ) : promotions.length === 0 ? (
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>
-          No promoted experiments{hasFilters ? " for the selected filters" : ""}.
+          No live promoted experiments{hasFilters ? " for the selected filters" : ""}.
+          {!showCulled && culledCount > 0 ? ` ${culledCount} culled ${culledCount === 1 ? "promotion is" : "promotions are"} hidden — use the "show culled" toggle.` : ""}
         </div>
       ) : (
         <>
@@ -939,11 +1005,22 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(26rem, 1fr))", gap: "1rem" }}>
             {promotions.map((p) => (
-              <PromotionTrafficCard key={p.experimentId} point={p} seriesByTrackCountry={seriesByTrackCountry} startMs={startMs} endMs={endMs} logScale={logScale} />
+              <PromotionTrafficCard
+                key={p.experimentId}
+                point={p}
+                seriesByTrackCountry={seriesByTrackCountry}
+                startMs={startMs}
+                endMs={endMs}
+                logScale={logScale}
+                promotedDisabled={isTrackDisabled(p.promotedTrackName)}
+                originalDisabled={isTrackDisabled(p.originalTrackName)}
+              />
             ))}
           </div>
           <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-            {promotions.length} {promotions.length === 1 ? "promotion" : "promotions"}{trafficLoading ? ` · loading ${metricNoun}…` : ""}
+            {promotions.length} {promotions.length === 1 ? "promotion" : "promotions"}
+            {!showCulled && culledCount > 0 ? ` · ${culledCount} culled hidden` : ""}
+            {trafficLoading ? ` · loading ${metricNoun}…` : ""}
           </div>
         </>
       )}
@@ -956,9 +1033,10 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
 export default function ExperimentsOverview({ enabled }: { enabled: boolean }) {
   const [view, setView] = useState<"experiments" | "settings">("experiments");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  // Status filter driven by the pipeline strip. Retired experiments are hidden by
-  // default — they're the bulk of terminal history and rarely what you're after.
-  const [hiddenStatuses, setHiddenStatuses] = useState<Set<string>>(() => new Set(["retired"]));
+  // Status filter driven by the pipeline strip. Retired and aborted experiments
+  // are hidden by default — together they're the bulk of terminal history and
+  // rarely what you're after; the strip's counts still show them.
+  const [hiddenStatuses, setHiddenStatuses] = useState<Set<string>>(() => new Set(["retired", "aborted"]));
   const { experiments, pipeline, isLoading, hasLoaded, error, refresh } = useExperiments(enabled);
   const settings = useExperimentSettings(enabled);
 
