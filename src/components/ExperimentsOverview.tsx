@@ -693,14 +693,13 @@ const deadBadge: CSSProperties = {
 // over the shared window. A vertical marker at the promotion time (when it falls
 // in-window) shows the hand-off. If the promotion is working the promoted line
 // climbs while the control's share of this market falls.
-function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, logScale, promotedDisabled, originalDisabled }: {
+function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, logScale, promotedCulled }: {
   point: PromotedComparisonPoint;
   seriesByTrackCountry: Map<string, Array<{ ts: number; value: number }>>;
   startMs: number;
   endMs: number;
   logScale: boolean;
-  promotedDisabled: boolean;
-  originalDisabled: boolean;
+  promotedCulled: boolean;
 }) {
   const rows = useMemo(
     () => mergeTrafficRows(
@@ -718,11 +717,8 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
     <div style={{ border: "1px solid #ffffff0d", borderRadius: "var(--radius-sm)", padding: "0.6rem 0.7rem" }}>
       <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", marginBottom: "0.15rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
         <span>#{point.experimentId} · {point.targetCountry} · {point.protocolName || "—"}{point.providerName ? ` · ${point.providerName}` : ""}</span>
-        {promotedDisabled && (
-          <span style={deadBadge} title="The promoted track is disabled — most commonly culled by a later promotion in this market — so it carries no traffic. The experiment row still reads 'promoted'.">culled</span>
-        )}
-        {originalDisabled && (
-          <span style={{ ...deadBadge, color: "#8890a0", background: "#8890a01a", border: "1px solid #8890a040" }} title="The original (control) track is disabled; only the promoted line carries meaning in this window.">original disabled</span>
+        {promotedCulled && (
+          <span style={deadBadge} title="The promoted track is no longer a live bandit track — most commonly culled by a later promotion in this market — so it carries no traffic. The experiment row still reads 'promoted'.">culled</span>
         )}
       </div>
       <div style={{ ...mono, fontSize: "0.62rem", marginBottom: "0.35rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -773,36 +769,45 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   const [provider, setProvider] = useState("");
   const { data, isLoading, error } = usePromotedComparison(enabled, hours);
 
-  // Track liveness from the tracks endpoint (name → disabled), fetched once per
+  // Live bandit track names from the tracks endpoint, fetched once per
   // activation. A promoted track can be culled by a LATER promotion in the same
   // market while its experiment row stays 'promoted' forever, so without this
   // cross-reference the section charts dead tracks as mysteriously silent live
-  // ones. A fetch failure leaves the map null: everything renders unbadged and
-  // unhidden rather than mislabeled.
-  const [trackDisabled, setTrackDisabled] = useState<Map<string, boolean> | null>(null);
+  // ones. The liveness signal is PRESENCE, not the payload's disabled field:
+  // the backend query (GetTracksWithVPSPool) filters disabled tracks out
+  // entirely, so `disabled` is always false in this response and a culled track
+  // simply isn't listed. Presence is only conclusive for PROMOTED tracks —
+  // they always run a VPS pool while alive — whereas an original (control) can
+  // be a live legacy pool-0 track that this endpoint also omits, so originals
+  // are never judged. A failed or empty fetch leaves the set null: everything
+  // renders unbadged and unhidden rather than mislabeled.
+  const [liveTracks, setLiveTracks] = useState<Set<string> | null>(null);
   const [showCulled, setShowCulled] = useState(false);
   useEffect(() => {
     if (!enabled || !isAuthenticated) {
-      // Drop the map when the tab deactivates or auth lapses, mirroring the
-      // traffic effect's reset: a stale map must not keep hiding/badging cards
+      // Drop the set when the tab deactivates or auth lapses, mirroring the
+      // traffic effect's reset: a stale set must not keep hiding/badging cards
       // when we can no longer (re)fetch liveness.
-      setTrackDisabled(null);
+      setLiveTracks(null);
       return;
     }
     let cancelled = false;
     fetchTracks()
       .then((d) => {
         if (cancelled) return;
-        const m = new Map<string, boolean>();
-        for (const t of d.tracks ?? []) m.set(t.name, t.disabled);
-        setTrackDisabled(m);
+        const names = new Set((d.tracks ?? []).map((t) => t.name));
+        // An empty list means the fleet has zero live bandit tracks — never
+        // true in practice, so treat it as an endpoint hiccup and fail open
+        // rather than classifying every promotion as culled.
+        setLiveTracks(names.size > 0 ? names : null);
       })
-      .catch(() => { if (!cancelled) setTrackDisabled(null); });
+      .catch(() => { if (!cancelled) setLiveTracks(null); });
     return () => { cancelled = true; };
   }, [enabled, isAuthenticated]);
-  // Only an explicit disabled=true counts: a track missing from the map (or a
-  // failed fetch) is treated as live so an endpoint hiccup can't hide real cards.
-  const isTrackDisabled = useCallback((name: string) => trackDisabled?.get(name) === true, [trackDisabled]);
+  const isPromotedCulled = useCallback(
+    (name: string) => liveTracks !== null && name !== "" && !liveTracks.has(name),
+    [liveTracks],
+  );
 
   const allPoints = useMemo(() => data?.points ?? [], [data]);
 
@@ -823,12 +828,12 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   // carry no traffic, so their cards are pure noise unless explicitly asked
   // for. Hiding them BEFORE byMarket also skips their SigNoz traffic queries.
   const culledCount = useMemo(
-    () => filteredPoints.filter((p) => isTrackDisabled(p.promotedTrackName)).length,
-    [filteredPoints, isTrackDisabled],
+    () => filteredPoints.filter((p) => isPromotedCulled(p.promotedTrackName)).length,
+    [filteredPoints, isPromotedCulled],
   );
   const promotions = useMemo(
-    () => (showCulled ? filteredPoints : filteredPoints.filter((p) => !isTrackDisabled(p.promotedTrackName))),
-    [filteredPoints, showCulled, isTrackDisabled],
+    () => (showCulled ? filteredPoints : filteredPoints.filter((p) => !isPromotedCulled(p.promotedTrackName))),
+    [filteredPoints, showCulled, isPromotedCulled],
   );
 
   const startMs = data?.windowStart ? Date.parse(data.windowStart) : 0;
@@ -1018,8 +1023,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
                 startMs={startMs}
                 endMs={endMs}
                 logScale={logScale}
-                promotedDisabled={isTrackDisabled(p.promotedTrackName)}
-                originalDisabled={isTrackDisabled(p.originalTrackName)}
+                promotedCulled={isPromotedCulled(p.promotedTrackName)}
               />
             ))}
           </div>
