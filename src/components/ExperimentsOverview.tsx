@@ -824,9 +824,10 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   [country, protocol, provider]);
 
   const filteredPoints = useMemo(() => allPoints.filter(matchesFilters), [allPoints, matchesFilters]);
-  // Culled promotions (promoted track disabled) are hidden by default: they
-  // carry no traffic, so their cards are pure noise unless explicitly asked
-  // for. Hiding them BEFORE byMarket also skips their SigNoz traffic queries.
+  // Culled promotions (promoted track absent from the live-tracks list — see
+  // isPromotedCulled) are hidden by default: they carry no traffic, so their
+  // cards are pure noise unless explicitly asked for. Hiding them BEFORE
+  // byMarket also skips their SigNoz traffic queries.
   const culledCount = useMemo(
     () => filteredPoints.filter((p) => isPromotedCulled(p.promotedTrackName)).length,
     [filteredPoints, isPromotedCulled],
