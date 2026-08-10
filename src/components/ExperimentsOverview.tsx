@@ -718,7 +718,14 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
       <div style={{ ...mono, fontSize: "0.58rem", color: "var(--text-muted)", marginBottom: "0.15rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
         <span>#{point.experimentId} · {point.targetCountry} · {point.protocolName || "—"}{point.providerName ? ` · ${point.providerName}` : ""}</span>
         {promotedCulled && (
-          <span style={deadBadge} title="The promoted track is no longer a live bandit track — most commonly culled by a later promotion in this market — so it carries no traffic. The experiment row still reads 'promoted'.">culled</span>
+          <span
+            style={deadBadge}
+            title={point.culledByExperimentId
+              ? `Culled by experiment #${point.culledByExperimentId}'s promotion${point.culledAt ? ` on ${new Date(point.culledAt).toLocaleDateString()}` : ""}: this market promoted a materially faster track, so this one was disabled. The experiment row still reads 'promoted'.`
+              : "The promoted track is no longer a live bandit track — most commonly culled by a later promotion in this market — so it carries no traffic. The experiment row still reads 'promoted'."}
+          >
+            {point.culledByExperimentId ? `culled by #${point.culledByExperimentId}` : "culled"}
+          </span>
         )}
       </div>
       <div style={{ ...mono, fontSize: "0.62rem", marginBottom: "0.35rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -770,10 +777,11 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   const { data, isLoading, error } = usePromotedComparison(enabled, hours);
 
   // Live bandit track names from the tracks endpoint, fetched once per
-  // activation. A promoted track can be culled by a LATER promotion in the same
-  // market while its experiment row stays 'promoted' forever, so without this
-  // cross-reference the section charts dead tracks as mysteriously silent live
-  // ones. The liveness signal is PRESENCE, not the payload's disabled field:
+  // activation — the fallback liveness signal behind the authoritative
+  // culled_at stamp (see isPromotedCulled): it catches promoted tracks
+  // disabled outside a cull, which nothing stamps. Without either signal the
+  // section charts dead tracks as mysteriously silent live ones. The liveness
+  // signal here is PRESENCE, not the payload's disabled field:
   // the backend query (GetTracksWithVPSPool) filters disabled tracks out
   // entirely, so `disabled` is always false in this response and a culled track
   // simply isn't listed. Presence is only conclusive for PROMOTED tracks —
@@ -804,8 +812,15 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
       .catch(() => { if (!cancelled) setLiveTracks(null); });
     return () => { cancelled = true; };
   }, [enabled, isAuthenticated]);
+  // Culled = the authoritative culled_at stamp (lantern-cloud#3126) OR absence
+  // from the live-tracks list. The stamp is preferred — it survives a /tracks
+  // fetch failure and attributes the culling promotion — but the liveness
+  // fallback still catches promoted tracks disabled outside a cull, which
+  // nothing stamps.
   const isPromotedCulled = useCallback(
-    (name: string) => liveTracks !== null && name !== "" && !liveTracks.has(name),
+    (p: PromotedComparisonPoint) =>
+      Boolean(p.culledAt) ||
+      (liveTracks !== null && p.promotedTrackName !== "" && !liveTracks.has(p.promotedTrackName)),
     [liveTracks],
   );
 
@@ -829,11 +844,11 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   // cards are pure noise unless explicitly asked for. Hiding them BEFORE
   // byMarket also skips their SigNoz traffic queries.
   const culledCount = useMemo(
-    () => filteredPoints.filter((p) => isPromotedCulled(p.promotedTrackName)).length,
+    () => filteredPoints.filter(isPromotedCulled).length,
     [filteredPoints, isPromotedCulled],
   );
   const promotions = useMemo(
-    () => (showCulled ? filteredPoints : filteredPoints.filter((p) => !isPromotedCulled(p.promotedTrackName))),
+    () => (showCulled ? filteredPoints : filteredPoints.filter((p) => !isPromotedCulled(p))),
     [filteredPoints, showCulled, isPromotedCulled],
   );
 
@@ -1024,7 +1039,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
                 startMs={startMs}
                 endMs={endMs}
                 logScale={logScale}
-                promotedCulled={isPromotedCulled(p.promotedTrackName)}
+                promotedCulled={isPromotedCulled(p)}
               />
             ))}
           </div>

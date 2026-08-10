@@ -730,6 +730,12 @@ export interface PromotedComparisonPoint {
   promotedTrackName: string;
   originalTrackName: string;
   promotedAt?: string;       // decided_at (when the experiment was promoted)
+  // Authoritative cull stamp (lantern-cloud#3126): set when the promoted track
+  // was later disabled by another promotion's cull, with the culling
+  // experiment attributed when known (absent on rows stamped by the migration
+  // backfill, whose cull history lives only in logs).
+  culledAt?: string;
+  culledByExperimentId?: number;
 }
 
 export interface PromotedComparisonResponse {
