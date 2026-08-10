@@ -711,6 +711,10 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
   );
   const promotedMs = point.promotedAt ? Date.parse(point.promotedAt) : NaN;
   const showMarker = !Number.isNaN(promotedMs) && promotedMs >= startMs && promotedMs <= endMs;
+  // Parsed defensively like promotedAt above: an unparseable culledAt must
+  // degrade to no date, not an "Invalid Date" tooltip.
+  const culledMs = point.culledAt ? Date.parse(point.culledAt) : NaN;
+  const culledOn = Number.isNaN(culledMs) ? "" : ` on ${new Date(culledMs).toLocaleDateString()}`;
   const hasData = rows.some((r) => r.promoted !== undefined || r.original !== undefined);
 
   return (
@@ -721,7 +725,7 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
           <span
             style={deadBadge}
             title={point.culledByExperimentId
-              ? `Culled by experiment #${point.culledByExperimentId}'s promotion${point.culledAt ? ` on ${new Date(point.culledAt).toLocaleDateString()}` : ""}: this market promoted a materially faster track, so this one was disabled. The experiment row still reads 'promoted'.`
+              ? `Culled by experiment #${point.culledByExperimentId}'s promotion${culledOn}: this market promoted a materially faster track, so this one was disabled. The experiment row still reads 'promoted'.`
               : "The promoted track is no longer a live bandit track — most commonly culled by a later promotion in this market — so it carries no traffic. The experiment row still reads 'promoted'."}
           >
             {point.culledByExperimentId ? `culled by #${point.culledByExperimentId}` : "culled"}
