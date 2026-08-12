@@ -123,6 +123,12 @@ export default function ExperimentSettings({ settings, isLoading, error, onSaved
     }
     const draftKey = k.key;
     const current = drafts[draftKey] ?? String(k.value);
+    // A comma-separated knob (target markets, banned protocol families) gets a
+    // wider box. Detected from the value/default rather than a hardcoded key list
+    // so a new list knob on the backend widens itself. The default is consulted too
+    // because a list that's been narrowed to one entry still needs the room to grow
+    // back.
+    const isListValue = k.type === "string" && (current.includes(",") || String(k.default).includes(","));
     const commit = () => {
       if (k.type === "int") {
         // Treat blank as invalid rather than letting Number("") coerce to 0 and
@@ -147,7 +153,11 @@ export default function ExperimentSettings({ settings, isLoading, error, onSaved
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         style={{
-          width: k.type === "int" ? 80 : 200,
+          // List-valued knobs (comma-separated markets, banned protocol families)
+          // run far past the 200px a short string needs; without the wider box an
+          // operator edits a long list through a keyhole and can't see which
+          // entries are present.
+          width: k.type === "int" ? 80 : isListValue ? 420 : 200,
           background: "#ffffff08",
           border: "1px solid #ffffff14",
           borderRadius: "var(--radius-sm)",
