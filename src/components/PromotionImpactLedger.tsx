@@ -54,7 +54,20 @@ const demotedBadge: CSSProperties = {
   ...mono, fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em",
   padding: "0.05rem 0.35rem", borderRadius: "3px",
   color: "#ff4060", background: "#ff40601a", border: "1px solid #ff406040",
-  whiteSpace: "nowrap",
+  whiteSpace: "nowrap", flexShrink: 0,
+};
+
+const DEMOTED_NOTE =
+  "Post-promotion revalidation later demoted this promotion and tore its track down. " +
+  "The outcome still records the market impact measured on fixed windows around the promotion " +
+  "itself — ledger rows are terminal and preserved by demotion.";
+
+// visuallyHidden keeps the demoted explanation in the accessibility tree (the
+// row button references it via aria-describedby; title tooltips never surface
+// on keyboard focus) without rendering it.
+const visuallyHidden: CSSProperties = {
+  position: "absolute", width: 1, height: 1, margin: -1, padding: 0,
+  overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
 };
 
 // formatEffect renders a diff-in-diff effect: goodput as a signed percentage,
@@ -249,6 +262,7 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
                   type="button"
                   onClick={() => setExpandedId(expanded ? null : r.experimentId)}
                   aria-expanded={expanded}
+                  aria-describedby={r.experimentStatus === "demoted" ? `ledger-demoted-${r.experimentId}` : undefined}
                   style={{
                     display: "grid", gridTemplateColumns: colTemplate, gap: "0.5rem", alignItems: "center",
                     width: "100%", padding: "0.5rem 0.75rem", ...mono, fontSize: "0.65rem", cursor: "pointer",
@@ -260,14 +274,16 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
                   <div style={{ color: "var(--text-muted)" }}>#{r.experimentId}</div>
                   <div><OutcomeBadge outcome={r.outcome} /></div>
                   <div style={{ color: "var(--text-primary)" }}>{r.targetCountry || "—"}</div>
-                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <span style={{ color: PROMOTED_COLOR }}>{r.promotedTrackName || "—"}</span>
-                    <span style={{ color: "var(--text-muted)" }}>{r.protocolName ? ` · ${r.protocolName}` : ""}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 0 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ color: PROMOTED_COLOR }}>{r.promotedTrackName || "—"}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{r.protocolName ? ` · ${r.protocolName}` : ""}</span>
+                    </span>
                     {r.experimentStatus === "demoted" && (
-                      <span
-                        style={{ ...demotedBadge, marginLeft: "0.4rem" }}
-                        title="Post-promotion revalidation later demoted this promotion and tore its track down. The outcome still records the market impact measured around the promotion itself — ledger rows are terminal and preserved by demotion."
-                      >demoted</span>
+                      <>
+                        <span style={demotedBadge} title={DEMOTED_NOTE}>demoted</span>
+                        <span id={`ledger-demoted-${r.experimentId}`} style={visuallyHidden}>{DEMOTED_NOTE}</span>
+                      </>
                     )}
                   </div>
                   <div style={{ color: effectColor(r.goodputEffect) }}>{formatEffect(r.goodputEffect, "%")}</div>
