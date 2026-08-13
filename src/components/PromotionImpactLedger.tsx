@@ -45,6 +45,18 @@ const sectionLabel: CSSProperties = {
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: "0.7rem" };
 
+// demotedBadge marks a promotion that post-promotion revalidation later
+// demoted (its track torn down). The outcome column still records the
+// market impact measured around the promotion itself — ledger rows are
+// terminal and preserved by demotion — so without this badge a demoted
+// promotion reads as a standing win.
+const demotedBadge: CSSProperties = {
+  ...mono, fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em",
+  padding: "0.05rem 0.35rem", borderRadius: "3px",
+  color: "#ff4060", background: "#ff40601a", border: "1px solid #ff406040",
+  whiteSpace: "nowrap",
+};
+
 // formatEffect renders a diff-in-diff effect: goodput as a signed percentage,
 // ok-rate as signed percentage points. Undefined means the axis wasn't judged.
 function formatEffect(v: number | undefined, unit: "%" | "pp"): string {
@@ -251,6 +263,12 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
                   <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     <span style={{ color: PROMOTED_COLOR }}>{r.promotedTrackName || "—"}</span>
                     <span style={{ color: "var(--text-muted)" }}>{r.protocolName ? ` · ${r.protocolName}` : ""}</span>
+                    {r.experimentStatus === "demoted" && (
+                      <span
+                        style={{ ...demotedBadge, marginLeft: "0.4rem" }}
+                        title="Post-promotion revalidation later demoted this promotion and tore its track down. The outcome still records the market impact measured around the promotion itself — ledger rows are terminal and preserved by demotion."
+                      >demoted</span>
+                    )}
                   </div>
                   <div style={{ color: effectColor(r.goodputEffect) }}>{formatEffect(r.goodputEffect, "%")}</div>
                   <div style={{ color: effectColor(r.okRateEffect) }}>{formatEffect(r.okRateEffect, "pp")}</div>
