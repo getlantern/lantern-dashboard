@@ -961,9 +961,11 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
                 metricName, trackNames: names, trackKey: "track",
                 timeAggregation: "rate", spaceAggregation: "sum", startMs, endMs, stepSeconds,
                 extraFilters: [countryFilter(market)],
-                // goodput.* are cumulative histogram streams — v4 returns nothing
-                // for rate() over them without this.
-                temporality: "Cumulative",
+                // No temporality hint: goodput.* are delta streams as of
+                // getlantern/engineering#3831, and delta is the API default.
+                // The ratio below is unaffected either way — rate(sum)/rate(count)
+                // cancels the rate window — but naming the wrong temporality
+                // makes v4 return no series at all.
               });
               const [sumResp, countResp] = await Promise.all([
                 fetchSigNozMetrics(mk("proxy.session.goodput.sum")),

@@ -917,10 +917,11 @@ export function buildExperimentTrackQuery(opts: {
   endMs: number;
   stepSeconds: number;
   extraFilters?: { key: string; dataType: string; op: string; value: unknown }[];
-  // Required for cumulative metrics (e.g. the proxy.session.goodput.* histogram
-  // streams): SigNoz returns no series for rate/increase over a cumulative
-  // counter unless told it's "Cumulative". Delta metrics (proxy.io, bandit.*)
-  // omit it.
+  // Only set this for CUMULATIVE metrics: SigNoz returns no series for
+  // rate/increase over a cumulative counter unless told it's "Cumulative".
+  // Delta metrics omit it, which is now everything this dashboard reads —
+  // proxy.io, bandit.*, and proxy.session.goodput.* since
+  // getlantern/engineering#3831 switched the goodput histogram to delta.
   temporality?: string;
 }): object {
   const trackKey = opts.trackKey || "track";
