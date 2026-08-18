@@ -881,10 +881,11 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
 
   // Paginate BEFORE byMarket: the SigNoz fan-out derives from the visible page,
   // so paging also caps the per-render query volume (same reason culled-hiding
-  // happens before byMarket). Page resets whenever the filtered universe
-  // changes; the clamp additionally covers shrinkage from async liveness data.
+  // happens before byMarket). The page resets synchronously in every handler
+  // that changes the filtered universe — an effect-based reset would let the
+  // traffic effect issue one stale-page query batch before the reset render.
+  // The clamp additionally covers shrinkage from async liveness data.
   const [page, setPage] = useState(0);
-  useEffect(() => { setPage(0); }, [country, protocol, provider, showCulled, hours]);
   const pageCount = Math.max(1, Math.ceil(promotions.length / PROMOTIONS_PAGE_SIZE));
   const clampedPage = Math.min(page, pageCount - 1);
   const pagePromotions = useMemo(
@@ -1013,7 +1014,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
           </button>
           <span style={{ width: 1, height: "1rem", background: "#ffffff14", margin: "0 0.15rem" }} />
           {COMPARISON_WINDOWS.map((w) => (
-            <button type="button" key={w.hours} onClick={() => setHours(w.hours)} style={chip(hours === w.hours)} aria-pressed={hours === w.hours}>{w.label}</button>
+            <button type="button" key={w.hours} onClick={() => { setHours(w.hours); setPage(0); }} style={chip(hours === w.hours)} aria-pressed={hours === w.hours}>{w.label}</button>
           ))}
         </div>
       </div>
@@ -1021,21 +1022,21 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
       <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "flex-end", marginBottom: "0.6rem" }}>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 110 }}>
           <span style={filterLabel}>Country</span>
-          <select style={filterSelect} value={country} onChange={(e) => setCountry(e.target.value)}>
+          <select style={filterSelect} value={country} onChange={(e) => { setCountry(e.target.value); setPage(0); }}>
             <option value="">All</option>
             {countries.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 130 }}>
           <span style={filterLabel}>Protocol</span>
-          <select style={filterSelect} value={protocol} onChange={(e) => setProtocol(e.target.value)}>
+          <select style={filterSelect} value={protocol} onChange={(e) => { setProtocol(e.target.value); setPage(0); }}>
             <option value="">All</option>
             {protocols.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 130 }}>
           <span style={filterLabel}>Provider</span>
-          <select style={filterSelect} value={provider} onChange={(e) => setProvider(e.target.value)}>
+          <select style={filterSelect} value={provider} onChange={(e) => { setProvider(e.target.value); setPage(0); }}>
             <option value="">All</option>
             {providers.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
@@ -1043,7 +1044,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
         {culledCount > 0 && (
           <button
             type="button"
-            onClick={() => setShowCulled((v) => !v)}
+            onClick={() => { setShowCulled((v) => !v); setPage(0); }}
             style={chip(showCulled)}
             aria-pressed={showCulled}
             title="Promotions whose promoted track has since been disabled (most commonly culled by a later promotion in the same market). They carry no traffic, so their cards are hidden by default."
@@ -1052,7 +1053,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
           </button>
         )}
         {hasFilters && (
-          <button type="button" onClick={() => { setCountry(""); setProtocol(""); setProvider(""); }} style={chip(false)}>Clear</button>
+          <button type="button" onClick={() => { setCountry(""); setProtocol(""); setProvider(""); setPage(0); }} style={chip(false)}>Clear</button>
         )}
       </div>
 
