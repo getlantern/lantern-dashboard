@@ -218,10 +218,31 @@ function ImpactDetailPanel({ row }: { row: PromotionImpactRow }) {
 
 const colTemplate = "3rem 6.5rem 5rem 1fr 6rem 6rem 4.5rem 6.5rem";
 
+// LEDGER_PAGE_SIZE caps rows rendered per page; the server sends up to 200
+// rows and TotalsStrip aggregates server-side over all of them, so paging only
+// windows the table itself.
+const LEDGER_PAGE_SIZE = 20;
+
+const chipButton = (disabled: boolean): CSSProperties => ({
+  ...mono, fontSize: "0.6rem", padding: "0.3rem 0.7rem", borderRadius: "var(--radius-sm)",
+  cursor: disabled ? "default" : "pointer", userSelect: "none", appearance: "none",
+  background: "#ffffff08", color: disabled ? "#ffffff30" : "var(--text-muted)",
+  border: "1px solid #ffffff10",
+});
+
 export default function PromotionImpactLedger({ enabled }: { enabled: boolean }) {
   const { data, isLoading, error } = usePromotionImpact(enabled);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const rows = useMemo(() => data?.rows ?? [], [data]);
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(rows.length / LEDGER_PAGE_SIZE));
+  // Clamp instead of resetting on data change: rows only move on a refetch,
+  // and a clamped page degrades gracefully if the set shrinks.
+  const clampedPage = Math.min(page, pageCount - 1);
+  const pageRows = useMemo(
+    () => rows.slice(clampedPage * LEDGER_PAGE_SIZE, (clampedPage + 1) * LEDGER_PAGE_SIZE),
+    [rows, clampedPage],
+  );
 
   const headerStyle: CSSProperties = {
     display: "grid", gridTemplateColumns: colTemplate, gap: "0.5rem",
@@ -254,7 +275,7 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
             <div>ID</div><div>Outcome</div><div>Market</div><div>Promoted track</div>
             <div>Goodput DiD</div><div>Ok-rate DiD</div><div>Basket</div><div>Promoted at</div>
           </div>
-          {rows.map((r) => {
+          {pageRows.map((r) => {
             const expanded = expandedId === r.experimentId;
             return (
               <div key={r.experimentId}>
@@ -275,8 +296,11 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
                   <div><OutcomeBadge outcome={r.outcome} /></div>
                   <div style={{ color: "var(--text-primary)" }}>{r.targetCountry || "—"}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 0 }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ color: PROMOTED_COLOR }}>{r.promotedTrackName || "—"}</span>
+                    {/* The raw tracks.name is an id-based telemetry key and stays that
+                        way (see lantern-cloud migration 000111); compose the readable
+                        identity from row metadata, raw key in the tooltip. */}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.promotedTrackName || undefined}>
+                      <span style={{ color: PROMOTED_COLOR }}>{r.locationName || r.promotedTrackName || "—"}</span>
                       <span style={{ color: "var(--text-muted)" }}>{r.protocolName ? ` · ${r.protocolName}` : ""}</span>
                     </span>
                     {r.experimentStatus === "demoted" && (
@@ -295,8 +319,21 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
               </div>
             );
           })}
-          <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-            {rows.length} {rows.length === 1 ? "promotion" : "promotions"} measured
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+            {pageCount > 1 && (
+              <>
+                <button type="button" style={chipButton(clampedPage === 0)} disabled={clampedPage === 0}
+                  onClick={() => setPage(Math.max(0, clampedPage - 1))}>‹ prev</button>
+                <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
+                  page {clampedPage + 1} / {pageCount}
+                </span>
+                <button type="button" style={chipButton(clampedPage >= pageCount - 1)} disabled={clampedPage >= pageCount - 1}
+                  onClick={() => setPage(Math.min(pageCount - 1, clampedPage + 1))}>next ›</button>
+              </>
+            )}
+            <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
+              {rows.length} {rows.length === 1 ? "promotion" : "promotions"} measured
+            </span>
           </div>
         </>
       )}
