@@ -101,8 +101,16 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
   );
 }
 
-// TotalsStrip headlines the win/substitution/regression ratio across the ledger.
-function TotalsStrip({ totals }: { totals: Record<string, number> }) {
+// TotalsStrip headlines the win/substitution/regression ratio across the ledger
+// and doubles as the table's outcome filter, mirroring the lifecycle pipeline
+// strip: each tile is a toggle, and a toggled-off outcome (dimmed + struck
+// through) is hidden from the rows below. Counts always reflect the full
+// server-side totals, never the filter.
+function TotalsStrip({ totals, hiddenOutcomes, onToggle }: {
+  totals: Record<string, number>;
+  hiddenOutcomes: Set<string>;
+  onToggle: (outcome: string) => void;
+}) {
   const order = ["market_win", "no_market_effect", "market_regression", "inconclusive", "no_data"];
   const known = order.filter((k) => (totals[k] ?? 0) > 0);
   // Outcomes the backend added that this build doesn't know yet still count.
@@ -113,15 +121,27 @@ function TotalsStrip({ totals }: { totals: Record<string, number> }) {
     <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
       {keys.map((k) => {
         const m = outcomeMeta(k);
+        const on = !hiddenOutcomes.has(k);
         return (
-          <div key={k} title={m.detail} style={{
-            flex: "1 1 7rem", minWidth: "6.5rem",
-            borderRadius: "var(--radius-sm)", border: `1px solid ${m.color}30`,
-            background: `${m.color}10`, padding: "0.5rem 0.6rem",
-          }}>
-            <div style={{ ...mono, fontSize: "1.3rem", fontWeight: 600, color: m.color }}>{totals[k]}</div>
-            <div style={{ ...mono, fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)" }}>{m.label}</div>
-          </div>
+          <button
+            type="button"
+            key={k}
+            onClick={() => onToggle(k)}
+            aria-pressed={on}
+            title={`${m.detail} ${on ? "Click to hide these rows." : "Click to show these rows."}`}
+            style={{
+              flex: "1 1 7rem", minWidth: "6.5rem", textAlign: "left",
+              appearance: "none", cursor: "pointer",
+              borderRadius: "var(--radius-sm)",
+              border: `1px solid ${on ? `${m.color}30` : "#ffffff0d"}`,
+              background: on ? `${m.color}10` : "#ffffff05",
+              padding: "0.5rem 0.6rem",
+              opacity: on ? 1 : 0.45,
+            }}
+          >
+            <div style={{ ...mono, fontSize: "1.3rem", fontWeight: 600, color: on ? m.color : "#5a6472" }}>{totals[k]}</div>
+            <div style={{ ...mono, fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", textDecoration: on ? "none" : "line-through" }}>{m.label}</div>
+          </button>
         );
       })}
     </div>
@@ -233,8 +253,25 @@ const chipButton = (disabled: boolean): CSSProperties => ({
 export default function PromotionImpactLedger({ enabled }: { enabled: boolean }) {
   const { data, isLoading, error } = usePromotionImpact(enabled);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const allRows = useMemo(() => data?.rows ?? [], [data]);
+  // Outcome filter driven by the totals strip (see TotalsStrip). Toggling
+  // resets the page synchronously — an effect-based reset would render one
+  // stale page first.
+  const [hiddenOutcomes, setHiddenOutcomes] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
+  const toggleOutcome = (outcome: string) => {
+    setHiddenOutcomes((prev) => {
+      const next = new Set(prev);
+      if (next.has(outcome)) next.delete(outcome);
+      else next.add(outcome);
+      return next;
+    });
+    setPage(0);
+  };
+  const rows = useMemo(
+    () => allRows.filter((r) => !hiddenOutcomes.has(r.outcome)),
+    [allRows, hiddenOutcomes],
+  );
   const pageCount = Math.max(1, Math.ceil(rows.length / LEDGER_PAGE_SIZE));
   // Clamp instead of resetting on data change: rows only move on a refetch,
   // and a clamped page degrades gracefully if the set shrinks.
@@ -252,7 +289,10 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
 
   return (
     <div style={card}>
-      <div style={{ ...sectionLabel, marginBottom: "0.15rem" }}>Promotion impact ledger</div>
+      <div style={{ ...sectionLabel, marginBottom: "0.15rem", display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+        <span>Promotion impact ledger</span>
+        <span style={{ textTransform: "none", letterSpacing: 0 }}>click an outcome to show / hide it in the table</span>
+      </div>
       <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginBottom: "0.6rem" }}>
         Did the promotion move its target market, or did the cohort win just substitute experiment-track
         share for incumbent share? Market-wide goodput p50 and probe ok-rate, before vs after each
@@ -261,16 +301,22 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
 
       {error ? (
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--accent-danger, #ff4060)" }}>{error}</div>
-      ) : isLoading && rows.length === 0 ? (
+      ) : isLoading && allRows.length === 0 ? (
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>Loading impact ledger…</div>
-      ) : rows.length === 0 ? (
+      ) : allRows.length === 0 ? (
         <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>
           No impact rows yet — the ledger fills in as promotions' after-windows elapse (and backfills once
           promotion_impact_enabled is on).
         </div>
       ) : (
         <>
-          <TotalsStrip totals={data?.totals ?? {}} />
+          <TotalsStrip totals={data?.totals ?? {}} hiddenOutcomes={hiddenOutcomes} onToggle={toggleOutcome} />
+          {rows.length === 0 ? (
+            <div style={{ ...mono, fontSize: "0.65rem", color: "var(--text-muted)" }}>
+              Every outcome is toggled off — click an outcome tile above to show its rows.
+            </div>
+          ) : (
+          <>
           <div style={headerStyle}>
             <div>ID</div><div>Outcome</div><div>Market</div><div>Promoted track</div>
             <div>Goodput DiD</div><div>Ok-rate DiD</div><div>Basket</div><div>Promoted at</div>
@@ -301,7 +347,7 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
                         identity from row metadata, raw key in the tooltip. */}
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.promotedTrackName || undefined}>
                       <span style={{ color: PROMOTED_COLOR }}>{r.locationName || r.promotedTrackName || "—"}</span>
-                      <span style={{ color: "var(--text-muted)" }}>{r.protocolName ? ` · ${r.protocolName}` : ""}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{r.providerName ? ` (${r.providerName})` : ""}{r.protocolName ? ` · ${r.protocolName}` : ""}</span>
                     </span>
                     {r.experimentStatus === "demoted" && (
                       <>
@@ -332,9 +378,13 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
               </>
             )}
             <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
-              {rows.length} {rows.length === 1 ? "promotion" : "promotions"} measured
+              {hiddenOutcomes.size > 0
+                ? `${rows.length} of ${allRows.length} ${allRows.length === 1 ? "promotion" : "promotions"} shown`
+                : `${rows.length} ${rows.length === 1 ? "promotion" : "promotions"} measured`}
             </span>
           </div>
+          </>
+          )}
         </>
       )}
     </div>
