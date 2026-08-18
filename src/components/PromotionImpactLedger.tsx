@@ -378,7 +378,10 @@ export default function PromotionImpactLedger({ enabled }: { enabled: boolean })
               </>
             )}
             <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
-              {hiddenOutcomes.size > 0
+              {/* Keyed off the effective filter, not hiddenOutcomes.size: a
+                  refetch can drop an outcome whose tile is gone but whose key
+                  still sits in hiddenOutcomes, filtering nothing. */}
+              {rows.length !== allRows.length
                 ? `${rows.length} of ${allRows.length} ${allRows.length === 1 ? "promotion" : "promotions"} shown`
                 : `${rows.length} ${rows.length === 1 ? "promotion" : "promotions"} measured`}
             </span>
