@@ -30,6 +30,11 @@ import ExperimentSettings from "./ExperimentSettings";
 import PromotionImpactLedger from "./PromotionImpactLedger";
 
 const CHALLENGER_COLOR = "#00e5c8";
+
+// PROMOTIONS_PAGE_SIZE caps the promoted-vs-original grid per page. Besides
+// keeping the grid scannable, the page bounds the SigNoz query fan-out: the
+// traffic effect derives its per-market queries from the visible page only.
+const PROMOTIONS_PAGE_SIZE = 12;
 const CONTROL_COLOR = "#f0a030";
 
 // Selectable now-relative windows for the promoted-vs-original traffic charts.
@@ -732,8 +737,15 @@ function PromotionTrafficCard({ point, seriesByTrackCountry, startMs, endMs, log
           </span>
         )}
       </div>
+      {/* The raw tracks.name is an id-based telemetry key (exp-<id>-<cc>-l<loc>-p<proto>)
+          and deliberately stays that way — renaming tracks to readable strings once broke
+          every SigNoz reader keyed on them (lantern-cloud migration 000111 reverted it).
+          Readability lives here instead: compose the label from the point's metadata and
+          keep the raw key in the tooltip. */}
       <div style={{ ...mono, fontSize: "0.62rem", marginBottom: "0.35rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        <span style={{ color: CHALLENGER_COLOR }}>{point.promotedTrackName}</span>
+        <span style={{ color: CHALLENGER_COLOR }} title={point.promotedTrackName}>
+          #{point.experimentId} · {point.locationName || "?"} · {point.protocolName || "?"}
+        </span>
         <span style={{ color: "var(--text-muted)" }}> vs </span>
         <span style={{ color: CONTROL_COLOR }}>{point.originalTrackName}</span>
       </div>
@@ -856,6 +868,19 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
     [filteredPoints, showCulled, isPromotedCulled],
   );
 
+  // Paginate BEFORE byMarket: the SigNoz fan-out derives from the visible page,
+  // so paging also caps the per-render query volume (same reason culled-hiding
+  // happens before byMarket). Page resets whenever the filtered universe
+  // changes; the clamp additionally covers shrinkage from async liveness data.
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [country, protocol, provider, showCulled, hours]);
+  const pageCount = Math.max(1, Math.ceil(promotions.length / PROMOTIONS_PAGE_SIZE));
+  const clampedPage = Math.min(page, pageCount - 1);
+  const pagePromotions = useMemo(
+    () => promotions.slice(clampedPage * PROMOTIONS_PAGE_SIZE, (clampedPage + 1) * PROMOTIONS_PAGE_SIZE),
+    [promotions, clampedPage],
+  );
+
   const startMs = data?.windowStart ? Date.parse(data.windowStart) : 0;
   const endMs = data?.windowEnd ? Date.parse(data.windowEnd) : 0;
 
@@ -865,14 +890,14 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
   // (filtered to that market), keyed by (track, market) for the cards to slice.
   const byMarket = useMemo(() => {
     const m = new Map<string, string[]>();
-    for (const p of promotions) {
+    for (const p of pagePromotions) {
       const names = m.get(p.targetCountry) ?? [];
       if (!names.includes(p.promotedTrackName)) names.push(p.promotedTrackName);
       if (!names.includes(p.originalTrackName)) names.push(p.originalTrackName);
       m.set(p.targetCountry, names);
     }
     return m;
-  }, [promotions]);
+  }, [pagePromotions]);
   // Stable primitive dep for the fetch effect (byMarket is a fresh Map each render).
   const marketsKey = useMemo(
     () => [...byMarket.entries()].map(([c, ns]) => `${c}:${ns.join(",")}`).sort().join("|"),
@@ -1035,7 +1060,7 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
             <div style={{ ...mono, fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>{metricNoun === "goodput" ? "Goodput" : "Traffic"} unavailable: {trafficError}</div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(26rem, 1fr))", gap: "1rem" }}>
-            {promotions.map((p) => (
+            {pagePromotions.map((p) => (
               <PromotionTrafficCard
                 key={p.experimentId}
                 point={p}
@@ -1047,10 +1072,23 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
               />
             ))}
           </div>
-          <div style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-            {promotions.length} {promotions.length === 1 ? "promotion" : "promotions"}
-            {!showCulled && culledCount > 0 ? ` · ${culledCount} culled hidden` : ""}
-            {trafficLoading ? ` · loading ${metricNoun}…` : ""}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+            {pageCount > 1 && (
+              <>
+                <button type="button" style={chip(false)} disabled={clampedPage === 0}
+                  onClick={() => setPage(Math.max(0, clampedPage - 1))}>‹ prev</button>
+                <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
+                  page {clampedPage + 1} / {pageCount}
+                </span>
+                <button type="button" style={chip(false)} disabled={clampedPage >= pageCount - 1}
+                  onClick={() => setPage(Math.min(pageCount - 1, clampedPage + 1))}>next ›</button>
+              </>
+            )}
+            <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
+              showing {promotions.length === 0 ? 0 : clampedPage * PROMOTIONS_PAGE_SIZE + 1}–{clampedPage * PROMOTIONS_PAGE_SIZE + pagePromotions.length} of {promotions.length} {promotions.length === 1 ? "promotion" : "promotions"}
+              {!showCulled && culledCount > 0 ? ` · ${culledCount} culled hidden` : ""}
+              {trafficLoading ? ` · loading ${metricNoun}…` : ""}
+            </span>
           </div>
         </>
       )}
