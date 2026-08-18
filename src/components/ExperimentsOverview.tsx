@@ -622,6 +622,17 @@ function chip(active: boolean): CSSProperties {
   };
 }
 
+// pagerChip is chip() with a disabled affordance: inline styles override the
+// UA's disabled styling, so a disabled pager styled chip(false) would still
+// look clickable.
+function pagerChip(disabled: boolean): CSSProperties {
+  return {
+    ...chip(false),
+    cursor: disabled ? "default" : "pointer",
+    color: disabled ? "#ffffff30" : "var(--text-muted)",
+  };
+}
+
 // mergeTrafficRows folds the promoted and original per-track series into recharts
 // rows keyed by timestamp, so a single LineChart can draw both lines. On a log
 // axis a zero can't be plotted, so zeros become gaps (undefined) rather than
@@ -1075,12 +1086,12 @@ function PromotedTraffic({ enabled }: { enabled: boolean }) {
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
             {pageCount > 1 && (
               <>
-                <button type="button" style={chip(false)} disabled={clampedPage === 0}
+                <button type="button" style={pagerChip(clampedPage === 0)} disabled={clampedPage === 0}
                   onClick={() => setPage(Math.max(0, clampedPage - 1))}>‹ prev</button>
                 <span style={{ ...mono, fontSize: "0.55rem", color: "var(--text-muted)" }}>
                   page {clampedPage + 1} / {pageCount}
                 </span>
-                <button type="button" style={chip(false)} disabled={clampedPage >= pageCount - 1}
+                <button type="button" style={pagerChip(clampedPage >= pageCount - 1)} disabled={clampedPage >= pageCount - 1}
                   onClick={() => setPage(Math.min(pageCount - 1, clampedPage + 1))}>next ›</button>
               </>
             )}
