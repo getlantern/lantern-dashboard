@@ -88,6 +88,37 @@ export function setOnAuthExpired(handler: () => Promise<string | null>) {
   onAuthExpired = handler;
 }
 
+// apiGet is the shared authenticated GET against /v1/dashboard, exported so
+// sibling API modules (see overlays.ts) reuse the 401-refresh-and-retry path
+// instead of each carrying their own copy of it.
+export async function apiGet<T>(path: string, params?: Record<string, string>): Promise<T> {
+  return apiFetch<T>(path, params);
+}
+
+// apiPost is the mutation counterpart. apiFetch is GET-only, and every write
+// endpoint needs the same token refresh plus the server's error text surfaced
+// verbatim — the handlers write those messages for the operator reading them.
+export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const url = `${getApiUrl()}/v1/dashboard${path}`;
+  const send = (token: string | null) => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  };
+  let res = await send(authToken);
+  if (res.status === 401 && onAuthExpired) {
+    const newToken = await onAuthExpired();
+    if (newToken) {
+      authToken = newToken;
+      res = await send(newToken);
+    }
+  }
+  if (!res.ok) {
+    throw new Error((await res.text()).trim() || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${getApiUrl()}/v1/dashboard${path}`);
   if (params) {
@@ -837,61 +868,22 @@ export function fetchExperimentSettings(): Promise<ExperimentSettingsResponse> {
   return apiFetch("/experiments/settings");
 }
 
-// updateExperimentSetting POSTs a single knob change. Mirrors resetBanditData's
-// non-GET style (apiFetch is GET-only) and reuses the 401 retry handler manually.
-export async function updateExperimentSetting(
+export function updateExperimentSetting(
   key: string,
   value: boolean | number | string,
 ): Promise<ExperimentSetting> {
-  const url = `${getApiUrl()}/v1/dashboard/experiments/settings`;
-  const send = (token: string | null) => {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return fetch(url, { method: "POST", headers, body: JSON.stringify({ key, value }) });
-  };
-  let res = await send(authToken);
-  if (res.status === 401 && onAuthExpired) {
-    const newToken = await onAuthExpired();
-    if (newToken) {
-      authToken = newToken;
-      res = await send(newToken);
-    }
-  }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Update setting failed: ${res.status} ${body}`);
-  }
-  return res.json();
+  return apiPost("/experiments/settings", { key, value });
 }
 
-// terminateExperiment POSTs an abort/retire action for one experiment. Like
-// updateExperimentSetting it can't use apiFetch (GET-only) and reuses the 401
-// retry handler manually. The backend drives experiment.TerminateByID — the same
-// teardown the `lc experiments` CLI uses — and returns the updated summary.
-async function terminateExperiment(
+// terminateExperiment POSTs an abort/retire action for one experiment. The
+// backend drives experiment.TerminateByID — the same teardown the
+// `lc experiments` CLI uses — and returns the updated summary.
+function terminateExperiment(
   action: "abort" | "retire",
   id: number,
   reason: string,
 ): Promise<ExperimentSummary> {
-  const url = `${getApiUrl()}/v1/dashboard/experiments/${action}`;
-  const send = (token: string | null) => {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return fetch(url, { method: "POST", headers, body: JSON.stringify({ id, reason }) });
-  };
-  let res = await send(authToken);
-  if (res.status === 401 && onAuthExpired) {
-    const newToken = await onAuthExpired();
-    if (newToken) {
-      authToken = newToken;
-      res = await send(newToken);
-    }
-  }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${action} failed: ${res.status} ${body}`);
-  }
-  return res.json();
+  return apiPost(`/experiments/${action}`, { id, reason });
 }
 
 export function abortExperiment(id: number, reason: string): Promise<ExperimentSummary> {
