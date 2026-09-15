@@ -188,6 +188,7 @@
 /* ── Right Panel ── */
 .right-panel {
   width: 340px;
+  animation: slide-in-right 0.25s ease-out;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -196,6 +197,35 @@
   overflow: hidden;
   min-height: 0;
   max-height: 100%;
+}
+
+.right-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 0.3rem 0.6rem 0.3rem 1.25rem;
+  background: var(--bg-card);
+}
+.right-panel-bar .mono {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.right-panel-close {
+  background: none;
+  border: 1px solid #ffffff10;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+}
+.right-panel-close:hover {
+  color: var(--text-primary);
+  border-color: #ffffff20;
 }
 
 /* ── AI Summary Briefing ── */
