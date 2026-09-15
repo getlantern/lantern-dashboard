@@ -84,7 +84,18 @@ function LanternLogo() {
 
 export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
-  const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData();
+  // Briefing side panel is collapsed by default so the map/tab content gets the
+  // full width; the choice sticks per-browser once the user opens it.
+  const [briefingOpen, setBriefingOpen] = useState(
+    () => localStorage.getItem(BRIEFING_PANEL_KEY) === "1",
+  );
+  const toggleBriefing = useCallback(() => {
+    setBriefingOpen((open) => {
+      localStorage.setItem(BRIEFING_PANEL_KEY, open ? "0" : "1");
+      return !open;
+    });
+  }, []);
+  const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData(briefingOpen);
   const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'experiments' | 'overlays' | 'tracks' | 'metrics' | 'proxy' | 'admin'>(() => {
     const hash = window.location.hash;
     if (hash === '#overview') return 'overview';
@@ -106,17 +117,6 @@ export default function Dashboard() {
   const vpsData = useVPSData(activeTab === 'vps');
   const proxy = useProxy();
   const [myProxyView, setMyProxyView] = useState(false);
-  // Briefing side panel is collapsed by default so the map/tab content gets the
-  // full width; the choice sticks per-browser once the user opens it.
-  const [briefingOpen, setBriefingOpen] = useState(
-    () => localStorage.getItem(BRIEFING_PANEL_KEY) === "1",
-  );
-  const toggleBriefing = useCallback(() => {
-    setBriefingOpen((open) => {
-      localStorage.setItem(BRIEFING_PANEL_KEY, open ? "0" : "1");
-      return !open;
-    });
-  }, []);
   const connectionAddrs = useMemo(
     () => proxy.liveData.connectionDetails.map((c) => c.addr),
     [proxy.liveData.connectionDetails],

@@ -15,6 +15,12 @@ type SummaryState = "idle" | "loading" | "streaming" | "complete" | "error";
 
 marked.setOptions({ breaks: true, gfm: true });
 
+// The briefing panel unmounts when collapsed, so every re-open would otherwise
+// fire a fresh (LLM-backed, expensive) summary request. Cache the last summary
+// at module scope for the same window as the refresh cooldown and reuse it.
+const SUMMARY_TTL_MS = 60_000;
+let cachedSummary: { data: SummaryData; at: number } | null = null;
+
 export default function AISummary({ authToken }: { authToken: string | null }) {
   const [state, setState] = useState<SummaryState>("idle");
   const [summary, setSummary] = useState<SummaryData | null>(null);
@@ -24,8 +30,8 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  const startCooldown = useCallback(() => {
-    setCooldown(60);
+  const resumeCooldown = useCallback((seconds: number) => {
+    setCooldown(seconds);
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     cooldownRef.current = setInterval(() => {
       setCooldown((prev) => {
@@ -38,6 +44,11 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
       });
     }, 1000);
   }, []);
+
+  const startCooldown = useCallback(
+    () => resumeCooldown(SUMMARY_TTL_MS / 1000),
+    [resumeCooldown],
+  );
 
   const fetchSummary = useCallback(async () => {
     if (!authToken) return;
@@ -54,12 +65,14 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
 
       if (res.ok) {
         const data = await res.json();
-        setSummary({
+        const next: SummaryData = {
           text: data.summary,
           generatedAt: data.generatedAt,
           model: data.model,
           cached: data.cached || false,
-        });
+        };
+        cachedSummary = { data: next, at: Date.now() };
+        setSummary(next);
         setState("complete");
         startCooldown();
         return;
@@ -93,12 +106,14 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
           prev ? { ...prev, text: prev.text + data.text } : null,
         );
       } else if (data.type === "complete") {
-        setSummary({
+        const next: SummaryData = {
           text: data.text,
           generatedAt: data.generatedAt,
           model: data.model,
           cached: false,
-        });
+        };
+        cachedSummary = { data: next, at: Date.now() };
+        setSummary(next);
         setState("complete");
         startCooldown();
         es.close();
@@ -117,8 +132,22 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
   }, [authToken, startCooldown]);
 
   useEffect(() => {
-    if (authToken) fetchSummary();
+    if (!authToken) return;
+    const age = cachedSummary ? Date.now() - cachedSummary.at : Infinity;
+    if (cachedSummary && age < SUMMARY_TTL_MS) {
+      setSummary(cachedSummary.data);
+      setState("complete");
+      resumeCooldown(Math.ceil((SUMMARY_TTL_MS - age) / 1000));
+      return;
+    }
+    fetchSummary();
   }, [authToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The panel unmounts whenever the briefing is collapsed; drop the cooldown
+  // ticker with it rather than leaving an interval running per open/close.
+  useEffect(() => () => {
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+  }, []);
 
   // Close expanded view on Escape
   useEffect(() => {

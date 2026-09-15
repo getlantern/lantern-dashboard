@@ -28,7 +28,10 @@ const emptyStats: LiveGlobalStats = {
   countries: [],
 };
 
-export function useLiveData() {
+// streamActivity gates the SSE activity stream: it only feeds the briefing
+// panel's Protocol Activity feed, so keeping the connection open while that
+// panel is collapsed is pure wasted traffic.
+export function useLiveData(streamActivity = true) {
   const { isAuthenticated, token } = useAuth();
   const [globalStats, setGlobalStats] = useState<LiveGlobalStats>(emptyStats);
   const [dataCenters, setDataCenters] = useState<DashboardDataCenter[]>([]);
@@ -104,7 +107,7 @@ export function useLiveData() {
 
   // SSE stream for real-time activity events
   useEffect(() => {
-    if (!isAuthenticated || demoMode) return;
+    if (!isAuthenticated || demoMode || !streamActivity) return;
 
     const url = getStreamURL();
     if (!url) return;
@@ -126,7 +129,7 @@ export function useLiveData() {
     };
 
     return () => es.close();
-  }, [isAuthenticated, demoMode, token]);
+  }, [isAuthenticated, demoMode, streamActivity, token]);
 
   // Simulate stat jitter only in demo mode
   useEffect(() => {
