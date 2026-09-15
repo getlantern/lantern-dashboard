@@ -28,6 +28,10 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
   const [cooldown, setCooldown] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The streaming EventSource outlives the request that created it, so it needs
+  // a ref to be closable from unmount cleanup — the panel unmounts on collapse.
+  const streamRef = useRef<EventSource | null>(null);
+  const mountedRef = useRef(true);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const resumeCooldown = useCallback((seconds: number) => {
@@ -91,12 +95,14 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
   }, [authToken, startCooldown]);
 
   const streamSummary = useCallback(() => {
-    if (!authToken) return;
+    if (!authToken || !mountedRef.current) return;
     setState("streaming");
     setSummary({ text: "", generatedAt: "", model: "", cached: false });
 
     const url = `${getApiUrl()}/v1/dashboard/ai-summary/stream`;
+    streamRef.current?.close();
     const es = new EventSource(`${url}?token=${authToken}`);
+    streamRef.current = es;
 
     es.addEventListener("summary", (e) => {
       const data = JSON.parse(e.data);
@@ -145,8 +151,14 @@ export default function AISummary({ authToken }: { authToken: string | null }) {
 
   // The panel unmounts whenever the briefing is collapsed; drop the cooldown
   // ticker with it rather than leaving an interval running per open/close.
-  useEffect(() => () => {
-    if (cooldownRef.current) clearInterval(cooldownRef.current);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+      streamRef.current?.close();
+      streamRef.current = null;
+    };
   }, []);
 
   // Close expanded view on Escape

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveData } from "../hooks/useLiveData";
 import { useProxy } from "../hooks/useProxy";
@@ -86,15 +86,21 @@ export default function Dashboard() {
   const { isAuthenticated, user, logout, token } = useAuth();
   // Briefing side panel is collapsed by default so the map/tab content gets the
   // full width; the choice sticks per-browser once the user opens it.
-  const [briefingOpen, setBriefingOpen] = useState(
-    () => localStorage.getItem(BRIEFING_PANEL_KEY) === "1",
-  );
-  const toggleBriefing = useCallback(() => {
-    setBriefingOpen((open) => {
-      localStorage.setItem(BRIEFING_PANEL_KEY, open ? "0" : "1");
-      return !open;
-    });
-  }, []);
+  const [briefingOpen, setBriefingOpen] = useState(() => {
+    try {
+      return localStorage.getItem(BRIEFING_PANEL_KEY) === "1";
+    } catch {
+      return false; // storage denied (private mode, blocked cookies) — stay collapsed
+    }
+  });
+  const toggleBriefing = useCallback(() => setBriefingOpen((open) => !open), []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(BRIEFING_PANEL_KEY, briefingOpen ? "1" : "0");
+    } catch {
+      // storage denied or full — the panel still works, it just won't persist
+    }
+  }, [briefingOpen]);
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData(briefingOpen);
   const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'experiments' | 'overlays' | 'tracks' | 'metrics' | 'proxy' | 'admin'>(() => {
     const hash = window.location.hash;
