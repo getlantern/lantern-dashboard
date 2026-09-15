@@ -19,6 +19,8 @@ import AdminPanel from "./AdminPanel";
 import { getApiEnv } from "../api/client";
 import type { GlobalStats } from "../data/mock";
 
+const BRIEFING_PANEL_KEY = "lantern.briefingPanelOpen";
+
 // ApiEnvBadge makes the current API environment impossible to miss.
 // Staging routes 1x1 pixel of your attention when you'd otherwise think
 // you're looking at prod. Clicking jumps to the Admin tab where the
@@ -104,6 +106,17 @@ export default function Dashboard() {
   const vpsData = useVPSData(activeTab === 'vps');
   const proxy = useProxy();
   const [myProxyView, setMyProxyView] = useState(false);
+  // Briefing side panel is collapsed by default so the map/tab content gets the
+  // full width; the choice sticks per-browser once the user opens it.
+  const [briefingOpen, setBriefingOpen] = useState(
+    () => localStorage.getItem(BRIEFING_PANEL_KEY) === "1",
+  );
+  const toggleBriefing = useCallback(() => {
+    setBriefingOpen((open) => {
+      localStorage.setItem(BRIEFING_PANEL_KEY, open ? "0" : "1");
+      return !open;
+    });
+  }, []);
   const connectionAddrs = useMemo(
     () => proxy.liveData.connectionDetails.map((c) => c.addr),
     [proxy.liveData.connectionDetails],
@@ -258,6 +271,26 @@ export default function Dashboard() {
               {blockedRoutes.length} BLOCKED
             </div>
           )}
+          <button
+            type="button"
+            onClick={toggleBriefing}
+            title={briefingOpen ? "Hide the briefing panel" : "Show the briefing panel"}
+            aria-expanded={briefingOpen}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.55rem",
+              padding: "0.15rem 0.45rem",
+              borderRadius: "var(--radius-sm)",
+              background: briefingOpen ? "var(--accent-primary-dim)" : "#ffffff08",
+              color: briefingOpen ? "var(--accent-primary)" : "var(--text-muted)",
+              border: `1px solid ${briefingOpen ? "#00e5c830" : "#ffffff10"}`,
+              cursor: "pointer",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {briefingOpen ? "◀ Briefing" : "Briefing ▶"}
+          </button>
           <div className="header-live">
             <div className="live-dot" />
             <span className="mono">LIVE</span>
@@ -423,10 +456,24 @@ export default function Dashboard() {
         </div>
         )}
 
-        <div className="right-panel">
-          <AISummary authToken={token} />
-          <ProtocolFeed liveEvents={activityEvents} demoMode={demoMode} />
-        </div>
+        {briefingOpen && (
+          <div className="right-panel">
+            <div className="right-panel-bar">
+              <span className="mono">Briefing</span>
+              <button
+                type="button"
+                className="right-panel-close"
+                onClick={toggleBriefing}
+                title="Hide the briefing panel"
+                aria-label="Hide the briefing panel"
+              >
+                ×
+              </button>
+            </div>
+            <AISummary authToken={token} />
+            <ProtocolFeed liveEvents={activityEvents} demoMode={demoMode} />
+          </div>
+        )}
       </div>
     </div>
   );
