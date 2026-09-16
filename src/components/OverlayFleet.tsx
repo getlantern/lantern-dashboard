@@ -2,9 +2,10 @@
 // control plane actually in control", so it shows both sides of every fence the
 // controller checks: generation, snapshot digest, artifact identity, the
 // agent's own heartbeat, and the drains and quarantines that hold a box back.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { fetchOverlayRoute, type OverlayDeployment, type OverlayRouteDetail } from "../api/overlays";
+import { ArtifactRef } from "./OverlayArtifactViewer";
 import { Badge, Empty, ErrorNote, JSONBlock, Loading, Tile, TileRow } from "./OverlayUI";
 import {
   card,
@@ -169,8 +170,8 @@ function DeploymentDetail({ deployment }: { deployment: OverlayDeployment }) {
       <div>
         <div style={sectionLabel}>Desired</div>
         <Field label="technique" value={deployment.desiredTechniqueKey || "none (explicit holdback)"} />
-        <Field label="artifact" value={deployment.desiredArtifactRevisionId} />
-        <Field label="fallback" value={deployment.fallbackArtifactRevisionId} />
+        <Field label="artifact" value={<ArtifactRef id={deployment.desiredArtifactRevisionId} technique={deployment.desiredTechniqueKey} full />} />
+        <Field label="fallback" value={<ArtifactRef id={deployment.fallbackArtifactRevisionId} technique={deployment.desiredTechniqueKey} full />} />
         <Field label="generation" value={String(deployment.desiredGeneration)} />
         <Field label="snapshot digest" value={deployment.desiredSnapshotDigest} />
         <Field label="published" value={since(deployment.desiredAt)} />
@@ -181,7 +182,7 @@ function DeploymentDetail({ deployment }: { deployment: OverlayDeployment }) {
       <div>
         <div style={sectionLabel}>Observed</div>
         <Field label="technique" value={deployment.observedTechniqueKey} />
-        <Field label="artifact" value={deployment.observedArtifactRevisionId} />
+        <Field label="artifact" value={<ArtifactRef id={deployment.observedArtifactRevisionId} sha={deployment.observedContentSha256} technique={deployment.observedTechniqueKey} full />} />
         <Field label="content sha256" value={deployment.observedContentSha256} />
         <Field label="target artifact" value={deployment.observedTargetTechniqueKey} />
         <Field label="generation" value={String(deployment.observedGeneration)} />
@@ -190,6 +191,7 @@ function DeploymentDetail({ deployment }: { deployment: OverlayDeployment }) {
         <Field label="reported" value={since(deployment.observedAt)} />
         <Field label="activated" value={since(deployment.activatedAt)} />
         <Field label="previous known good" value={deployment.previousKnownGoodTechniqueKey} />
+        <Field label="previous artifact" value={<ArtifactRef id={deployment.previousKnownGoodArtifactId} technique={deployment.previousKnownGoodTechniqueKey} full />} />
       </div>
       <div>
         <div style={sectionLabel}>Box</div>
@@ -229,7 +231,16 @@ function DeploymentDetail({ deployment }: { deployment: OverlayDeployment }) {
             {(detail.drains ?? []).length > 0 && (
               <>
                 <div style={{ ...sectionLabel, marginTop: "0.5rem" }}>Draining</div>
-                <JSONBlock value={detail.drains} maxHeight={140} />
+                {(detail.drains ?? []).map((drain) => (
+                  <div key={drain.artifactRevisionId + drain.observedAt} style={{ marginBottom: "0.3rem" }}>
+                    <div style={mono}>
+                      {drain.techniqueKey}: <ArtifactRef id={drain.artifactRevisionId} sha={drain.contentSha256} technique={drain.techniqueKey} /> · {drain.state}
+                    </div>
+                    <div style={muted}>
+                      {drain.connectionCount} connections · observed {since(drain.observedAt)} · sha256 {drain.contentSha256}
+                    </div>
+                  </div>
+                ))}
               </>
             )}
             {(detail.quarantined ?? []).length > 0 && (
@@ -245,7 +256,7 @@ function DeploymentDetail({ deployment }: { deployment: OverlayDeployment }) {
   );
 }
 
-function Field({ label, value }: { label: string; value?: string }) {
+function Field({ label, value }: { label: string; value?: ReactNode }) {
   return (
     <div style={{ display: "flex", gap: "0.5rem", padding: "0.1rem 0" }}>
       <span style={{ ...muted, minWidth: "9rem" }}>{label}</span>

@@ -12,7 +12,8 @@ import {
   type OverlayArtifact,
   type OverlayTechnique,
 } from "../api/overlays";
-import { Badge, Empty, ErrorNote, JSONBlock, Loading, ReasonAction } from "./OverlayUI";
+import { LazyArtifactDocument } from "./OverlayArtifactViewer";
+import { Badge, Empty, ErrorNote, Loading, ReasonAction } from "./OverlayUI";
 import {
   buttonStyle,
   card,
@@ -40,7 +41,6 @@ export default function OverlayCatalog({
   onTechniquesChanged: () => Promise<void>;
 }) {
   const [technique, setTechnique] = useState("");
-  const [withPayload, setWithPayload] = useState(false);
   const [artifacts, setArtifacts] = useState<OverlayArtifact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export default function OverlayCatalog({
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    fetchOverlayArtifacts({ technique: technique || undefined, payload: withPayload, limit: 300 })
+    fetchOverlayArtifacts({ technique: technique || undefined, limit: 300 })
       .then((data) => {
         if (cancelled) return;
         setArtifacts(data.artifacts);
@@ -64,7 +64,7 @@ export default function OverlayCatalog({
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load artifacts");
       });
     return () => { cancelled = true; };
-  }, [enabled, technique, withPayload, reloadKey]);
+  }, [enabled, technique, reloadKey]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
@@ -124,9 +124,6 @@ export default function OverlayCatalog({
               {t.key}
             </button>
           ))}
-          <button type="button" style={chipStyle(withPayload)} onClick={() => setWithPayload(!withPayload)}>
-            include payloads
-          </button>
         </div>
         {error && <ErrorNote>{error}</ErrorNote>}
         {!artifacts && !error && <Loading what="artifacts" />}
@@ -196,7 +193,7 @@ function ArtifactRow({
       {expanded && (
         <tr>
           <td colSpan={9} style={{ ...td, whiteSpace: "normal", background: "#ffffff04" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))", gap: "1rem", padding: "0.5rem 0" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(18rem, 1fr) minmax(18rem, 1fr) minmax(24rem, 2fr)", gap: "1rem", padding: "0.5rem 0" }}>
               <div>
                 <div style={sectionLabel}>Identity</div>
                 <div style={mono}>{artifact.id}</div>
@@ -249,16 +246,7 @@ function ArtifactRow({
                   stale view cannot both succeed.
                 </div>
               </div>
-              <div>
-                <div style={sectionLabel}>Metadata</div>
-                <JSONBlock value={artifact.metadata} maxHeight={160} />
-                {artifact.payload && (
-                  <>
-                    <div style={{ ...sectionLabel, marginTop: "0.5rem" }}>Payload</div>
-                    <JSONBlock value={artifact.payload} maxHeight={220} />
-                  </>
-                )}
-              </div>
+              <LazyArtifactDocument id={artifact.id} technique={artifact.techniqueKey} />
             </div>
           </td>
         </tr>

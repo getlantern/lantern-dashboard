@@ -11,6 +11,7 @@ import {
   type OverlayObservation,
   type OverlayTechnique,
 } from "../api/overlays";
+import { ArtifactRef } from "./OverlayArtifactViewer";
 import { Badge, Empty, ErrorNote, Loading } from "./OverlayUI";
 import {
   bytesPerSec,
@@ -137,7 +138,7 @@ export default function OverlayLeaderboards({
                 >
                   <td style={td}>{entry.rank}</td>
                   <td style={td}><Badge text={entry.role} color={roleColor(entry.role)} /></td>
-                  <td style={td} title={entry.artifactRevisionId}>{shortID(entry.artifactRevisionId)}</td>
+                  <td style={td}><ArtifactRef id={entry.artifactRevisionId} sha={entry.contentSha256} technique={technique} /></td>
                   <td style={td}>{(entry.reachabilityScore * 100).toFixed(1)}%</td>
                   <td style={td}>{(entry.stabilityScore * 100).toFixed(1)}%</td>
                   <td style={td}>{entry.latencyMs ? `${entry.latencyMs.toFixed(0)}ms` : "—"}</td>
