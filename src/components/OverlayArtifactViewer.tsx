@@ -240,9 +240,7 @@ function renderPayload(artifact: OverlayArtifact): RenderedPayload | null {
   if (artifact.payload !== undefined) {
     try {
       const parsed: unknown = JSON.parse(artifact.payload);
-      if (parsed !== null && typeof parsed === "object") {
-        return { kind: "json", text: JSON.stringify(parsed, null, 2), copyText: artifact.payload };
-      }
+      return { kind: "json", text: JSON.stringify(parsed, null, 2), copyText: artifact.payload };
     } catch {
       // Not JSON: fall through and show the text as it is.
     }
