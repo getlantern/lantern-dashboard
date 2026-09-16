@@ -5,6 +5,7 @@
 import { useState } from "react";
 
 import { createOverlayEvaluation, type OverlayEvalPoolBox, type OverlayEvaluation } from "../api/overlays";
+import { ArtifactRef } from "./OverlayArtifactViewer";
 import { Badge, Empty, ErrorNote, JSONBlock, Loading, Tile, TileRow } from "./OverlayUI";
 import {
   buttonStyle,
@@ -130,7 +131,7 @@ function EvaluationRow({
         <td style={td} title={evaluation.id}>{shortID(evaluation.id)}</td>
         <td style={td}>{evaluation.countryCode}</td>
         <td style={td}>{evaluation.techniqueKey}</td>
-        <td style={td} title={evaluation.artifactRevisionId}>{shortID(evaluation.artifactRevisionId)}</td>
+        <td style={td}><ArtifactRef id={evaluation.artifactRevisionId} sha={evaluation.contentSha256} technique={evaluation.techniqueKey} /></td>
         <td style={td}><Badge text={evaluation.status} color={evaluationStatusColor(evaluation.status)} /></td>
         <td style={td} title={evaluation.routeId}>{evaluation.routeId ? shortID(evaluation.routeId) : "—"}</td>
         <td style={td}>{since(evaluation.startedAt)}</td>
@@ -143,7 +144,7 @@ function EvaluationRow({
               <div>
                 <div style={sectionLabel}>Identity</div>
                 <div style={mono}>{evaluation.id}</div>
-                <div style={muted}>artifact {evaluation.artifactRevisionId}</div>
+                <div style={muted}>artifact <ArtifactRef id={evaluation.artifactRevisionId} sha={evaluation.contentSha256} technique={evaluation.techniqueKey} full /></div>
                 <div style={muted}>sha256 {evaluation.contentSha256}</div>
                 <div style={muted}>created by {evaluation.createdBy} {since(evaluation.createdAt)}</div>
                 {evaluation.holderId && (

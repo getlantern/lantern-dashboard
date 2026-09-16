@@ -12,6 +12,7 @@ import OverlayHowItWorks from "./OverlayHowItWorks";
 import OverlayLeaderboards from "./OverlayLeaderboards";
 import OverlayRollouts from "./OverlayRollouts";
 import OverlaySettings from "./OverlaySettings";
+import { ArtifactRef } from "./OverlayArtifactViewer";
 import { Badge, Empty, ErrorNote, Loading, Tile, TileRow } from "./OverlayUI";
 import {
   bps,
@@ -24,7 +25,6 @@ import {
   nanosToSeconds,
   rolloutStateColor,
   sectionLabel,
-  shortID,
   since,
   td,
   th,
@@ -223,7 +223,7 @@ function Overview({ data, isLoading, hasLoaded, error }: ReturnType<typeof useOv
                 <tr key={`${champion.countryCode}/${champion.techniqueKey}/${champion.artifactRevisionId}`}>
                   <td style={td}>{champion.countryCode}</td>
                   <td style={td}>{champion.techniqueKey}</td>
-                  <td style={td} title={champion.artifactRevisionId}>{shortID(champion.artifactRevisionId)}</td>
+                  <td style={td}><ArtifactRef id={champion.artifactRevisionId} technique={champion.techniqueKey} /></td>
                   <td style={td}>{(champion.confidence * 100).toFixed(0)}%</td>
                   <td style={td}>{champion.sampleCount}</td>
                   <td style={td}>{since(champion.evidenceFreshAt)}</td>

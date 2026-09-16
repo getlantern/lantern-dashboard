@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  fetchOverlayArtifact,
   fetchOverlayAudit,
   fetchOverlayDeployments,
   fetchOverlayEvaluations,
   fetchOverlayOverview,
   fetchOverlayRollouts,
   fetchOverlaySettings,
+  type OverlayArtifact,
   type OverlayAuditEvent,
   type OverlayDeploymentsResponse,
   type OverlayEvalPoolBox,
@@ -127,4 +129,28 @@ export function useOverlayAudit(
 // document under the cursor. They load on open and reload after a save.
 export function useOverlaySettings(enabled: boolean): Poll<OverlaySettingsResponse> {
   return usePolled(enabled, fetchOverlaySettings, 0);
+}
+
+// useOverlayArtifact loads one revision with its payload, once. Artifacts are
+// immutable, so there is nothing to poll: the payload a revision id names
+// today is the payload it names forever, and only the lifecycle (which the
+// polled lists already carry) moves. The result is keyed by the id it was
+// loaded for, so switching ids reads as loading rather than briefly showing
+// the previous artifact.
+export function useOverlayArtifact(id: string | undefined, technique?: string): { artifact: OverlayArtifact | null; error: string | null } {
+  const [loaded, setLoaded] = useState<{ id: string; artifact: OverlayArtifact | null; error: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    fetchOverlayArtifact(id, technique)
+      .then((artifact) => { if (!cancelled) setLoaded({ id, artifact, error: null }); })
+      .catch((err) => {
+        if (!cancelled) setLoaded({ id, artifact: null, error: err instanceof Error ? err.message : "failed to load artifact" });
+      });
+    return () => { cancelled = true; };
+  }, [id, technique]);
+
+  if (!id || !loaded || loaded.id !== id) return { artifact: null, error: null };
+  return { artifact: loaded.artifact, error: loaded.error };
 }

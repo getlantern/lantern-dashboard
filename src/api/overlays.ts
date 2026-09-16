@@ -256,6 +256,8 @@ export interface OverlayArtifact {
   createdAt: string;
   stateUpdatedBy?: string;
   stateUpdatedAt?: string;
+  // payload is the document itself, present only when the request asked for
+  // it and the bytes are UTF-8 text.
   payload?: string;
 }
 
@@ -422,6 +424,20 @@ export function fetchOverlayRollouts(params: { country?: string; activeOnly?: bo
 
 export function fetchOverlayArtifacts(params: { technique?: string; payload?: boolean; limit?: number } = {}): Promise<{ artifacts: OverlayArtifact[]; truncated: boolean }> {
   return apiGet("/overlays/artifacts", queryOf(params));
+}
+
+// fetchOverlayArtifact resolves one revision, payload included, through the
+// registry listing: the API has no single-artifact read, so the viewer asks
+// for the technique's revisions with payloads and picks the one it needs.
+// Callers only invoke this when an operator opens a detail, never for lists.
+export async function fetchOverlayArtifact(id: string, technique?: string): Promise<OverlayArtifact> {
+  const { artifacts, truncated } = await fetchOverlayArtifacts({ technique, payload: true, limit: 1000 });
+  const found = artifacts.find((artifact) => artifact.id === id);
+  if (found) return found;
+  const scope = technique ? `technique ${technique}` : "registry";
+  throw new Error(truncated
+    ? `artifact ${id} is beyond the ${scope} listing limit`
+    : `artifact ${id} is not in the ${scope} listing`);
 }
 
 export function fetchOverlayEvaluations(params: { country?: string; status?: string; limit?: number } = {}): Promise<{ evaluations: OverlayEvaluation[]; pool: OverlayEvalPoolBox[]; truncated: boolean }> {

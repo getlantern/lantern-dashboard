@@ -6,6 +6,7 @@
 import { useState } from "react";
 
 import { advanceOverlayRollout, createOverlayRollout, type OverlayRollout } from "../api/overlays";
+import { ArtifactRef } from "./OverlayArtifactViewer";
 import { Badge, Empty, ErrorNote, Loading, ReasonAction } from "./OverlayUI";
 import {
   bps,
@@ -143,11 +144,13 @@ function RolloutDetail({ rollout, onChanged }: { rollout: OverlayRollout; onChan
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))", gap: "1rem", padding: "0.5rem 0" }}>
       <div>
         <div style={sectionLabel}>Artifacts</div>
-        <div style={mono}>target {rollout.targetArtifactRevisionId}</div>
+        <div style={mono}>target <ArtifactRef id={rollout.targetArtifactRevisionId} sha={rollout.targetContentSha256} technique={rollout.techniqueKey} full /></div>
         <div style={muted}>sha256 {rollout.targetContentSha256}</div>
         {rollout.previousArtifactRevisionId && (
           <>
-            <div style={{ ...mono, marginTop: "0.3rem" }}>previous {rollout.previousArtifactRevisionId}</div>
+            <div style={{ ...mono, marginTop: "0.3rem" }}>
+              previous <ArtifactRef id={rollout.previousArtifactRevisionId} sha={rollout.previousContentSha256} technique={rollout.techniqueKey} full />
+            </div>
             <div style={muted}>sha256 {rollout.previousContentSha256}</div>
           </>
         )}
