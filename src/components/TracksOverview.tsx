@@ -265,7 +265,7 @@ const detailLabel: CSSProperties = {
   marginBottom: "0.15rem",
 };
 
-type SortField = "name" | "tier" | "protocol" | "vpsRunning" | "vpsPoolSize";
+type SortField = "name" | "tier" | "protocol" | "vpsRunning" | "vpsPoolSize" | "duration";
 type FilterTier = "all" | "Free" | "Pro" | "New";
 type FilterStatus = "all" | "withRoutes" | "empty";
 
@@ -320,8 +320,8 @@ function TracksOverview() {
   const durationByTrack = useMemo(() => {
     const values = new Map<string, number>();
     for (const series of durationData?.byGroup ?? []) {
-      if (series.points.length === 0) continue;
-      values.set(series.key, series.points.reduce((sum, point) => sum + point.value, 0) / series.points.length);
+      if (series.windowMean == null) continue;
+      values.set(series.key, series.windowMean);
     }
     return values;
   }, [durationData]);
@@ -511,10 +511,17 @@ function TracksOverview() {
         case "protocol": return mult * a.protocol.localeCompare(b.protocol);
         case "vpsRunning": return mult * (a.vpsRunning - b.vpsRunning);
         case "vpsPoolSize": return mult * (a.vpsPoolSize - b.vpsPoolSize);
+        case "duration": {
+          const av = durationByTrack.get(a.name);
+          const bv = durationByTrack.get(b.name);
+          if (av == null) return bv == null ? a.name.localeCompare(b.name) : 1;
+          if (bv == null) return -1;
+          return mult * (av - bv);
+        }
         default: return 0;
       }
     });
-  }, [filtered, sortField, sortAsc]);
+  }, [filtered, sortField, sortAsc, durationByTrack]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -702,7 +709,7 @@ function TracksOverview() {
         userSelect: "none",
       }}>
         <span />
-        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["name", "Throughput"], ["name", "Mean duration"], ["name", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
+        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["name", "Throughput"], ["duration", "Mean duration"], ["name", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
           <span
             key={`${field}-${i}`}
             onClick={() => handleSort(field)}
@@ -801,7 +808,7 @@ function TracksOverview() {
                 </span>
 
                 {/* Connection duration */}
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#80b0e0" }} title="Mean duration of completed connections across sampled intervals">
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#80b0e0" }} title="Fleet-wide mean duration of completed connections over the selected window">
                   {durationByTrack.has(track.name)
                     ? formatDuration(durationByTrack.get(track.name)!)
                     : durationLoading ? "..." : "--"}

@@ -202,9 +202,8 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
   // Aggregate scopes to the selected track when one is picked, so the summary
   // cards agree with what the chart shows. For bandwidth: rates summed across
   // tracks at each timestamp, then integrated over the window for total egress.
-  // For connection duration: per-track means averaged across timestamps and
-  // tracks (a sum across tracks of mean-durations is meaningless), with the
-  // peak capturing the worst single (track, ts) sample.
+  // For connection duration: sum duration and connection count across tracks
+  // before dividing, so high-volume tracks carry their proper weight.
   const aggregate = useMemo(() => {
     const series = effectiveSelectedTrack
       ? banditSeries.filter((s) => s.key === effectiveSelectedTrack)
@@ -223,12 +222,14 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
     }
 
     let total = 0;
-    let n = 0;
+    let count = 0;
     let peak = 0;
     for (const s of series) {
+      if ("windowSum" in s && s.windowSum != null && "windowCount" in s && s.windowCount != null) {
+        total += Number(s.windowSum);
+        count += Number(s.windowCount);
+      }
       for (const p of s.points) {
-        total += p.value;
-        n++;
         if (p.value > peak) peak = p.value;
       }
     }
@@ -236,7 +237,7 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
       totalBytes: 0,
       avgBytesPerSec: 0,
       maxBytesPerSec: 0,
-      meanDuration: n > 0 ? total / n : 0,
+      meanDuration: count > 0 ? total / count : 0,
       peakDuration: peak,
     };
   }, [banditSeries, effectiveSelectedTrack, windowMinutes, isBandwidth]);
@@ -255,7 +256,7 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 140 }}>
           <span style={filterLabel}>Country</span>
-          <select style={filterSelect} value={country} onChange={(e) => setCountry(e.target.value)}>
+          <select style={filterSelect} value={country} onChange={(e) => setCountry(e.target.value)} disabled={!isBandwidth}>
             <option value="">All</option>
             {countries.map((c) => (
               <option key={c.country} value={c.country}>{c.country}</option>
@@ -264,7 +265,7 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
           <span style={filterLabel}>Tier</span>
-          <select style={filterSelect} value={tier} onChange={(e) => setTier(e.target.value as "" | "pro" | "free")}>
+          <select style={filterSelect} value={tier} onChange={(e) => setTier(e.target.value as "" | "pro" | "free")} disabled={!isBandwidth}>
             <option value="">All</option>
             <option value="pro">Pro</option>
             <option value="free">Free</option>
@@ -281,7 +282,7 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
           <span style={filterLabel}>Platform</span>
-          <select style={filterSelect} value={platform} onChange={(e) => setPlatform(e.target.value)}>
+          <select style={filterSelect} value={platform} onChange={(e) => setPlatform(e.target.value)} disabled={!isBandwidth}>
             <option value="">All</option>
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>{p}</option>
@@ -296,6 +297,7 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
             placeholder="e.g. 9.0.25"
             value={version}
             onChange={(e) => setVersion(e.target.value.trim())}
+            disabled={!isBandwidth}
           />
         </div>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
@@ -326,6 +328,12 @@ export default function MetricsOverview({ enabled, countries }: MetricsOverviewP
           </button>
         )}
       </div>
+
+      {!isBandwidth && (
+        <div style={{ fontSize: "0.6rem", color: "#8890a0" }}>
+          Duration is aggregated across all clients. Country, tier, platform, and version filters are unavailable for this metric.
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", background: "#e0606012", border: "1px solid #e0606030", color: "#e06060", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
