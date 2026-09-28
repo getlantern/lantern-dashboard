@@ -544,20 +544,17 @@ export function buildBandwidthQuery(opts: {
   };
 }
 
-// Build a SigNoz query for mean sing.connection_duration per group (= sum/count
-// of the histogram, in the metric's native unit). The result is a "C" formula
-// series whose value is the average duration of connections seen in each step.
-// Group-by is "track" (sing-box's `track` resource attribute) by default, since
-// that's how clients organize outbounds.
+// The proxy-host collector extracts delta duration sums and counts and removes
+// client labels before export. Their ratio is the mean in milliseconds.
 export function buildConnectionDurationQuery(opts: {
   filters: MetricsFilters;
-  groupBy?: string;          // resource/tag key to group by; defaults to "track"
+  groupBy?: string;          // resource/tag key to group by; defaults to "proxy.track"
   startMs: number;
   endMs: number;
   stepSeconds: number;
 }): object {
-  const groupKey = opts.groupBy || "track";
-  const items = filterItems(opts.filters);
+  const groupKey = opts.groupBy || "proxy.track";
+  const items = filterItems({ protocol: opts.filters.protocol });
   const filterBlock = { items, op: "AND" };
   const groupBy = [{ key: groupKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }];
   return {
@@ -567,16 +564,17 @@ export function buildConnectionDurationQuery(opts: {
       queryType: "builder",
       panelType: "graph",
       builderQueries: {
-        // A = total connection-time per step (sum of the histogram, rate over time)
+        // Both inputs are delta sums. Increase sums all samples in each step.
         A: {
           dataSource: "metrics",
           queryName: "A",
           aggregateAttribute: { key: "sing.connection_duration.sum", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
-          timeAggregation: "rate",
+          timeAggregation: "increase",
+          temporality: "Delta",
           spaceAggregation: "sum",
           filters: filterBlock,
           expression: "A",
-          disabled: true,    // disabled: not rendered on its own; only used in formula C
+          disabled: false,
           groupBy,
           legend: "",
           having: [],
@@ -585,16 +583,17 @@ export function buildConnectionDurationQuery(opts: {
           reduceTo: "avg",
           stepInterval: opts.stepSeconds,
         },
-        // B = number of connections per step (count of the histogram, rate over time)
+        // B = number of completed connections per step.
         B: {
           dataSource: "metrics",
           queryName: "B",
           aggregateAttribute: { key: "sing.connection_duration.count", dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
-          timeAggregation: "rate",
+          timeAggregation: "increase",
+          temporality: "Delta",
           spaceAggregation: "sum",
           filters: filterBlock,
           expression: "B",
-          disabled: true,
+          disabled: false,
           groupBy,
           legend: "",
           having: [],

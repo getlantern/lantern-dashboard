@@ -5,6 +5,9 @@ import { useAuth } from "./useAuth";
 export interface ConnectionDurationSeries {
   key: string;            // group-by value (track name by default)
   points: Array<{ ts: number; value: number }>;  // value = mean duration in metric-native units
+  windowMean?: number;     // total duration / completed connections over the full window
+  windowSum?: number;
+  windowCount?: number;
 }
 
 export interface ConnectionDurationData {
@@ -23,7 +26,7 @@ export function useConnectionDuration(
   filters: MetricsFilters,
   windowMinutes: number,
   stepSeconds: number,
-  groupBy: string = "track",
+  groupBy: string = "proxy.track",
 ): Result {
   const { isAuthenticated } = useAuth();
   const [data, setData] = useState<ConnectionDurationData | null>(null);
@@ -61,15 +64,27 @@ export function useConnectionDuration(
   return { data, isLoading, error };
 }
 
-// Extract the C-expression result series (formula A/B) and key each by the
-// group-by label value. Series whose label is missing or empty are dropped.
+// Extract the C-expression time series and the full-window sum/count ratio.
 function extractSeries(resp: unknown, groupKey: string): ConnectionDurationSeries[] {
   const out: ConnectionDurationSeries[] = [];
   const r = resp as { data?: { result?: Array<{ queryName?: string; series?: Array<{ labels?: Record<string, string>; values?: Array<{ timestamp?: number | string; value?: number | string }> }> }> } };
   const results = r?.data?.result ?? [];
-  // Prefer the "C" expression (formula A/B). If absent, fall back to the first
-  // result that has data (defensive against a SigNoz response shape change).
-  const formula = results.find((q) => q.queryName === "C") ?? results[0];
+  const totals = (queryName: string): Map<string, number> => {
+    const values = new Map<string, number>();
+    for (const series of results.find((q) => q.queryName === queryName)?.series ?? []) {
+      const key = series.labels?.[groupKey];
+      if (!key) continue;
+      const total = (series.values ?? []).reduce((sum, point) => {
+        const value = Number(point.value);
+        return Number.isFinite(value) ? sum + value : sum;
+      }, 0);
+      values.set(key, total);
+    }
+    return values;
+  };
+  const sums = totals("A");
+  const counts = totals("B");
+  const formula = results.find((q) => q.queryName === "C");
   if (!formula) return out;
   for (const s of formula.series ?? []) {
     const label = s.labels?.[groupKey];
@@ -86,7 +101,17 @@ function extractSeries(resp: unknown, groupKey: string): ConnectionDurationSerie
       })
       .filter((p): p is { ts: number; value: number } => p !== null && p.ts > 0)
       .sort((a, b) => a.ts - b.ts);
-    if (points.length > 0) out.push({ key: label, points });
+    if (points.length > 0) {
+      const count = counts.get(label);
+      const sum = sums.get(label);
+      out.push({
+        key: label,
+        points,
+        windowMean: count && sum != null ? sum / count : undefined,
+        windowSum: sum,
+        windowCount: count,
+      });
+    }
   }
   return out;
 }
