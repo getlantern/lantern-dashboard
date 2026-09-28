@@ -516,16 +516,15 @@ export function buildBandwidthQuery(opts: {
 // Build a SigNoz query for mean sing.connection_duration per group (= sum/count
 // of the histogram, in the metric's native unit). The result is a "C" formula
 // series whose value is the average duration of connections seen in each step.
-// Group-by is "track" (sing-box's `track` resource attribute) by default, since
-// that's how clients organize outbounds.
+// The VPS emitter identifies its track with the `proxy.track` resource attribute.
 export function buildConnectionDurationQuery(opts: {
   filters: MetricsFilters;
-  groupBy?: string;          // resource/tag key to group by; defaults to "track"
+  groupBy?: string;          // resource/tag key to group by; defaults to "proxy.track"
   startMs: number;
   endMs: number;
   stepSeconds: number;
 }): object {
-  const groupKey = opts.groupBy || "track";
+  const groupKey = opts.groupBy || "proxy.track";
   const items = filterItems(opts.filters);
   const filterBlock = { items, op: "AND" };
   const groupBy = [{ key: groupKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }];

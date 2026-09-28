@@ -3,6 +3,7 @@ import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { useBanditBandwidth } from "../hooks/useBanditBandwidth";
 import { useConnectionDuration } from "../hooks/useConnectionDuration";
 import { fetchTracks, type DashboardCountry, type DashboardTrackDetail, type MetricsFilters } from "../api/client";
+import { formatDuration } from "../lib/formatDuration";
 
 type MetricKind = "bandwidth" | "connection_duration";
 
@@ -556,17 +557,4 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(2)} MB`;
   if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(2)} KB`;
   return `${bytes.toFixed(0)} B`;
-}
-
-// formatDuration renders sing.connection_duration values, which sing-box
-// emits in the metric's native unit (nanoseconds, per OTel semconv 1.34+).
-// Auto-scales to ns / µs / ms / s. We deliberately avoid hard-coding a unit
-// in the assumption that an upstream sing-box version could change it; the
-// magnitude-based scale stays correct either way.
-function formatDuration(ns: number): string {
-  if (!Number.isFinite(ns) || ns <= 0) return "0 ns";
-  if (ns >= 1e9) return `${(ns / 1e9).toFixed(ns >= 1e10 ? 1 : 2)} s`;
-  if (ns >= 1e6) return `${(ns / 1e6).toFixed(ns >= 1e7 ? 1 : 2)} ms`;
-  if (ns >= 1e3) return `${(ns / 1e3).toFixed(ns >= 1e4 ? 1 : 2)} µs`;
-  return `${ns.toFixed(0)} ns`;
 }

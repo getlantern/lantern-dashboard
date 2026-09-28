@@ -23,7 +23,7 @@ export function useConnectionDuration(
   filters: MetricsFilters,
   windowMinutes: number,
   stepSeconds: number,
-  groupBy: string = "track",
+  groupBy: string = "proxy.track",
 ): Result {
   const { isAuthenticated } = useAuth();
   const [data, setData] = useState<ConnectionDurationData | null>(null);

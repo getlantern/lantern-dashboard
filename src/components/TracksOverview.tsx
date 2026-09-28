@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fetchTracks, fetchSigNozMetrics, type DashboardTrackDetail, type TrackMetrics } from "../api/client";
+import { useConnectionDuration } from "../hooks/useConnectionDuration";
+import { formatDuration } from "../lib/formatDuration";
 
 const TIER_COLORS: Record<string, string> = {
   FREE: "#a0c8a0",
@@ -310,6 +312,19 @@ function TracksOverview() {
   const [metrics, setMetrics] = useState<TrackMetrics | null>(null);
   const [metricsTimeRange, setMetricsTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("6h");
   const metricsLoadingRef = useRef(false);
+  const durationWindowMinutes = { "1h": 60, "6h": 360, "24h": 1440, "7d": 10080 }[metricsTimeRange];
+  const durationStepSeconds = metricsTimeRange === "7d" ? 3600 : metricsTimeRange === "1h" ? 60 : 300;
+  const { data: durationData, isLoading: durationLoading } = useConnectionDuration(
+    true, {}, durationWindowMinutes, durationStepSeconds,
+  );
+  const durationByTrack = useMemo(() => {
+    const values = new Map<string, number>();
+    for (const series of durationData?.byGroup ?? []) {
+      if (series.points.length === 0) continue;
+      values.set(series.key, series.points.reduce((sum, point) => sum + point.value, 0) / series.points.length);
+    }
+    return values;
+  }, [durationData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -673,7 +688,7 @@ function TracksOverview() {
       {/* Sort Headers */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "20px 1fr 0.35fr 0.5fr 0.4fr 90px 0.35fr 0.5fr 0.45fr",
+        gridTemplateColumns: "20px 1fr 0.35fr 0.5fr 0.4fr 90px 0.35fr 0.5fr 0.5fr 0.45fr",
         gap: "0.5rem",
         padding: "0.4rem 0.85rem",
         fontSize: "0.5rem",
@@ -687,7 +702,7 @@ function TracksOverview() {
         userSelect: "none",
       }}>
         <span />
-        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["name", "Throughput"], ["name", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
+        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["name", "Throughput"], ["name", "Mean duration"], ["name", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
           <span
             key={`${field}-${i}`}
             onClick={() => handleSort(field)}
@@ -721,7 +736,7 @@ function TracksOverview() {
                 style={{
                   ...trackRowStyle,
                   display: "grid",
-                  gridTemplateColumns: "20px 1fr 0.35fr 0.5fr 0.4fr 90px 0.35fr 0.5fr 0.45fr",
+                  gridTemplateColumns: "20px 1fr 0.35fr 0.5fr 0.4fr 90px 0.35fr 0.5fr 0.5fr 0.45fr",
                   opacity: track.disabled ? 0.5 : 1,
                 }}
                 onClick={() => toggleExpand(track.id)}
@@ -783,6 +798,13 @@ function TracksOverview() {
                   {metrics?.throughputBps[track.name] != null
                     ? formatBps(metrics.throughputBps[track.name])
                     : metrics ? "--" : "..."}
+                </span>
+
+                {/* Connection duration */}
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "#80b0e0" }} title="Mean duration of completed connections across sampled intervals">
+                  {durationByTrack.has(track.name)
+                    ? formatDuration(durationByTrack.get(track.name)!)
+                    : durationLoading ? "..." : "--"}
                 </span>
 
                 {/* Callbacks */}
