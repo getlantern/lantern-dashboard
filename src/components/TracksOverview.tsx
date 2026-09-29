@@ -265,7 +265,7 @@ const detailLabel: CSSProperties = {
   marginBottom: "0.15rem",
 };
 
-type SortField = "name" | "tier" | "protocol" | "vpsRunning" | "vpsPoolSize" | "duration";
+type SortField = "name" | "tier" | "protocol" | "vpsRunning" | "vpsPoolSize" | "throughput" | "duration" | "callbacks";
 type FilterTier = "all" | "Free" | "Pro" | "New";
 type FilterStatus = "all" | "withRoutes" | "empty";
 
@@ -504,6 +504,12 @@ function TracksOverview() {
 
   const sorted = useMemo(() => {
     const mult = sortAsc ? 1 : -1;
+    // Tracks with no data for the metric sort last regardless of direction.
+    const byMetric = (av: number | undefined, bv: number | undefined) => {
+      if (av == null) return bv == null ? 0 : 1;
+      if (bv == null) return -1;
+      return mult * (av - bv);
+    };
     return [...filtered].sort((a, b) => {
       switch (sortField) {
         case "name": return mult * a.name.localeCompare(b.name);
@@ -511,17 +517,13 @@ function TracksOverview() {
         case "protocol": return mult * a.protocol.localeCompare(b.protocol);
         case "vpsRunning": return mult * (a.vpsRunning - b.vpsRunning);
         case "vpsPoolSize": return mult * (a.vpsPoolSize - b.vpsPoolSize);
-        case "duration": {
-          const av = durationByTrack.get(a.name);
-          const bv = durationByTrack.get(b.name);
-          if (av == null) return bv == null ? a.name.localeCompare(b.name) : 1;
-          if (bv == null) return -1;
-          return mult * (av - bv);
-        }
+        case "throughput": return byMetric(metrics?.throughputBps[a.name], metrics?.throughputBps[b.name]);
+        case "duration": return byMetric(durationByTrack.get(a.name), durationByTrack.get(b.name));
+        case "callbacks": return byMetric(metrics?.callbacks[a.name], metrics?.callbacks[b.name]);
         default: return 0;
       }
     });
-  }, [filtered, sortField, sortAsc, durationByTrack]);
+  }, [filtered, sortField, sortAsc, durationByTrack, metrics]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -709,7 +711,7 @@ function TracksOverview() {
         userSelect: "none",
       }}>
         <span />
-        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["name", "Throughput"], ["duration", "Mean duration"], ["name", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
+        {([["name", "Name"], ["tier", "Tier"], ["protocol", "Protocol"], ["vpsPoolSize", "Pool"], ["vpsRunning", ""], ["vpsRunning", "Routes"], ["throughput", "Throughput"], ["duration", "Mean duration"], ["callbacks", "Callbacks"]] as [SortField, string][]).map(([field, label], i) => (
           <span
             key={`${field}-${i}`}
             onClick={() => handleSort(field)}
