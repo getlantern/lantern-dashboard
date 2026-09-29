@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, memo, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, memo, type CSSProperties } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fetchTracks, fetchSigNozMetrics, type DashboardTrackDetail, type TrackMetrics } from "../api/client";
 import { useConnectionDuration } from "../hooks/useConnectionDuration";
@@ -311,7 +311,6 @@ function TracksOverview() {
   const [filterCountry, setFilterCountry] = useState<string>("all");
   const [metrics, setMetrics] = useState<TrackMetrics | null>(null);
   const [metricsTimeRange, setMetricsTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("6h");
-  const metricsLoadingRef = useRef(false);
   const durationWindowMinutes = { "1h": 60, "6h": 360, "24h": 1440, "7d": 10080 }[metricsTimeRange];
   const durationStepSeconds = metricsTimeRange === "7d" ? 3600 : metricsTimeRange === "1h" ? 60 : 300;
   const { data: durationData, isLoading: durationLoading } = useConnectionDuration(
@@ -350,95 +349,92 @@ function TracksOverview() {
 
   // Fetch SigNoz metrics grouped by track
   useEffect(() => {
-    if (metricsLoadingRef.current) return;
-    metricsLoadingRef.current = true;
+    // Per-run flag drops responses for a time range that is no longer selected.
+    let cancelled = false;
+    const load = () => {
+      const rangeMs: Record<string, number> = { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+      const endMs = Date.now();
+      const startMs = endMs - (rangeMs[metricsTimeRange] || 21600000);
 
-    const rangeMs: Record<string, number> = { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
-    const endMs = Date.now();
-    const startMs = endMs - (rangeMs[metricsTimeRange] || 21600000);
-
-    // SigNoz v5 builder format — matches the existing "Track Performance Overview" dashboard panels.
-    type FilterItem = {
-      key: { key: string; dataType: string; type: string; isColumn: boolean; isJSON: boolean };
-      op: string;
-      value: string | number | boolean;
-    };
-    const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterItems: FilterItem[], groupByKey: string) => ({
-      start: startMs,
-      end: endMs,
-      compositeQuery: {
-        queryType: "builder",
-        panelType: "table",
-        builderQueries: {
-          A: {
-            dataSource: "metrics",
-            queryName: "A",
-            aggregateAttribute: { key: metricName, dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
-            timeAggregation: timeAgg,
-            spaceAggregation: spaceAgg,
-            filters: { items: filterItems, op: "AND" },
-            expression: "A",
-            disabled: false,
-            groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }],
-            legend: `{{${groupByKey}}}`,
-            having: [],
-            limit: null,
-            orderBy: [],
-            reduceTo: "avg",
-            stepInterval: 300,
+      // SigNoz v5 builder format — matches the existing "Track Performance Overview" dashboard panels.
+      type FilterItem = {
+        key: { key: string; dataType: string; type: string; isColumn: boolean; isJSON: boolean };
+        op: string;
+        value: string | number | boolean;
+      };
+      const buildQuery = (metricName: string, timeAgg: string, spaceAgg: string, filterItems: FilterItem[], groupByKey: string) => ({
+        start: startMs,
+        end: endMs,
+        compositeQuery: {
+          queryType: "builder",
+          panelType: "table",
+          builderQueries: {
+            A: {
+              dataSource: "metrics",
+              queryName: "A",
+              aggregateAttribute: { key: metricName, dataType: "float64", type: "Sum", isColumn: true, isJSON: false },
+              timeAggregation: timeAgg,
+              spaceAggregation: spaceAgg,
+              filters: { items: filterItems, op: "AND" },
+              expression: "A",
+              disabled: false,
+              groupBy: [{ key: groupByKey, dataType: "string", type: "tag", isColumn: false, isJSON: false }],
+              legend: `{{${groupByKey}}}`,
+              having: [],
+              limit: null,
+              orderBy: [],
+              reduceTo: "avg",
+              stepInterval: 300,
+            },
           },
         },
-      },
-    });
+      });
 
-    // proxy.io carries direction tags (transmit | receive). Filtering to transmit
-    // matches the egress-bandwidth semantics shown elsewhere on the dashboard;
-    // without it, throughputBps would silently double-count both directions.
-    const transmitOnly: FilterItem[] = [{
-      key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false },
-      op: "=",
-      value: "transmit",
-    }];
+      // proxy.io carries direction tags (transmit | receive). Filtering to transmit
+      // matches the egress-bandwidth semantics shown elsewhere on the dashboard;
+      // without it, throughputBps would silently double-count both directions.
+      const transmitOnly: FilterItem[] = [{
+        key: { key: "network.io.direction", dataType: "string", type: "tag", isColumn: false, isJSON: false },
+        op: "=",
+        value: "transmit",
+      }];
 
-    const queries = [
-      { key: "throughputBps" as const, query: buildQuery("proxy.io", "rate", "sum", transmitOnly, "proxy.track") },
-      { key: "connections" as const, query: buildQuery("proxy.connections", "increase", "sum", [], "proxy.track") },
-      { key: "callbacks" as const, query: buildQuery("bandit.callbacks", "increase", "sum", [], "proxy.track") },
-      { key: "selections" as const, query: buildQuery("bandit.selections", "increase", "sum", [], "proxy.track") },
-    ];
+      const queries = [
+        { key: "throughputBps" as const, query: buildQuery("proxy.io", "rate", "sum", transmitOnly, "proxy.track") },
+        { key: "connections" as const, query: buildQuery("proxy.connections", "increase", "sum", [], "proxy.track") },
+        { key: "callbacks" as const, query: buildQuery("bandit.callbacks", "increase", "sum", [], "proxy.track") },
+        { key: "selections" as const, query: buildQuery("bandit.selections", "increase", "sum", [], "proxy.track") },
+      ];
 
-    const result: TrackMetrics = { throughputBps: {}, connections: {}, callbacks: {}, selections: {} };
+      const result: TrackMetrics = { throughputBps: {}, connections: {}, callbacks: {}, selections: {} };
 
-    Promise.allSettled(queries.map(async ({ key, query }) => {
-      try {
-        const resp = await fetchSigNozMetrics(query);
-        // SigNoz v4 response: data.result[0].series[] with labels + values
-        const queryResult = resp?.data?.result || [];
-        for (const qr of queryResult) {
-          const seriesList = qr.series || [];
-          for (const s of seriesList) {
-            const trackName = s.labels?.["proxy.track"] || "";
-            if (!trackName) continue;
-            const values = s.values || [];
-            if (values.length > 0) {
-              const sum = values.reduce((acc: number, v: any) => acc + (parseFloat(v.value || v[1]) || 0), 0);
-              result[key][trackName] = key === "throughputBps" ? (sum / values.length) * 8 : sum;
+      Promise.allSettled(queries.map(async ({ key, query }) => {
+        try {
+          const resp = await fetchSigNozMetrics(query);
+          // SigNoz v4 response: data.result[0].series[] with labels + values
+          const queryResult = resp?.data?.result || [];
+          for (const qr of queryResult) {
+            const seriesList = qr.series || [];
+            for (const s of seriesList) {
+              const trackName = s.labels?.["proxy.track"] || "";
+              if (!trackName) continue;
+              const values = s.values || [];
+              if (values.length > 0) {
+                const sum = values.reduce((acc: number, v: any) => acc + (parseFloat(v.value || v[1]) || 0), 0);
+                result[key][trackName] = key === "throughputBps" ? (sum / values.length) * 8 : sum;
+              }
             }
           }
+        } catch {
+          // Silently skip failed metric queries
         }
-      } catch {
-        // Silently skip failed metric queries
-      }
-    })).then(() => {
-      setMetrics(result);
-      metricsLoadingRef.current = false;
-    });
-
-    const interval = setInterval(() => {
-      metricsLoadingRef.current = false;
-      // Trigger re-run by updating a dep — but we use ref to avoid loops
-    }, 120_000);
-    return () => clearInterval(interval);
+      })).then(() => {
+        if (!cancelled) setMetrics(result);
+      });
+    };
+    load();
+    const interval = setInterval(load, 120_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [metricsTimeRange]);
 
   const toggleExpand = useCallback((id: number) => {
