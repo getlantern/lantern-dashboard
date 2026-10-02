@@ -13,6 +13,7 @@ import BanditArmsOverview, { BanditHowItWorks } from "./BanditArmsOverview";
 import ExperimentsOverview from "./ExperimentsOverview";
 import OverlaysOverview from "./OverlaysOverview";
 import TracksOverview from "./TracksOverview";
+import TriangleHowItWorks from "./TriangleHowItWorks";
 import MetricsOverview from "./MetricsOverview";
 import AISummary from "./AISummary";
 import AdminPanel from "./AdminPanel";
@@ -102,7 +103,7 @@ export default function Dashboard() {
     }
   }, [briefingOpen]);
   const { globalStats, dataCenters, activityEvents, trafficFlows, isLive, blockedRoutes, demoMode, toggleDemoMode } = useLiveData(briefingOpen);
-  const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'experiments' | 'overlays' | 'tracks' | 'metrics' | 'proxy' | 'admin'>(() => {
+  const [activeTab, setActiveTab] = useState<'map' | 'overview' | 'vps' | 'arms' | 'experiments' | 'overlays' | 'tracks' | 'triangle' | 'metrics' | 'proxy' | 'admin'>(() => {
     const hash = window.location.hash;
     if (hash === '#overview') return 'overview';
     if (hash === '#vps') return 'vps';
@@ -110,13 +111,14 @@ export default function Dashboard() {
     if (hash === '#experiments') return 'experiments';
     if (hash === '#overlays') return 'overlays';
     if (hash === '#tracks') return 'tracks';
+    if (hash === '#triangle') return 'triangle';
     // Accept #metrics (new) and #bandwidth (existing bookmarks) as the same tab.
     if (hash === '#metrics' || hash === '#bandwidth') return 'metrics';
     if (hash === '#proxy') return 'proxy';
     if (hash === '#admin') return 'admin';
     return 'map';
   });
-  const switchTab = useCallback((tab: 'map' | 'overview' | 'vps' | 'arms' | 'experiments' | 'overlays' | 'tracks' | 'metrics' | 'proxy' | 'admin') => {
+  const switchTab = useCallback((tab: 'map' | 'overview' | 'vps' | 'arms' | 'experiments' | 'overlays' | 'tracks' | 'triangle' | 'metrics' | 'proxy' | 'admin') => {
     setActiveTab(tab);
     window.location.hash = tab === 'map' ? '' : `#${tab}`;
   }, []);
@@ -223,10 +225,12 @@ export default function Dashboard() {
           <ApiEnvBadge onJumpToAdmin={() => switchTab("admin")} />
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
-          {(["map", "overview", "vps", "arms", "experiments", "overlays", "tracks", "metrics", "proxy", "admin"] as const).map((tab) => (
-            <div
+          {(["map", "overview", "vps", "arms", "experiments", "overlays", "tracks", "triangle", "metrics", "proxy", "admin"] as const).map((tab) => (
+            <button
+              type="button"
               key={tab}
               onClick={() => switchTab(tab)}
+              aria-current={activeTab === tab ? "page" : undefined}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "0.55rem",
@@ -241,8 +245,8 @@ export default function Dashboard() {
                 letterSpacing: "0.05em",
               }}
             >
-              {{ map: "Map", overview: "Overview", vps: "VPS Fleet", arms: "Bandit Arms", experiments: "Experiments", overlays: "Overlays", tracks: "Tracks", metrics: "Metrics", proxy: "Share Proxy", admin: "Admin" }[tab]}
-            </div>
+              {{ map: "Map", overview: "Overview", vps: "VPS Fleet", arms: "Bandit Arms", experiments: "Experiments", overlays: "Overlays", tracks: "Tracks", triangle: "Triangle", metrics: "Metrics", proxy: "Share Proxy", admin: "Admin" }[tab]}
+            </button>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto" }}>
@@ -359,6 +363,10 @@ export default function Dashboard() {
           <OverlaysOverview enabled={activeTab === "overlays"} />
         ) : activeTab === "tracks" ? (
           <TracksOverview />
+        ) : activeTab === "triangle" ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", padding: "0.75rem", background: "var(--bg-card)" }}>
+            <TriangleHowItWorks />
+          </div>
         ) : activeTab === "metrics" ? (
           <MetricsOverview enabled={activeTab === "metrics"} countries={globalStats.countries} />
         ) : activeTab === "proxy" ? (
