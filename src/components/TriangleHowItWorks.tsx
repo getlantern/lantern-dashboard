@@ -568,6 +568,24 @@ function LiveTraffic() {
   );
 }
 
+const OLD_VS_NEW: Array<[string, string, string]> = [
+  ["Frontend machine", "Dedicated pfe boxes, sized in advance with Terraform per cloud (OCI, Alicloud, AWS, GCP, Azure, Zenlayer)", "An ordinary bandit VPS, created and destroyed by the pool worker on demand. No Terraform."],
+  ["Client-facing IPs", "Many EIPs per box: secondary NICs × private-IP slots (e.g. 4 NICs × 15 IPs), each EIP one route", "One public IP per VM, so one VM per route."],
+  ["Packet handling", "The pfe XDP/AF_XDP program takes over a whole NIC, matches the private IP, rewrites and encapsulates (FoU or GRE)", "Kernel only: one notrack nft rule for the service port plus an ip6tnl FoU device. The box's own SSH and metrics are untouched."],
+  ["Control plane", "pfe syncs /proxy/pfe/sync over the tailnet every 30s; the API's EIP manager allocates, rebinds and quarantines EIPs; frontend rows in proxy_frontends", "Everything happens at provision time: the worker creates the backend route, links it with backend_route_id, and pushes a static script over bastion SSH. The box is never on the tailnet, and there are no frontend rows or EIPs."],
+  ["IP rotation and blocking", "Move or replace EIPs on existing pfes; capacity bounded by provisioned slots", "The bandit lifecycle destroys the VM and builds a new one; teardown deletes the backend automatically."],
+  ["Backend software", "http-proxy-lantern with legacy protocols (tlsmasq, starbridge, algeneva, http-proxy Shadowsocks)", "sing-box / lantern-box: SS-2022, VLESS+REALITY(+Vision), samizdat."],
+  ["How clients get routes", "Legacy assignment over proxy_routes", "Bandit arms with reward learning, per-ASN weights, and the RU/IR experiment machinery."],
+  ["Hardware", "pfe ran on sizeable instances (e.g. ecs.c8y.2xlarge) to drive XDP", "The cheapest burstable type (ecs.t6-c1m1.large): 9.3 Gbit/s delivered at 1.3% CPU, because only upstream traffic touches it."],
+];
+
+const TRADEOFFS: Array<[string, string]> = [
+  ["Cost per IP", "A pfe box amortised dozens of IPs over one instance, while we now pay a small VM per IP. The new design wins on egress cost (0.24% of bytes through Alicloud), on not paying for idle slots, and on IP churn being free and automatic."],
+  ["Throughput per box", "Native-driver XDP pfes could push more packets per second than our kernel path. A frontend only carries uploads and ACKs, so it never gets near that limit; the spike used 1.3% CPU."],
+  ["Moving parts", "The old setup depended on Terraform capacity plans, the EIP manager's per-account location lists, tailnet reachability from every pfe, and Ansible. Those are the pieces that quietly broke after June (mgmt-proxy, decommissioned pfes). The new frontend depends only on the provider API and SSH."],
+  ["New requirement", "Every frontend needs a public IPv6 address, because PATH drops unsolicited IPv4."],
+];
+
 const CODE_MAP: Array<[string, string, string]> = [
   ["Track opt-in", "tracks.triangle_backend_region_id · migration 000137", "Set only at creation; a trigger rejects any change. A CHECK limits it to IPv4 VPS-sourced tracks."],
   ["Route link", "vps_routes.backend_route_id", "FK to proxy_routes, ON DELETE SET NULL. The destroy worker reads it to remove the backend."],
@@ -647,6 +665,46 @@ export default function TriangleHowItWorks() {
           Alicloud bills outbound traffic. With a triangle frontend the expensive direction, downloads, is served from PATH's
           flat-rate link, and Alicloud only carries what clients send, which on real proxy traffic is about 4% of bytes plus
           acknowledgements.
+        </p>
+      </Card>
+
+      <Card title="Compared with the old pfe + http-proxy triangle">
+        <p style={prose}>
+          The backend half is unchanged from the 2022–2023 design: phost, the per-route container with its own IPv6 address in
+          the phost's <C>/80</C>, FoU6 decapsulation into <C>ip6tnl0</C> inside the container's namespace, the frontend IP on{" "}
+          <C>lo</C>, and replies spoofed straight out of PATH with BCP-38 off. The "PATH only passes IPv6" constraint is the one
+          the original setup was built around. What changed is the frontend, how frontends are allocated, and what runs on the
+          backend.
+        </p>
+        <div style={{ overflowX: "auto", marginTop: "0.6rem" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr><th style={th}>Aspect</th><th style={th}>Old: pfe + http-proxy</th><th style={th}>New: VPS triangle frontend</th></tr>
+            </thead>
+            <tbody>
+              {OLD_VS_NEW.map(([aspect, before, after]) => (
+                <tr key={aspect}>
+                  <td style={{ ...td, color: TEXT }}>{aspect}</td>
+                  <td style={{ ...td, fontFamily: "var(--font-sans)", whiteSpace: "normal", minWidth: "16rem" }}>{before}</td>
+                  <td style={{ ...td, fontFamily: "var(--font-sans)", whiteSpace: "normal", minWidth: "16rem" }}>{after}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ ...sectionLabel, marginTop: "0.9rem" }}>Tradeoffs</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(18rem, 1fr))", gap: "0.7rem", marginTop: "0.4rem" }}>
+          {TRADEOFFS.map(([name, description]) => (
+            <div key={name} style={{ borderLeft: `2px solid ${UP}`, paddingLeft: "0.6rem" }}>
+              <div style={{ ...code, color: UP }}>{name}</div>
+              <div style={{ ...prose, fontSize: "0.7rem" }}>{description}</div>
+            </div>
+          ))}
+        </div>
+        <p style={{ ...prose, marginTop: "0.8rem" }}>
+          The first RU triangle track hit a bug at the seam between the two designs. phost marks a sing-box container ready only
+          when it logs <C>sing-box started</C>, an INFO line. VPS tracks never had to log at INFO, because on a VPS the container
+          doesn't need phost's tunnel setup, so a track copied with <C>log.level: warn</C> never got its tunnel configured.
         </p>
       </Card>
 
