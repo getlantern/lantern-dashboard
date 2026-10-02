@@ -226,9 +226,11 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", gap: "0.25rem", marginLeft: "1.5rem" }}>
           {(["map", "overview", "vps", "arms", "experiments", "overlays", "tracks", "triangle", "metrics", "proxy", "admin"] as const).map((tab) => (
-            <div
+            <button
+              type="button"
               key={tab}
               onClick={() => switchTab(tab)}
+              aria-current={activeTab === tab ? "page" : undefined}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "0.55rem",
@@ -244,7 +246,7 @@ export default function Dashboard() {
               }}
             >
               {{ map: "Map", overview: "Overview", vps: "VPS Fleet", arms: "Bandit Arms", experiments: "Experiments", overlays: "Overlays", tracks: "Tracks", triangle: "Triangle", metrics: "Metrics", proxy: "Share Proxy", admin: "Admin" }[tab]}
-            </div>
+            </button>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto" }}>

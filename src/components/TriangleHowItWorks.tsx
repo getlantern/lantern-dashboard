@@ -456,6 +456,13 @@ function LiveTraffic() {
     error?: string;
   } | null>(null);
 
+  // Advances the one-hour window while the tab stays open, at the Tracks tab's cadence.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const endMs = Date.now();
@@ -478,7 +485,7 @@ function LiveTraffic() {
     return () => {
       cancelled = true;
     };
-  }, [track]);
+  }, [track, tick]);
 
   const current = result?.track === track ? result : null;
   const error = current?.error ?? null;
