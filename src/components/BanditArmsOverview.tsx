@@ -649,7 +649,13 @@ function ProxyAnsweredCallbacks() {
       <p>A plain callback only proves that one small request got through. Some censors — Russia's DPI in particular — let a proxy flow start and then <strong>freeze it after a few kilobytes</strong>. The callback is small enough to finish before the freeze, so a route whose real traffic dies keeps getting credited as working. Shadowsocks routes are the classic case.</p>
       <p style={{ marginTop: "0.35rem" }}>So on routes that support it, the <strong>proxy answers the probe itself</strong>: it sends the client a response large enough to cross the freeze point, watches its own kernel's TCP state to see whether the client actually received it, and only then forwards the callback to the API with a <strong>delivery verdict</strong>.</p>
 
-      <svg viewBox="0 0 720 300" style={{ width: "100%", maxWidth: "720px", margin: "0.6rem 0" }}>
+      <div style={{ overflowX: "auto", margin: "0.6rem 0" }}>
+      <svg
+        viewBox="0 0 720 300"
+        style={{ width: "100%", minWidth: "720px", maxWidth: "720px", display: "block" }}
+        role="img"
+        aria-label="The client sends a plain-HTTP GET to api.iantem.io/v1/bandit/callback inside the proxy tunnel. The proxy's route rule for the API host on port 80 sends it to the bandit-probe outbound, which answers 200 OK with 64 KiB of random bytes and polls the client socket's TCP_INFO and SIOCOUTQ every 50 ms until it reaches a verdict of delivered, stalled or unknown. It then forwards the callback to the API over HTTPS with the verdict, drain time, acked bytes, retransmits and RTT, and the API scores a reward, or a failure on a stall, once per probe."
+      >
         <defs>
           <marker id="arrow-probe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#00e5c8" /></marker>
           <marker id="arrow-probe-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ffb432" /></marker>
@@ -697,8 +703,9 @@ function ProxyAnsweredCallbacks() {
         <text x="630" y="270" textAnchor="middle" fill="#c0c8d4" fontSize="9">⑦ reward, or failure on a stall</text>
         <text x="630" y="283" textAnchor="middle" fill="#8090a0" fontSize="8">(counted once per probe)</text>
       </svg>
+      </div>
 
-      <p><strong>How the proxy decides.</strong> The response is <strong>64 KiB</strong> of random bytes, taken from a random offset in a 1 MiB pool so it is incompressible and differs between probes; it has to be larger than the point where a censor freezes a flow. The proxy writes it on its own goroutine — on a frozen flow the write blocks once the send buffer fills — and meanwhile polls the client-facing socket every <strong>50 ms</strong>:</p>
+      <p><strong>How the proxy decides.</strong> The response is <strong>64 KiB</strong> of random bytes, taken from a random offset in a 1 MiB pool so it is incompressible and usually differs between probes; it has to be larger than the point where a censor freezes a flow. The proxy writes it on its own goroutine — on a frozen flow the write blocks once the send buffer fills — and meanwhile polls the client-facing socket every <strong>50 ms</strong>:</p>
       <ul style={{ margin: "0.3rem 0 0.3rem 1.2rem", padding: 0 }}>
         <li><code style={probeCode}>getsockopt(IPPROTO_TCP, TCP_INFO)</code> gives <code style={probeCode}>tcpi_bytes_acked</code> (bytes the client's kernel has acknowledged), <code style={probeCode}>tcpi_total_retrans</code> and <code style={probeCode}>tcpi_rtt</code>.</li>
         <li><code style={probeCode}>ioctl(SIOCOUTQ)</code> gives the bytes written but <strong>not yet acknowledged</strong>, including any not yet sent.</li>
@@ -738,7 +745,7 @@ function ProxyAnsweredCallbacks() {
 
       <p><strong>Which routes can give a real verdict.</strong> The proxy has to reach the client's actual TCP socket through whatever layers the protocol adds. sing unwraps TLS, REALITY, VLESS and Shadowsocks down to the socket, so those give <strong>delivered</strong> or <strong>stalled</strong>. Multiplexed tracks (smux streams share one connection), QUIC transports (Hysteria2, TUIC — no TCP socket at all) and samizdat (its library hands over a stream, not a socket) report <strong>unknown</strong>, which scores exactly as before.</p>
 
-      <p style={{ marginTop: "0.35rem", color: "#667080" }}>Watch it in SigNoz: <code style={probeCode}>bandit.probe_verdicts</code> (labels <code style={probeCode}>verdict</code>, <code style={probeCode}>country</code>, <code style={probeCode}>track</code>; <code style={probeCode}>none</code> means a proxy-answered callback arrived without a report) gives the stall rate as stalled ÷ total, and <code style={probeCode}>bandit.probe_stalls</code> and <code style={probeCode}>bandit.repeat_callbacks</code> break stalls and replays down further. A failure inside the responder ends the probe as aborted, never the proxy process.</p>
+      <p style={{ marginTop: "0.35rem", color: "#667080" }}>Watch it in SigNoz: <code style={probeCode}>bandit.probe_verdicts</code> (labels <code style={probeCode}>verdict</code>, <code style={probeCode}>country</code>, <code style={probeCode}>track</code>; <code style={probeCode}>none</code> means a proxy-answered callback arrived without a report) gives the stall rate as stalled ÷ total, and <code style={probeCode}>bandit.probe_stalls</code> and <code style={probeCode}>bandit.repeat_callbacks</code> break stalls and replays down further. From lantern-box <strong>v0.0.137</strong>, a failure inside the responder ends the probe as aborted, never the proxy process; on v0.0.136 a responder panic can crash the proxy.</p>
     </div>
   );
 }
