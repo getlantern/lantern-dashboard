@@ -637,6 +637,119 @@ function ISPSection({ asn, country, expandedASNs, toggleASN, asnDB, regionToCity
   );
 }
 
+const probeCode: CSSProperties = { background: "rgba(255,255,255,0.06)", padding: "1px 4px", borderRadius: "3px", fontSize: "0.65rem" };
+const probeCell: CSSProperties = { padding: "3px 8px", verticalAlign: "top" };
+const probeHead: CSSProperties = { textAlign: "left", padding: "4px 8px", color: "#c0c8d4" };
+
+function ProxyAnsweredCallbacks() {
+  return (
+    <div style={{ marginTop: "0.75rem", paddingTop: "0.6rem", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <p style={{ fontWeight: 600, color: "#c0c8d4", fontSize: "0.75rem", marginBottom: "0.35rem" }}>Proxy-answered callbacks: catching flows that freeze mid-transfer</p>
+
+      <p>A plain callback only proves that one small request got through. Some censors — Russia's DPI in particular — let a proxy flow start and then <strong>freeze it after a few kilobytes</strong>. The callback is small enough to finish before the freeze, so a route whose real traffic dies keeps getting credited as working. Shadowsocks routes are the classic case.</p>
+      <p style={{ marginTop: "0.35rem" }}>So on routes that support it, the <strong>proxy answers the probe itself</strong>: it sends the client a response large enough to cross the freeze point, watches its own kernel's TCP state to see whether the client actually received it, and only then forwards the callback to the API with a <strong>delivery verdict</strong>.</p>
+
+      <div style={{ overflowX: "auto", margin: "0.6rem 0" }}>
+      <svg
+        viewBox="0 0 720 300"
+        style={{ width: "100%", minWidth: "720px", maxWidth: "720px", display: "block" }}
+        role="img"
+        aria-label="The client sends a plain-HTTP GET to api.iantem.io/v1/bandit/callback inside the proxy tunnel. The proxy's route rule for the API host on port 80 sends it to the bandit-probe outbound, which answers 200 OK with 64 KiB of random bytes and polls the client socket's TCP_INFO and SIOCOUTQ every 50 ms until it reaches a verdict of delivered, stalled or unknown. It then forwards the callback to the API over HTTPS with the verdict, drain time, acked bytes, retransmits and RTT, and the API scores a reward, or a failure on a stall, once per probe."
+      >
+        <defs>
+          <marker id="arrow-probe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#00e5c8" /></marker>
+          <marker id="arrow-probe-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ffb432" /></marker>
+          <marker id="arrow-probe-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64b4ff" /></marker>
+        </defs>
+
+        {/* Lifelines */}
+        <rect x="30" y="8" width="120" height="30" rx="6" fill="rgba(0,229,200,0.1)" stroke="#00e5c8" strokeWidth="1.5" />
+        <text x="90" y="27" textAnchor="middle" fill="#c0c8d4" fontSize="11" fontWeight="600">Client</text>
+        <rect x="290" y="8" width="140" height="30" rx="6" fill="rgba(255,180,50,0.08)" stroke="#ffb432" strokeWidth="1.5" />
+        <text x="360" y="27" textAnchor="middle" fill="#ffb432" fontSize="11" fontWeight="600">Proxy (lantern-box)</text>
+        <rect x="570" y="8" width="120" height="30" rx="6" fill="rgba(100,180,255,0.08)" stroke="#64b4ff" strokeWidth="1.5" />
+        <text x="630" y="27" textAnchor="middle" fill="#64b4ff" fontSize="11" fontWeight="600">API</text>
+        <line x1="90" y1="38" x2="90" y2="290" stroke="#2a3540" strokeWidth="1" strokeDasharray="3,3" />
+        <line x1="360" y1="38" x2="360" y2="290" stroke="#2a3540" strokeWidth="1" strokeDasharray="3,3" />
+        <line x1="630" y1="38" x2="630" y2="290" stroke="#2a3540" strokeWidth="1" strokeDasharray="3,3" />
+
+        {/* 1. Probe request, inside the tunnel */}
+        <line x1="92" y1="68" x2="356" y2="68" stroke="#00e5c8" strokeWidth="1.5" markerEnd="url(#arrow-probe)" />
+        <text x="224" y="60" textAnchor="middle" fill="#c0c8d4" fontSize="9">① GET http://api.iantem.io/v1/bandit/callback?token=…</text>
+        <text x="224" y="80" textAnchor="middle" fill="#8090a0" fontSize="8">plain HTTP, but inside the proxy tunnel</text>
+
+        {/* 2. Route rule */}
+        <rect x="372" y="88" width="250" height="26" rx="5" fill="rgba(255,180,50,0.06)" stroke="#ffb432" strokeWidth="1" />
+        <text x="497" y="105" textAnchor="middle" fill="#c0c8d4" fontSize="9">② route rule: api host, port 80 → bandit-probe outbound</text>
+
+        {/* 3. Response */}
+        <line x1="356" y1="134" x2="94" y2="134" stroke="#ffb432" strokeWidth="1.5" markerEnd="url(#arrow-probe-amber)" />
+        <text x="224" y="127" textAnchor="middle" fill="#c0c8d4" fontSize="9">③ 200 OK + 64 KiB of random bytes</text>
+
+        {/* 4. TCP state polling */}
+        <rect x="372" y="146" width="250" height="40" rx="5" fill="rgba(255,180,50,0.06)" stroke="#ffb432" strokeWidth="1" />
+        <text x="497" y="162" textAnchor="middle" fill="#c0c8d4" fontSize="9">④ poll the client socket every 50 ms:</text>
+        <text x="497" y="177" textAnchor="middle" fill="#8090a0" fontSize="8.5">TCP_INFO (acked, retrans, rtt) + SIOCOUTQ (unacked)</text>
+
+        {/* 5. Verdict */}
+        <rect x="372" y="196" width="250" height="26" rx="5" fill="rgba(255,180,50,0.06)" stroke="#ffb432" strokeWidth="1" />
+        <text x="497" y="213" textAnchor="middle" fill="#c0c8d4" fontSize="9">⑤ verdict: delivered · stalled · unknown</text>
+
+        {/* 6. Forwarded callback */}
+        <line x1="362" y1="244" x2="626" y2="244" stroke="#64b4ff" strokeWidth="1.5" markerEnd="url(#arrow-probe-blue)" />
+        <text x="494" y="237" textAnchor="middle" fill="#c0c8d4" fontSize="9">⑥ HTTPS callback + verdict, drain_ms, acked, retrans, rtt_ms</text>
+
+        {/* 7. Scoring */}
+        <text x="630" y="270" textAnchor="middle" fill="#c0c8d4" fontSize="9">⑦ reward, or failure on a stall</text>
+        <text x="630" y="283" textAnchor="middle" fill="#8090a0" fontSize="8">(counted once per probe)</text>
+      </svg>
+      </div>
+
+      <p><strong>How the proxy decides.</strong> The response is <strong>64 KiB</strong> of random bytes, taken from a random offset in a 1 MiB pool so it is incompressible and usually differs between probes; it has to be larger than the point where a censor freezes a flow. The proxy writes it on its own goroutine — on a frozen flow the write blocks once the send buffer fills — and meanwhile polls the client-facing socket every <strong>50 ms</strong>:</p>
+      <ul style={{ margin: "0.3rem 0 0.3rem 1.2rem", padding: 0 }}>
+        <li><code style={probeCode}>getsockopt(IPPROTO_TCP, TCP_INFO)</code> gives <code style={probeCode}>tcpi_bytes_acked</code> (bytes the client's kernel has acknowledged), <code style={probeCode}>tcpi_total_retrans</code> and <code style={probeCode}>tcpi_rtt</code>.</li>
+        <li><code style={probeCode}>ioctl(SIOCOUTQ)</code> gives the bytes written but <strong>not yet acknowledged</strong>, including any not yet sent.</li>
+      </ul>
+      <p>Delivery is judged only from what the <strong>client acknowledged</strong>, never from <code style={probeCode}>Write</code> returning — a successful write only means the bytes reached the proxy's own send buffer, which a frozen flow still allows. The probe is <strong>delivered</strong> once the write has finished and nothing is left unacknowledged. It is <strong>stalled</strong> when acknowledgements stop advancing for <strong>2.5 s</strong> with data still outstanding, when the write fails, when reading the socket state fails once polling has started, or when <strong>10 s</strong> pass without delivery (the bound leaves time for the callback to reach the API before the probe expires). If the socket state can't be read at all from the start, the proxy falls back to the write result alone, as it does for a non-TCP socket.</p>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", margin: "0.5rem 0", fontSize: "0.68rem" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+            <th style={probeHead}>Verdict</th>
+            <th style={probeHead}>When</th>
+            <th style={probeHead}>How the API scores it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style={{ ...probeCell, color: "#50c878" }}>delivered</td><td style={probeCell}>Whole response written and acknowledged</td><td style={probeCell}>Normal latency reward, with the proxy's drain time taken out of the latency</td></tr>
+          <tr><td style={{ ...probeCell, color: "#ff5050" }}>stalled</td><td style={probeCell}>Acks stop for 2.5 s with data outstanding, the write fails, a socket-state read fails mid-poll, or 10 s pass without delivery</td><td style={probeCell}>Scored like an expired probe: reward 0 and a failing sample for the ASN, country and route blocking signals</td></tr>
+          <tr><td style={{ ...probeCell, color: "#ffb432" }}>unknown</td><td style={probeCell}>Delivery couldn't be observed — the client socket isn't a kernel TCP socket, or its state couldn't be read at all — so only the write result is known; reported only if the whole response was written</td><td style={probeCell}>Treated as a success, exactly like a plain callback</td></tr>
+          <tr><td style={{ ...probeCell, color: "#8090a0" }}>aborted</td><td style={probeCell}>The proxy gave up for its own reasons — shutdown, or an internal error</td><td style={probeCell}>Never sent; the reaper later scores the probe as expired, like any probe that never called back</td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>What the API trusts.</strong> The callback endpoint is unauthenticated, so the reporting is constrained on both sides:</p>
+      <ul style={{ margin: "0.3rem 0 0.3rem 1.2rem", padding: 0 }}>
+        <li>A verdict is honoured only on a probe that was <strong>issued</strong> a proxy-answered (plain-HTTP) URL. On any other probe, a <code style={probeCode}>verdict</code> a client adds to the query is ignored.</li>
+        <li>The proxy strips any <code style={probeCode}>verdict</code>, <code style={probeCode}>drain_ms</code>, <code style={probeCode}>acked</code>, <code style={probeCode}>retrans</code> or <code style={probeCode}>rtt_ms</code> the client put on the request and sets its own; the client's other parameters (token, trace, device ID, queue delay) pass through.</li>
+        <li>A stall counts <strong>once</strong>, on the probe's first callback, and not at all if the reaper already scored the probe as expired. Replaying a token can't add failures and block a route.</li>
+        <li>The forwarded callback goes to the API over <strong>HTTPS</strong>, since it carries the probe token and device ID across the open internet; the probe request itself never leaves the tunnel in the clear.</li>
+        <li>Latency is corrected for both the client's queue delay (<code style={probeCode}>cd</code>) and the proxy's drain time; together they can take out at most 80% of the measured latency. The API sends no body back, since the proxy already answered the client.</li>
+      </ul>
+
+      <p><strong>Rollout and settings.</strong> Two settings control it, in order:</p>
+      <ul style={{ margin: "0.3rem 0 0.3rem 1.2rem", padding: 0 }}>
+        <li><code style={probeCode}>bandit_probe_responder_enabled</code> adds the <code style={probeCode}>banditprobe</code> outbound and its route rule (first in the rule list; endpoint-based configs such as WireGuard also get an HTTP sniff on port 80) to <strong>newly generated</strong> lantern-box launch configs. It only applies to VPS routes built from the standard image that will run lantern-box <strong>v0.0.136 or later</strong>, since older binaries refuse a config naming the outbound. Existing routes pick it up as they are replaced, and the release hot-swap won't install a pre-v0.0.136 build onto a route whose config has it.</li>
+        <li><code style={probeCode}>bandit_probe_via_proxy</code> makes the bandit hand out plain-HTTP probe URLs — but only for routes whose launch config actually contains the responder; every other route keeps its HTTPS callback URL.</li>
+      </ul>
+
+      <p><strong>Which routes can give a real verdict.</strong> The proxy has to reach the client's actual TCP socket through whatever layers the protocol adds. sing unwraps TLS, REALITY, VLESS and Shadowsocks down to the socket, so those give <strong>delivered</strong> or <strong>stalled</strong>. Multiplexed tracks (smux streams share one connection), QUIC transports (Hysteria2, TUIC — no TCP socket at all) and samizdat (its library hands over a stream, not a socket) report <strong>unknown</strong>, which scores exactly as before.</p>
+
+      <p style={{ marginTop: "0.35rem", color: "#667080" }}>Watch it in SigNoz: <code style={probeCode}>bandit.probe_verdicts</code> (labels <code style={probeCode}>verdict</code>, <code style={probeCode}>country</code>, <code style={probeCode}>track</code>; <code style={probeCode}>none</code> means a proxy-answered callback arrived without a report) gives the stall rate as stalled ÷ total, and <code style={probeCode}>bandit.probe_stalls</code> and <code style={probeCode}>bandit.repeat_callbacks</code> break stalls and replays down further. From lantern-box <strong>v0.0.137</strong>, a failure inside the responder ends the probe as aborted, never the proxy process; on v0.0.136 a responder panic can crash the proxy.</p>
+    </div>
+  );
+}
+
 export function BanditHowItWorks() {
   return (
     <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.15)", borderRadius: "8px", padding: "1rem 1.25rem", fontSize: "0.72rem", color: "#8090a0", lineHeight: 1.6 }}>
@@ -725,9 +838,11 @@ function BanditHowItWorksContent() {
             </tbody>
           </table>
           <p>The bandit uses the <strong>EXP3.S algorithm</strong> to learn which proxy routes work best for each ISP (ASN). Each <strong>arm</strong> is a region + protocol combination (e.g., "Frankfurt + samizdat"). On each config fetch, the bandit selects arms probabilistically — favoring arms with higher weights but always exploring alternatives (20% random).</p>
-          <p style={{ marginTop: "0.4rem" }}>When a proxy connects successfully, the client hits a <strong>callback URL</strong> — that's how the server knows it worked. The <strong>reward</strong> is based on relative latency: an arm's latency is ranked against all other arms for this ASN, so 2000ms is "good" if everything else is 3000ms+. Failed callbacks (no response within 30s) get reward=0.</p>
+          <p style={{ marginTop: "0.4rem" }}>When a proxy connects successfully, the client hits a <strong>callback URL</strong> — that's how the server knows it worked. The <strong>reward</strong> is based on relative latency: an arm's latency is ranked against all other arms for this ASN, so 2000ms is "good" if everything else is 3000ms+. Failed callbacks (no response within 30s) get reward=0. On routes whose proxy can answer the probe itself, the callback also carries the proxy's own <strong>delivery verdict</strong> — see <em>Proxy-answered callbacks</em> below.</p>
           <p style={{ marginTop: "0.4rem" }}><strong>Blocking detection</strong> works at four levels: per-ASN (is this protocol blocked on this ISP?), per-country (blocked nationally?), per-route globally (this IP is burned everywhere), and per-route per-country (this IP is burned in Iran but works in the US). Blocked arms get their weights penalized; blocked routes are excluded from selection for affected countries.</p>
           <p style={{ marginTop: "0.4rem" }}>Weights decay toward uniform at rate α=0.01, preventing early luck from creating permanent dominance. The poll interval adapts: 60s when learning, up to 15min when converged.</p>
+
+          <ProxyAnsweredCallbacks />
 
           {/* Auto-Scaling Section */}
           <div style={{ marginTop: "0.75rem", paddingTop: "0.6rem", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
