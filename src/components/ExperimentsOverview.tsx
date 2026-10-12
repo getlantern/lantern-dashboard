@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import {
   abortExperiment,
+  graduateExperiment,
   buildExperimentTrackQuery,
   fetchSigNozMetrics,
   fetchTracks,
@@ -440,15 +441,26 @@ function ExperimentTimeSeries({ challenger, control, startMs, endMs }: { challen
   );
 }
 
-// ── Operator actions (abort / retire) ──
+// ── Operator actions (abort / retire / graduate) ──
 
-function ExperimentActions({ id, status, onChanged }: { id: number; status: string; onChanged: () => void }) {
-  const [busy, setBusy] = useState<"abort" | "retire" | null>(null);
+type ExperimentAction = "abort" | "retire" | "graduate";
+
+// A live promotion is the only state with a track to graduate: promoted, not
+// culled, not already graduated.
+function canGraduate(e: ExperimentSummary): boolean {
+  return e.status === "promoted" && !e.culledAt && !e.graduatedTrackName;
+}
+
+function ExperimentActions({ experiment, status, onChanged }: { experiment: ExperimentSummary; status: string; onChanged: () => void }) {
+  const [busy, setBusy] = useState<ExperimentAction | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const id = experiment.id;
 
-  // Already terminal — nothing left to tear down.
-  if (TERMINAL_STATUSES.has(status)) return null;
+  const graduatable = status === "promoted" && canGraduate(experiment);
+  // Already terminal — nothing left to tear down, unless a live promotion can
+  // still be graduated.
+  if (TERMINAL_STATUSES.has(status) && !graduatable) return null;
 
   const run = async (action: "abort" | "retire") => {
     const reason = window.prompt(
@@ -472,6 +484,35 @@ function ExperimentActions({ id, status, onChanged }: { id: number; status: stri
     }
   };
 
+  const graduate = async () => {
+    const name = window.prompt(
+      `Graduate experiment #${id}?\n\n` +
+        `This copies ${experiment.challengerTrackName || "its promoted track"} to a new track outside the experiment ` +
+        "lifecycle (no cull or demotion acts on it), then disables the promoted track and deprecates its routes. " +
+        "The new track provisions its own VMs.\n\n" +
+        "Name of the graduated track:",
+      "",
+    );
+    if (name === null || name.trim() === "") return; // operator cancelled
+    const description = window.prompt(
+      "Optional description of the graduated track (empty records the experiment and track it came from):",
+      "",
+    );
+    if (description === null) return;
+    setBusy("graduate");
+    setErr(null);
+    setMsg(null);
+    try {
+      const updated = await graduateExperiment(id, name.trim(), description);
+      setMsg(`Experiment #${updated.id} graduated into ${updated.graduatedTrackName ?? name.trim()}.`);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to graduate");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const btn = (color: string): CSSProperties => ({
     ...mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.05em",
     padding: "0.3rem 0.8rem", borderRadius: "var(--radius-sm)", cursor: busy ? "default" : "pointer",
@@ -481,12 +522,20 @@ function ExperimentActions({ id, status, onChanged }: { id: number; status: stri
   return (
     <div style={{ ...card, display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
       <div style={{ ...sectionLabel, marginBottom: 0 }}>Operator actions</div>
-      <button type="button" disabled={busy !== null} style={btn("#ff4060")} onClick={() => run("abort")}>
-        {busy === "abort" ? "Aborting…" : "Abort"}
-      </button>
-      <button type="button" disabled={busy !== null} style={btn("#e0a060")} onClick={() => run("retire")}>
-        {busy === "retire" ? "Retiring…" : "Retire"}
-      </button>
+      {graduatable ? (
+        <button type="button" disabled={busy !== null} style={btn("#20e070")} onClick={graduate}>
+          {busy === "graduate" ? "Graduating…" : "Graduate"}
+        </button>
+      ) : (
+        <>
+          <button type="button" disabled={busy !== null} style={btn("#ff4060")} onClick={() => run("abort")}>
+            {busy === "abort" ? "Aborting…" : "Abort"}
+          </button>
+          <button type="button" disabled={busy !== null} style={btn("#e0a060")} onClick={() => run("retire")}>
+            {busy === "retire" ? "Retiring…" : "Retire"}
+          </button>
+        </>
+      )}
       {msg && <span style={{ ...mono, fontSize: "0.6rem", color: "#20e070" }}>{msg}</span>}
       {err && <span style={{ ...mono, fontSize: "0.6rem", color: "#ff4060" }}>{err}</span>}
     </div>
@@ -495,7 +544,8 @@ function ExperimentActions({ id, status, onChanged }: { id: number; status: stri
 
 // ── Detail panel (loaded on row expand) ──
 
-function ExperimentDetailPanel({ id, status, onChanged }: { id: number; status: string; onChanged: () => void }) {
+function ExperimentDetailPanel({ experiment, onChanged }: { experiment: ExperimentSummary; onChanged: () => void }) {
+  const { id, status } = experiment;
   const { detail, isLoading, error } = useExperimentDetail(id);
 
   if (isLoading && !detail) return <div style={{ ...mono, color: "var(--text-muted)", padding: "0.75rem" }}>Loading stats…</div>;
@@ -515,7 +565,7 @@ function ExperimentDetailPanel({ id, status, onChanged }: { id: number; status: 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem", padding: "0.75rem 0.25rem" }}>
-      <ExperimentActions id={id} status={actionStatus} onChanged={onChanged} />
+      <ExperimentActions experiment={experiment} status={actionStatus} onChanged={onChanged} />
       {detail.statsError && (
         <div style={{ ...mono, fontSize: "0.62rem", color: "#e0a060", background: "#f0a03012", border: "1px solid #f0a03030", borderRadius: "var(--radius-sm)", padding: "0.5rem 0.7rem" }}>
           {detail.statsError}
@@ -575,7 +625,15 @@ function ExperimentsTable({ experiments, selectedId, onSelect, onChanged }: {
               }}
             >
               <div style={{ color: "var(--text-muted)" }}>#{e.id}</div>
-              <div><StatusBadge status={e.status} /></div>
+              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <StatusBadge status={e.status} />
+                {e.graduatedTrackName && (
+                  <div title={`Graduated into track ${e.graduatedTrackName}: a copy outside the experiment lifecycle. The promoted track is disabled.`}
+                    style={{ ...mono, fontSize: "0.55rem", color: "#20e070", marginTop: "0.15rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    → {e.graduatedTrackName}
+                  </div>
+                )}
+              </div>
               <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <span style={{ color: "var(--text-primary)" }}>{e.targetCountry || "—"}</span>
                 <span style={{ color: "var(--text-muted)" }}> / {e.locationName || "—"}{e.providerName ? ` (${e.providerName})` : ""}</span>
@@ -591,7 +649,7 @@ function ExperimentsTable({ experiments, selectedId, onSelect, onChanged }: {
               </div>
               <div style={{ color: "var(--text-secondary)" }}>{e.gatheringHours ? `${e.gatheringHours.toFixed(0)}h` : "—"}</div>
             </div>
-            {expanded && <ExperimentDetailPanel id={e.id} status={e.status} onChanged={onChanged} />}
+            {expanded && <ExperimentDetailPanel experiment={e} onChanged={onChanged} />}
           </div>
         );
       })}

@@ -672,6 +672,13 @@ export interface ExperimentSummary {
   // before the outcome column existed.
   revalidatedAt?: string;
   revalidationOutcome?: string;
+  // Set when a newer promotion's cull disabled this promotion's track.
+  culledAt?: string;
+  // The track this promotion's track was graduated into (lantern-cloud
+  // experiment.Graduate): a copy outside the experiment lifecycle that no cull
+  // or demotion acts on. The promoted track itself is disabled.
+  graduatedTrackId?: number;
+  graduatedTrackName?: string;
 }
 
 export interface ExperimentPipeline {
@@ -891,6 +898,13 @@ export function abortExperiment(id: number, reason: string): Promise<ExperimentS
 
 export function retireExperiment(id: number, reason: string): Promise<ExperimentSummary> {
   return terminateExperiment("retire", id, reason);
+}
+
+// graduateExperiment copies a live promotion's track to a new track called
+// name, outside the experiment lifecycle, and tears the promoted track down.
+// An empty description records the experiment and track it came from.
+export function graduateExperiment(id: number, name: string, description: string): Promise<ExperimentSummary> {
+  return apiPost("/experiments/graduate", { id, name, description });
 }
 
 // buildExperimentTrackQuery builds a SigNoz v5 builder query for a metric grouped
